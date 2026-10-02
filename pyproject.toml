@@ -1,0 +1,9 @@
+[project]
+name = "grove"
+version = "0.1.0"
+description = "A self-contained forest biome, operated by a small local LLM"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false
