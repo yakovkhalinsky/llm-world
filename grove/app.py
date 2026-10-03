@@ -176,13 +176,14 @@ class Grove:
         eid = next(iter(self.pending_chron))
         item = self.pending_chron.pop(eid)
         item["eid"] = "e0"           # the prompt and the parser agree
+        recents = [r[2] for r in self.db.chronicle_lines(5)]
         self.jobs["chron"] += 1
         self.worker.submit({
             "kind": "chron", "system": chronicler.SYSTEM,
-            "user": chronicler.build_prompt(item),
+            "user": chronicler.build_prompt(item, recents),
             "schema": CHRON_SCHEMA, "max_tokens": 60, "temperature": 0.9,
             "extra": {"base": item["template"], "key": item["key"],
-                      "tick": item["tick"]},
+                      "tick": item["tick"], "recents": recents},
             "retries": 2})
 
     def _invite_operator(self):
@@ -263,7 +264,11 @@ class Grove:
             text = None
             if res["ok"]:
                 text = chronicler.parse_single(
-                    res["data"], "e0", res["extra"]["base"])
+                    res["data"], "e0", res["extra"]["base"],
+                    recents=res["extra"].get("recents"))
+                if text:
+                    text = None if text.strip().lower() == \
+                        res["extra"]["base"].strip().lower() else text
             if text:
                 self.db.cache_set(res["extra"]["key"], text)
                 self.db.update_text(res["extra"]["key"], text)

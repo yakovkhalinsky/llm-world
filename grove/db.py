@@ -106,10 +106,21 @@ class DB:
             "WHERE source != 'raw' ORDER BY id").fetchall()
 
     def chronicle_lines(self, n=8):
+        """Renderable lines (raw events excluded, no consecutive
+        repeats — a week of identical stories shows once)."""
         rows = self.con.execute(
             "SELECT tick, source, text FROM chron WHERE source != 'raw' "
-            "ORDER BY id DESC LIMIT ?", (n,)).fetchall()
-        return rows[::-1]
+            "ORDER BY id DESC LIMIT 60").fetchall()
+        out, seen = [], set()
+        for tick, source, text in rows:
+            norm = text.strip().lower()
+            if norm in seen:
+                continue
+            seen.add(norm)
+            out.append((tick, source, text))
+            if len(out) >= n:
+                break
+        return out[::-1]
 
     # -- llm narration cache -----------------------------------------------
     def cache_get(self, key):

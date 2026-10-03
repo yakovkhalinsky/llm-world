@@ -138,11 +138,15 @@ def cmd_step(args):
         if items and w["tick"] - last_chron_week >= 4:
             for item in items[:5]:    # one flat call per event
                 item["eid"] = "e0"
+                recents = [r[2] for r in g.db.chronicle_lines(5)]
                 raw = g.llm.chat_json(
-                    chronicler.SYSTEM, chronicler.build_prompt(item),
+                    chronicler.SYSTEM,
+                    chronicler.build_prompt(item, recents),
                     CHRON_SCHEMA, max_tokens=60, temperature=0.9, retries=2)
-                text = chronicler.parse_single(raw, "e0", item["template"])
-                if text:
+                text = chronicler.parse_single(raw, "e0", item["template"],
+                                               recents=recents)
+                if text and text.strip().lower() != \
+                        item["template"].strip().lower():
                     g.db.cache_set(item["key"], text)
                     g.db.update_text(item["key"], text)
             last_chron_week = w["tick"]

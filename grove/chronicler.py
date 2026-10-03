@@ -1,9 +1,9 @@
 """Chronicler: turns events into one-line chronicle entries.
 
-Each call narrates ONE event (small models handle single-entry JSONs
-far better than arrays and phantom ids). Template lines are what the
-world shows instantly; a background LLM call replaces them, and a line
-the model got wrong (off-topic, hallucinated, garbage) is discarded.
+Each call narrates ONE event. Template lines are deterministic with
+variant phrases (no two identical stories read the same way); the LLM's
+versions replace them, and both a hallucination filter and an echo
+guard keep the chronicle varied.
 """
 
 import json
@@ -18,6 +18,49 @@ _SEASON_LINES = {0: "Spring came to the grove.", 1: "Summer came to the grove.",
                  2: "Autumn came to the grove.",
                  3: "Winter came to the grove."}
 
+_CAUSE_HEADS = {"storm": ("The storm", "The gale", "The wind"),
+                "age": ("Great age", "The slow centuries", "Old age"),
+                "drought": ("The drought", "The dry weeks"),
+                "blight": ("A blight", "The sickness")}
+_CAUSE_VERBS = ("brought down", "felled", "took")
+
+_KIND_BONES = {
+    "predation": ["{H} took a wild {sp} at {p}.",
+                  "{H} caught a wild {sp} at {p}.",
+                  "A wild {sp} fell to the {sp2} at {p}."],
+    "birth": ["{n} young {sp} were born at {p}.",
+              "{n} {sp} young entered the world at {p}.",
+              "Newborn {sp} — {n} appeared at {p}."],
+    "fell": ["{C} {V} {L} at {p}.",
+             "At {p}, {Cl} {V} {L}.",
+             "{L} {Be} fallen at {p} — {Cl}."],
+    "elder": ["{L} has reached its long years at {p}.",
+              "Age crowned {L} at {p}.",
+              "{L} stood its hundredth season at {p}."],
+    "oldage": ["{A} wild {sp}, grown old, lay down at {p}.",
+               "A wild {sp} reached the end of its years at {p}.",
+               "Time took a wild {sp} gently at {p}."],
+    "starve": ["{A} wild {sp} starved at {p}.",
+               "Hunger claimed a wild {sp} at {p}.",
+               "A wild {sp} wasted to nothing at {p}."],
+    "browsed": ["A deer browsed the young {ph} at {p}.",
+                "The young {ph} felt a deer's teeth at {p}.",
+                "Deer cropped the young {ph} at {p}."],
+    "picked": ["Berries were picked clean off {L} at {p}.",
+               "{L} gave its berries away at {p}."],
+    "recolonize": ["{n} {sp} slipped in from beyond the forest edge.",
+                   "From the wilds beyond, {n} {sp} arrived.",
+                   "The east wind brought {n} {sp} back to us."],
+    "arrival": ["A visitor {sp} entered the grove at {p}.",
+                "A {sp} appeared at {p}, then lingered."],
+    "departure": ["The visitor {sp} moved on, beyond the trees.",
+                  "The {sp} wandered on — the grove is small."],
+}
+
+_STOP = {"the", "an", "at", "and", "was", "a", "of", "in", "on", "for",
+         "with", "from", "by", "its", "his", "her", "into", "over",
+         "near", "then", "young", "base", "this", "that", "were", "are"}
+
 SYSTEM = (
     "You are the Chronicler of a living forest. ONE event is given: its "
     "data slot and a plain base sentence. Write ONE improved line (no "
@@ -25,12 +68,23 @@ SYSTEM = (
     "place the base sentence names — keep the subject words (species, "
     "creature, pond), reshape the rhythm and verbs. A complete little "
     "sentence; never an ellipsis; never another scene; never coordinates. "
+    "If recent lines are listed at the end, do not repeat their wording "
+    "or openings. "
     'Reply ONLY: {"text":"..."}'
 )
 
 
+def _stable(*vals):
+    a = 2166136261
+    for v in vals:
+        for b in str(v).encode():
+            a = (a * 16777619 + b) & 0x7fffffff
+    return a
+
+
 def _line(world, e):
-    """Deterministic fallback line (also fed to the model as its base)."""
+    """Deterministic fallback line: variant pools picked stably so the
+    same story reads differently across weeks."""
     kind = e["kind"]
     sp = e.get("sp")
     is_plant = sp in W.PLANT_SPECIES
@@ -39,50 +93,47 @@ def _line(world, e):
     name = e.get("name") or world["names"].get(str(e.get("plant")))
     plant_label = f"{name} the {ph}" if name else f"the {ph}"
 
-    if kind == "predation":
-        hunter = f"An {e['hunter']}" if e["hunter"] == "owl" \
-            else f"A {e['hunter']}"
-        return f"{hunter} took a wild {sp} at {place}."
-    if kind == "birth":
-        return f"{e.get('n', 1)} young {sp} born at {place}."
-    if kind == "fell":
-        cause = {"storm": "The storm", "blight": "A blight", "drought":
-                 "The drought", "age": "Great age", "withered": "Slow decline"}
-        head = cause.get(e.get("cause"), "Slow decline")
-        return f"{head} brought down {plant_label} at {place}."
-    if kind == "elder":
-        return (f"{name} the {ph} has reached its long years at {place}."
-                if name else
-                f"One {ph} has reached its long years at {place}.")
-    if kind == "oldage":
-        art = "An" if sp and sp[0] in "aeiou" else "A"
-        return f"{art} wild {sp}, grown old, lay down at {place}."
-    if kind == "starve":
-        art = "An" if sp and sp[0] in "aeiou" else "A"
-        return f"{art} wild {sp} starved at {place}."
-    if kind == "browsed":
-        return f"A deer browsed a young {ph} at {place}."
-    if kind == "picked":
-        return f"Berries were picked clean off {plant_label} at {place}."
-    if kind == "recolonize":
-        return f"{e.get('n', 2)} {sp} slipped in from beyond the forest edge."
-    if kind == "arrival":
-        return f"A visitor {sp} entered the grove at {place}."
-    if kind == "departure":
-        return f"The visitor {sp} moved on, beyond the trees."
-    if kind == "destiny":
-        label = f"{e.get('name')} the {sp}" if e.get("name") \
-            else f"the wild {sp}"
-        return f"As the soul foretold — {label}: {e.get('destiny', '')}"
-    if kind == "destiny_lost":
-        return f"Under the soul's watch, {sp} died and the prophecy was unheard."
     if kind == "turn":
         return _SEASON_LINES.get(e.get("season", 0), "A season turned.")
     if kind == "storm":
         return "A squall ran through the trees and was gone."
     if kind == "op":
         return e.get("intent") or f"The world soul kept its peace ({e.get('action')})."
-    return f"{kind} in {place}."
+    if kind == "destiny":
+        label = f"{e.get('name')} the {sp}" if e.get("name") \
+            else f"the wild {sp}"
+        return f"As the soul foretold — {label}: {e.get('destiny', '')}"
+    if kind == "destiny_lost":
+        return "Under the soul's watch, its creature died and the prophecy went unheard."
+
+    pool = _KIND_BONES.get(kind)
+    if not pool:
+        return f"{kind} in {place}."
+    seed, tick = world.get("seed", 0), e.get("tick", 0)
+    variant = pool[_stable(seed, tick, sp or 0, len(kind)) % len(pool)]
+
+    A = "An" if sp and sp[0] in "aeiou" else "A"
+    H = None
+    if kind == "predation":
+        hunter = e.get("hunter")
+        H = f"An {hunter}" if hunter == "owl" else (f"A {hunter}" if hunter else "Something")
+    L = plant_label if is_plant else e.get("name") and f"{e['name']} the {sp}"
+    bones_n = e.get("n", 1)
+    bones = {"sp": sp, "ph": ph, "p": place, "n": bones_n,
+             "A": A, "L": L if L else f"the {ph}",
+             "Be": "are" if bones_n > 1 else "is",
+             "H": H or "It",
+             "Cl": (_CAUSE_HEADS.get(
+                 e.get("cause") or "age", ("Slow decline",))[0]).lower(),
+             "sp2": e.get("hunter", sp), "C": _CAUSE_HEADS.get(
+                 e.get("cause") or "age", ("Slow decline",))[0],
+             "V": _CAUSE_VERBS[_stable(seed, tick, 7) % len(_CAUSE_VERBS)]}
+    if bones_n > 1 and "{L}" in variant and not name:
+        plural = ph + ("es" if ph.endswith("h") else "s")
+        bones["L"] = f"{bones_n} {plural}" if is_plant else \
+            f"{bones_n} wild {plural}"
+    line = variant.format(**bones)
+    return line[0].upper() + line[1:]
 
 
 def batch(events, world):
@@ -94,7 +145,7 @@ def batch(events, world):
             continue
         seen.add(key)
         keep = ("tick", "kind", "sp", "hunter", "n", "cause", "season",
-                "action", "strength")
+                "action", "region", "strength", "destiny")
         slot = {k: v for k, v in e.items() if k in keep and v is not None}
         slot["place"] = W.place(world, e.get("x"), e.get("y"))
         if e["kind"] == "op":   # regions become spoken places
@@ -104,23 +155,38 @@ def batch(events, world):
     return out
 
 
-def build_prompt(item):
-    """item: one batch dict with its eid 'e0'."""
-    return ("Grove — one event:\n"
-            f"{item['eid']} | "
-            f"{json.dumps(item['slot'], separators=(',', ':'))}"
-            f" | base: {item['template']}")
-
-
-_STOP = {"the", "an", "at", "and", "was", "a", "of", "in", "on", "for",
-         "with", "from", "by", "its", "his", "her", "into", "over",
-         "near", "then", "young", "base", "this", "that", "were", "are"}
+def build_prompt(item, recents=()):
+    """item: one batch dict with its eid 'e0'; recents: lines to avoid."""
+    prompt = ("Grove — one event:\n"
+              f"{item['eid']} | "
+              f"{json.dumps(item['slot'], separators=(',', ':'))}"
+              f" | base: {item['template']}")
+    if recents:
+        prompt += "\n\nRecent chronicle lines (avoid their wording):\n" + \
+                  "\n".join(f" - {r}" for r in recents[-4:])
+    return prompt
 
 
 def _anchors(base):
-    words = base.replace('"', " ").replace(".", " ").replace(",", " ") \
-        .replace(";", " ").split()
+    words = re.findall(r"[a-z'-]+", base.lower())
     return {w for w in words if len(w) >= 3 and w not in _STOP}
+
+
+def _is_echo(text, recents):
+    """True when the line closely overlaps a recent line (or is equal)."""
+    norm = text.strip().lower().rstrip(".!?")
+    words = {w for w in re.findall(r"[a-z']+", norm)
+             if len(w) > 3 and w not in _STOP}
+    for r in recents or ():
+        rn = r.strip().lower().rstrip(".!?")
+        if rn == norm:
+            return True
+        rw = {w for w in re.findall(r"[a-z']+", rn)
+              if len(w) > 3 and w not in _STOP}
+        uni = len(words | rw)
+        if uni and len(words & rw) / uni > 0.55:
+            return True
+    return False
 
 
 def _clean(text):
@@ -136,11 +202,10 @@ def _clean(text):
     return text[:LINE_CAP]
 
 
-def parse_single(result, expected_id, base):
-    """The requested line for ONE event: a flat {"text": ...} reply is
-    preferred (the shape small models hold best); the older
-    {"entries": [...]} shape is accepted too. Anchors decide: a line
-    that doesn't speak of the event's subject is discarded."""
+def parse_single(result, expected_id, base, recents=None):
+    """The requested line: flat {"text": ...} preferred, the older
+    {"entries": [...]} accepted; subject anchors + an echo guard
+    decide; None when the model is off-topic, repetitive or garbage."""
     if not isinstance(result, dict):
         return None
     cands = []
@@ -158,13 +223,12 @@ def parse_single(result, expected_id, base):
                 cands.append((str(it.get("id", "")).strip(), text))
     if not cands:
         return None
-    # content words that anchor the line to the event (species, hunter,
-    # place); a line with none of these is discarded
     anchors = _anchors(base)
     for eid, text in cands:
-        if eid == str(expected_id) and any(a in text for a in anchors):
-            return text          # right id and the right subject
+        if eid == str(expected_id) and any(a in text for a in anchors) \
+                and not _is_echo(text, recents):
+            return text
     for _eid, text in cands:
-        if any(a in text for a in anchors):
-            return text          # wrong id, right subject — still usable
-    return None                  # off-topic: keep the template
+        if any(a in text for a in anchors) and not _is_echo(text, recents):
+            return text
+    return None
