@@ -185,127 +185,162 @@ PAGE = r"""<!doctype html>
     --bg: #0c1210; --panel: #131c17; --panel-2: #0f1713;
     --line: #223329; --text: #d7e3d3; --dim: #7d9285;
     --moss: #7fc98f; --soul: #b9a7e0; --warn: #d8b471;
+    --glass: rgba(12, 19, 15, 0.74);
+    --glass-line: rgba(46, 68, 54, 0.45);
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     margin: 0; background: var(--bg); color: var(--text);
-    font: 16px/1.5 "Georgia", serif;
+    font: 16px/1.5 "Georgia", serif; overflow: hidden;
   }
-  .wrap { max-width: 1160px; margin: 0 auto; padding: 16px 14px 40px; }
-  h1 { font-size: 20px; margin: 6px 0 2px; letter-spacing: .04em; }
-  .sub { color: var(--dim); font-size: 13px; }
-  .row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; }
-  .card {
-    background: var(--panel); border: 1px solid var(--line);
-    border-radius: 10px; padding: 12px 14px; margin: 12px 0;
+  /* ============ the HUD stage ============ */
+  body:not(.plain) .wrap {
+    position: fixed; inset: 0; overflow: hidden;
   }
-  .map-scroll { overflow: auto;
-                height: calc(100vh - 288px);
-                height: calc(100dvh - 288px);
-                min-height: 320px;
-                background: radial-gradient(
-                    ellipse at 50% 30%,
-                    rgba(38, 58, 46, 0.35),
-                    rgba(12, 18, 16, 0.0) 70%); }
-  .map-scroll > * { margin: auto; }    /* centered when small, pannable */
-  #scene { display: block; cursor: pointer; border-radius: 8px; }
-  .zoomrow { display: flex; gap: 6px; align-items: center;
-             justify-content: center; margin: 6px 0 0; }
-  .zoomrow button { padding: 3px 10px; font-size: 13px; }
-  .zoomrow .on { border-color: var(--moss); color: var(--moss); }
-  .map { font-size: clamp(11px, 3.1vmin, 20px); line-height: 1.12;
-         letter-spacing: .08em; text-align: center; white-space: pre;
-         font-family: sans-serif; display: none; }
+  .title { position: absolute; top: 12px; left: 14px; z-index: 3;
+           text-shadow: 0 1px 8px rgba(0,0,0,0.8); pointer-events: none; }
+  h1 { font-size: 15px; margin: 0; letter-spacing: .16em; color: var(--dim); }
+  .sub { display: none; }
+  .panel {
+    position: absolute; border-radius: 12px;
+    background: var(--glass); border: 1px solid var(--glass-line);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    padding: 10px 12px;
+  }
+  .idbox { top: 10px; right: 12px; text-align: right;
+           max-width: min(420px, 62vw); }
+  .souline { top: 10px; left: 12px; max-width: min(430px, 60vw); }
+  .feed { left: 12px; bottom: 12px; width: min(470px, 62vw); }
+  .ctl { right: 12px; bottom: 12px; width: min(430px, 92vw); }
+  #bio { position: fixed; right: 12px; top: 96px; width: min(340px, 92vw);
+         max-height: 50vh; overflow: auto; z-index: 6; display: none;
+         box-shadow: 0 10px 34px rgba(0,0,0,0.55); }
+  #bio.on { display: block; }
+  /* the panels fade when the viewer is still: only the grove remains */
+  .hud { opacity: 0; transition: opacity .6s ease; z-index: 4;
+         position: absolute; inset: 0; pointer-events: none; }
+  body.hud-on .hud { opacity: 1; }
+  body.hud-on .hud > * { pointer-events: auto; }
+  .map-scroll { position: absolute; inset: 0; overflow: auto;
+                background: radial-gradient(ellipse at 50% 32%,
+                    rgba(40, 62, 48, 0.5), rgba(10, 15, 12, 0) 72%); }
+  #scene { display: block; cursor: pointer; border-radius: 0; }
   body.plain #scene { display: none; }
+  body.plain { overflow: auto; }
+  body.plain .wrap { position: static; padding: 16px; max-width: 1160px;
+                     margin: 0 auto; }
+  body.plain .panel, body.plain .bio { position: static; margin: 12px 0; }
+  body.plain .hud { position: static; opacity: 1; }
+  body.plain .map, body.plain { display: block; }
+  .map { font-size: 12px; line-height: 1.1; letter-spacing: .06em;
+         text-align: center; white-space: pre; font-family: sans-serif;
+         display: none; }
   body.plain .map { display: block; }
-  .chips { font-size: 14px; color: var(--dim); }
+  .row { display: flex; flex-wrap: wrap; gap: 6px 10px;
+         align-items: center; }
   .chip { background: var(--panel-2); border: 1px solid var(--line);
-          border-radius: 999px; padding: 2px 10px; margin-right: 6px; }
-  .soul { color: var(--soul); font-style: italic; min-height: 1.2em; }
+          border-radius: 999px; padding: 2px 10px; margin: 2px 0 2px 6px;
+          font-size: 13px; color: var(--dim); }
+  .chip .big { color: var(--text); }
+  .soul { color: var(--soul); font-style: italic; min-height: 1.2em;
+          font-size: 14px; }
   .soul.pulse::before { content: "☾ "; animation: pulse 1.6s infinite; }
   @keyframes pulse { 0%,100% { opacity: .35 } 50% { opacity: 1 } }
   button {
     background: var(--panel-2); color: var(--text);
     border: 1px solid var(--line); border-radius: 8px;
-    padding: 6px 14px; font: inherit; font-size: 14px; cursor: pointer;
+    padding: 5px 12px; font: inherit; font-size: 13.5px; cursor: pointer;
   }
   button:active { transform: translateY(1px); }
   button:disabled { opacity: .45; cursor: default; }
-  .chron { list-style: none; margin: 0; padding: 0; font-size: 15px; }
-  .chron li { padding: 2px 0; color: var(--text); }
-  .chron .when { color: var(--dim); font-size: 12px; margin-left: 8px; }
-  .mark-llm { color: var(--soul); }
-  .mark-voice { color: var(--moss); }
-  .mark-template { color: var(--dim); }
+  button.on { border-color: var(--moss); color: var(--moss); }
+  .zoomrow { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+  .zoomrow button { padding: 3px 9px; font-size: 12.5px; }
+  .zoomrow .hint { color: var(--dim); font-size: 11.5px; margin-left: auto; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+  .tabs button { padding: 3px 10px; font-size: 12.5px; }
+  .chron, .timeline { list-style: none; margin: 0; padding: 0; }
+  #chron { max-height: 34vh; overflow: auto; font-size: 13.5px; }
+  #chron li { padding: 2px 0; }
+  .chron .when { color: var(--dim); font-size: 11px; margin-left: 6px; }
+  .timeline { font-size: 13px; }
+  .timeline li { padding: 3px 0; border-top: 1px solid var(--line); }
+  .timeline .wk { color: var(--dim); font-size: 11px; display: inline-block;
+                  width: 40px; }
   .spark { font-family: "Menlo", monospace; color: var(--moss);
-           letter-spacing: 1px; font-size: 13px; }
-  .sparkline { display: flex; gap: 10px; align-items: baseline; }
-  .sparkline .name { width: 64px; color: var(--dim); font-size: 13px; }
-  .status { color: var(--dim); font-size: 12px; }
-  .err { color: var(--warn); }
-  #look { color: var(--moss); font-style: italic; font-size: 14px;
-          min-height: 1.4em; }
-  #bio { display: none; position: fixed; right: 14px; bottom: 16px;
-        width: min(360px, 92vw); max-height: 54vh; overflow: auto;
-        z-index: 5; box-shadow: 0 10px 34px rgba(0,0,0,0.55); }
-  #bio.on { display: block; }
+           letter-spacing: 1px; font-size: 12px; white-space: pre; }
+  .sparkline { display: flex; gap: 8px; align-items: baseline; }
+  .sparkline .name { width: 62px; color: var(--dim); font-size: 12px; }
+  #sparks { max-height: 32vh; overflow: auto; }
   .biohead { display: flex; justify-content: space-between;
              align-items: center; gap: 8px; }
-  .biohead h3 { margin: 0; font-size: 15px; }
+  .biohead h3 { margin: 0; font-size: 14px; }
   .biohead .x { cursor: pointer; border: none; background: none;
-                color: var(--dim); font-size: 16px;
-                padding: 0 2px 4px; }
-  .timeline { list-style: none; margin: 6px 0 0; padding: 0;
-              font-size: 13.5px; }
-  .timeline li { padding: 3px 0; border-top: 1px solid var(--line); }
-  .timeline .wk { color: var(--dim); font-size: 11px;
-                  display: inline-block; width: 40px; }
+                color: var(--dim); font-size: 15px; padding: 0 2px 4px; }
   #followBtn.on { border-color: var(--moss); color: var(--moss); }
   #qinput { background: var(--panel-2); color: var(--text);
             border: 1px solid var(--line); border-radius: 8px;
-            padding: 6px 10px; font: inherit; font-size: 14px;
-            flex: 1; min-width: 130px; }
-  #askout { flex-basis: 100%; }
-  h2 { font-size: 13px; color: var(--dim); text-transform: uppercase;
-       letter-spacing: .12em; margin: 4px 0 8px; font-family: sans-serif; }
+            padding: 5px 10px; font: inherit; font-size: 13.5px;
+            flex: 1; min-width: 110px; }
+  #look { color: var(--moss); font-style: italic; font-size: 13px;
+          min-height: 1.2em; }
+  #askout { flex-basis: 100%; font-size: 13px; }
+  .status, .llmstat { color: var(--dim); font-size: 11.5px; }
+  .err { color: var(--warn); }
+  .card { background: var(--panel); border: 1px solid var(--line);
+          border-radius: 10px; padding: 12px 14px; }
+  body.plain .card { margin: 12px 0; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>☁ ☾ Grove</h1>
-  <div class="sub">a forest world run by a small local soul</div>
-
-  <div class="row" style="margin-top:12px">
-    <div class="chip" id="when">…</div>
-    <div class="chip" id="weather">…</div>
-    <div class="chip" id="pops">…</div>
+  <div class="map-scroll" id="scroller">
+    <canvas id="scene"></canvas>
+    <pre class="map" id="map">…</pre>
   </div>
+  <div class="hud" id="hud">
+    <div class="panel title">☁ ☾ grove</div>
 
-  <div class="card" style="padding:8px">
-    <div class="map-scroll">
-      <canvas id="scene"></canvas>
-      <pre class="map" id="map">…</pre>
+    <div class="panel idbox" id="idbox">
+      <span class="chip" id="when">…</span>
+      <span class="chip" id="weather">…</span>
+      <span class="chip" id="pops">…</span>
     </div>
-    <div class="zoomrow">
-      <button id="zoomFit" class="on">fit</button>
-      <button id="zoom1x">1.5×</button>
-      <button id="zoom2x">2×</button>
-      <span class="status" id="zoomHint">click a tile to inspect</span>
-    </div>
-  </div>
 
-  <div class="card">
-    <div id="look"></div>
-    <div class="row">
-      <button id="pauseBtn">⏸ pause</button>
-      <button id="stepBtn">+ one week</button>
-      <button id="soulBtn">☾ invite the soul</button>
-      <span class="soul" id="soul"></span>
+    <div class="panel souline">
+      <div class="soul" id="soul"></div>
+      <div class="llmstat" id="status">…</div>
     </div>
-    <div class="row" style="margin-top:8px">
-      <input id="qinput" placeholder="ask the grove — a name, a season, a fate…">
-      <button id="askBtn">ask ☾</button>
-      <span class="soul" id="askout"></span>
+
+    <div class="panel feed">
+      <div class="tabs">
+        <button class="on" id="tabChron">chronicle</button>
+        <button id="tabCensus">census</button>
+      </div>
+      <ul class="chron" id="chron"></ul>
+      <div id="sparks" hidden></div>
+      <div class="status" id="look"></div>
+    </div>
+
+    <div class="panel ctl">
+      <div class="row">
+        <button id="pauseBtn">⏸ pause</button>
+        <button id="stepBtn">+ week</button>
+        <button id="soulBtn">☾ soul</button>
+        <button id="fsBtn">⛶ full</button>
+      </div>
+      <div class="zoomrow">
+        <button id="zoomFit" class="on">fit</button>
+        <button id="zoom1x">1.5×</button>
+        <button id="zoom2x">2×</button>
+        <span class="hint">move to wake · c calm · f full</span>
+      </div>
+      <div class="row" style="margin-top:7px">
+        <input id="qinput" placeholder="ask the grove…">
+        <button id="askBtn">ask ☾</button>
+      </div>
+      <div class="soul" id="askout"></div>
     </div>
   </div>
 
@@ -318,18 +353,6 @@ PAGE = r"""<!doctype html>
     <div class="status" id="bioState"></div>
     <ul class="timeline" id="bioRows"></ul>
   </div>
-
-  <div class="card">
-    <h2>Chronicle</h2>
-    <ul class="chron" id="chron"></ul>
-  </div>
-
-  <div class="card">
-    <h2>Seasons past (36 weeks)</h2>
-    <div id="sparks"></div>
-  </div>
-
-  <div class="status" id="status">…</div>
 </div>
 <script>
 "use strict";
@@ -967,7 +990,7 @@ cnv.addEventListener("click", e => {
                                             sp: a.sp, n: a.n });
   for (const t of s.plants || [])
     if (t.x === x && t.y === y && t.st !== "log") here.push(
-      { id: t.id, kind: "plant", sp: t.sp, n: t.n });
+      { id: t.id, kind: "plant", sp: t.sp, st: t.st, n: t.n });
   const named = here.filter(t => t.n);
   if (named.length === 1 || here.length === 1) {
     const one = named[0] || here[0];
@@ -1068,6 +1091,49 @@ function trackFollow(glide) {
   sc.scrollLeft += (px - sc.clientWidth / 2 - sc.scrollLeft) * 0.14;
   sc.scrollTop += (py - sc.clientHeight / 2 - sc.scrollTop) * 0.14;
 }
+
+/* ============ the HUD's life: waking, calm, fullscreen, tabs ============ */
+const WAKE_MS = 4200;
+let wakeAt = performance.now();
+function wakeHud() {
+  wakeAt = performance.now();
+  document.body.classList.add("hud-on");
+}
+for (const ev of ["mousemove", "mousedown", "wheel", "keydown",
+                  "touchstart"])
+  window.addEventListener(ev, wakeHud, { passive: true });
+document.body.classList.add("hud-on");
+
+$("tabChron").onclick = () => {
+  $("chron").hidden = false; $("sparks").hidden = true;
+  $("tabChron").classList.add("on"); $("tabCensus").classList.remove("on");
+};
+$("tabCensus").onclick = () => {
+  $("chron").hidden = true; $("sparks").hidden = false;
+  $("tabCensus").classList.add("on"); $("tabChron").classList.remove("on");
+};
+
+let calm = false;
+function setHudVisibility() {
+  const idle = performance.now() - wakeAt > WAKE_MS;
+  const reading = document.getElementById("bio") &&
+      document.getElementById("bio").classList.contains("on");
+  document.body.classList.toggle("hud-on", !calm && (!idle || reading));
+}
+setInterval(setHudVisibility, 400);
+window.addEventListener("keydown", e => {
+  if (e.target && e.target.tagName === "INPUT") return;
+  if (e.code === "Space") { e.preventDefault(); $("pauseBtn").onclick(); }
+  else if (e.key === "s") { if (!$("stepBtn").disabled) $("stepBtn").onclick(); }
+  else if (e.key === "n") $("soulBtn").onclick();
+  else if (e.key === "f") $("fsBtn").onclick();
+  else if (e.key === "c") { calm = !calm; setHudVisibility(); }
+});
+$("fsBtn").onclick = () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen().then(() =>
+    setTimeout(() => { if (ST.s && ST.s.size) fitCanvas(ST.s.size); }, 250));
+};
 
 poll(); setInterval(poll, 600);
 requestAnimationFrame(loop);
