@@ -46,22 +46,32 @@ class SimRunner(threading.Thread):
 
     def run(self):
         while not self.stopping.is_set():
-            if self.paused:
-                if self.steps_requested > 0:
-                    self.steps_requested = 0
-                    with self.lock:
-                        _evs, notable = self.grove.step()
-                        self.grove.apply_results()
-                        self.grove.maybe_schedule(notable)
-                        self.last_step_at = time.time()
-                self.stopping.wait(0.15)
-                continue
-            with self.lock:
-                _evs, notable = self.grove.step()
-                self.grove.apply_results()
-                self.grove.maybe_schedule(notable)
-                self.last_step_at = time.time()
-            self.stopping.wait(self.tick_seconds)
+            try:
+                self._beat()
+            except Exception as e:
+                # the world's heartbeat survives anything: a bad sim week,
+                # a bad LLM payload, even our own diagnostics
+                import sys
+                print(f"grove: runner error: {e}", file=sys.stderr)
+                self.stopping.wait(1.0)
+
+    def _beat(self):
+        if self.paused:
+            if self.steps_requested > 0:
+                self.steps_requested = 0
+                with self.lock:
+                    _evs, notable = self.grove.step()
+                    self.grove.apply_results()
+                    self.grove.maybe_schedule(notable)
+                    self.last_step_at = time.time()
+            self.stopping.wait(0.15)
+            return
+        with self.lock:
+            _evs, notable = self.grove.step()
+            self.grove.apply_results()
+            self.grove.maybe_schedule(notable)
+            self.last_step_at = time.time()
+        self.stopping.wait(self.tick_seconds)
 
 
 def snapshot(grove, runner, lock):

@@ -3,6 +3,7 @@ background LLM worker. Used by the CLI (grove/__main__.py) and the web
 dashboard (grove/web.py).
 """
 
+import json
 import os
 import queue
 import random
@@ -227,7 +228,7 @@ class Grove:
                 w["name_pool"].pop(0)
         return submitted
 
-    # -- LLM results (run mode) ---------------------------------------------
+    # -- LLM results (run/web mode) -----------------------------------------
     def apply_results(self):
         if self.worker is None:
             return
@@ -236,35 +237,44 @@ class Grove:
                 res = self.worker.results.get_nowait()
             except queue.Empty:
                 break
-            kind = res["kind"]
-            if kind == "op":
-                effect = operator.validate(res["data"])
-                self.world["pending_effect"] = effect
-                self.soul_line = (f"{effect['action']} {effect['region']}"
-                                  f" — {effect['intent']}")
-                self.soul_tick = self.world["tick"]
-                self.jobs["op_applied"] += 1
-            elif kind == "chron":
-                text = None
-                if res["ok"]:
-                    text = chronicler.parse_single(
-                        res["data"], "e0", res["extra"]["base"])
-                if text:
-                    self.db.cache_set(res["extra"]["key"], text)
-                    self.db.update_text(res["extra"]["key"], text)
-                    self.jobs["chron_ok"] += 1
-                else:
-                    self.jobs["chron_rejected"] += 1
-                    self.jobs["last_reject"] = {
-                        "base": res["extra"]["base"][:110],
-                        "ok": res["ok"],
-                        "reason": getattr(self.llm, "reason", ""),
-                        "reply": (json.dumps(res["data"]) if res["data"]
-                                  else getattr(self.llm, "last_raw", "")
-                                  or "")[:150],
-                    }
-            elif kind == "voice":
-                self._apply_voice(res)
+            # one bad result must never take down the drain loop
+            try:
+                self._apply_one(res)
+            except Exception as e:
+                self.jobs["handler_errors"] = \
+                    self.jobs.get("handler_errors", 0) + 1
+                print(f"grove: result handler error: {e}", file=sys.stderr)
+
+    def _apply_one(self, res):
+        kind = res["kind"]
+        if kind == "op":
+            effect = operator.validate(res["data"])
+            self.world["pending_effect"] = effect
+            self.soul_line = (f"{effect['action']} {effect['region']}"
+                              f" — {effect['intent']}")
+            self.soul_tick = self.world["tick"]
+            self.jobs["op_applied"] += 1
+        elif kind == "chron":
+            text = None
+            if res["ok"]:
+                text = chronicler.parse_single(
+                    res["data"], "e0", res["extra"]["base"])
+            if text:
+                self.db.cache_set(res["extra"]["key"], text)
+                self.db.update_text(res["extra"]["key"], text)
+                self.jobs["chron_ok"] += 1
+            else:
+                self.jobs["chron_rejected"] += 1
+                self.jobs["last_reject"] = {
+                    "base": res["extra"]["base"][:110],
+                    "ok": res["ok"],
+                    "reason": getattr(self.llm, "reason", ""),
+                    "reply": (json.dumps(res["data"]) if res["data"]
+                              else getattr(self.llm, "last_raw", "")
+                              or "")[:150],
+                }
+        elif kind == "voice":
+            self._apply_voice(res)
 
     def _apply_voice(self, res):
         w = self.world

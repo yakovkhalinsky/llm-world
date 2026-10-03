@@ -62,12 +62,19 @@ def cmd_run(args):
         time.sleep(1.0)
     try:
         while True:
-            if not paused:
-                _evs, notable = g.step()
-                g.apply_results()
-                g.maybe_schedule(notable)
-            else:
-                g.apply_results()
+            try:
+                if not paused:
+                    _evs, notable = g.step()
+                    g.apply_results()
+                    g.maybe_schedule(notable)
+                else:
+                    g.apply_results()
+            except Exception as e:
+                # the grove survives its own bad weeks (and our diagnostics)
+                import traceback
+                traceback.print_exc()
+                time.sleep(1.0)
+                continue
             # the soul's decision lands at the next tick boundary
             soul_line = None
             if g.soul_tick >= 0 and g.world.get("pending_effect"):
