@@ -211,7 +211,7 @@ PAGE = r"""<!doctype html>
   .idbox { top: 10px; right: 12px; text-align: right;
            max-width: min(420px, 62vw); }
   .souline { top: 10px; left: 12px; max-width: min(430px, 60vw); }
-  .feed { left: 12px; bottom: 12px; width: min(470px, 62vw); }
+  .feed { left: 12px; bottom: 12px; width: min(560px, 62vw); }
   .ctl { right: 12px; bottom: 12px; width: min(430px, 92vw); }
   #bio { position: fixed; right: 12px; top: 96px; width: min(340px, 92vw);
          max-height: 50vh; overflow: auto; z-index: 6; display: none;
@@ -272,7 +272,7 @@ PAGE = r"""<!doctype html>
            letter-spacing: 1px; font-size: 12px; white-space: pre; }
   .sparkline { display: flex; gap: 8px; align-items: baseline; }
   .sparkline .name { width: 62px; color: var(--dim); font-size: 12px; }
-  #sparks { max-height: 32vh; overflow: auto; }
+  #sparks { max-height: unset; overflow: visible; }
   .biohead { display: flex; justify-content: space-between;
              align-items: center; gap: 8px; }
   .biohead h3 { margin: 0; font-size: 14px; }
