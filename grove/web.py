@@ -210,7 +210,7 @@ PAGE = r"""<!doctype html>
   }
   .idbox { top: 10px; right: 12px; text-align: right;
            max-width: min(420px, 62vw); }
-  .souline { top: 10px; left: 12px; max-width: min(430px, 60vw); }
+  .souline { top: 42px; left: 12px; max-width: min(430px, 60vw); }
   .feed { left: 12px; bottom: 12px; width: min(560px, 62vw); }
   .ctl { right: 12px; bottom: 12px; width: min(430px, 92vw); }
   #bio { position: fixed; right: 12px; top: 96px; width: min(340px, 92vw);
