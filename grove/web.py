@@ -198,22 +198,22 @@ PAGE = r"""<!doctype html>
   body:not(.plain) .wrap {
     position: fixed; inset: 0; overflow: hidden;
   }
-  .title { position: absolute; top: 12px; left: 14px; z-index: 3;
+  .title { position: absolute; top: 16px; left: 18px; z-index: 3;
            text-shadow: 0 1px 8px rgba(0,0,0,0.8); pointer-events: none; }
-  h1 { font-size: 15px; margin: 0; letter-spacing: .16em; color: var(--dim); }
+  h1 { font-size: 15px; margin: 0; letter-spacing: .2em; color: var(--dim); }
   .sub { display: none; }
   .panel {
-    position: absolute; border-radius: 12px;
+    position: absolute; border-radius: 14px;
     background: var(--glass); border: 1px solid var(--glass-line);
     backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-    padding: 10px 12px;
+    padding: 14px 18px 13px;
   }
-  .idbox { top: 10px; right: 12px; text-align: right;
-           max-width: min(420px, 62vw); }
-  .souline { top: 42px; left: 12px; max-width: min(430px, 60vw); }
-  .feed { left: 12px; bottom: 12px; width: min(560px, 62vw); }
-  .ctl { right: 12px; bottom: 12px; width: min(430px, 92vw); }
-  #bio { position: fixed; right: 12px; top: 96px; width: min(340px, 92vw);
+  .idbox { top: 14px; right: 16px; text-align: right;
+           max-width: min(420px, 60vw); }
+  .souline { top: 52px; left: 16px; max-width: min(430px, 60vw); }
+  .feed { left: 16px; bottom: 16px; width: min(560px, 60vw); }
+  .ctl { right: 16px; bottom: 16px; width: min(430px, 92vw); }
+  #bio { position: fixed; right: 16px; top: 108px; width: min(340px, 88vw);
          max-height: 50vh; overflow: auto; z-index: 6; display: none;
          box-shadow: 0 10px 34px rgba(0,0,0,0.55); }
   #bio.on { display: block; }
@@ -241,10 +241,10 @@ PAGE = r"""<!doctype html>
          text-align: center; white-space: pre; font-family: sans-serif;
          display: none; }
   body.plain .map { display: block; }
-  .row { display: flex; flex-wrap: wrap; gap: 6px 10px;
+  .row { display: flex; flex-wrap: wrap; gap: 8px 10px;
          align-items: center; }
   .chip { background: var(--panel-2); border: 1px solid var(--line);
-          border-radius: 999px; padding: 2px 10px; margin: 2px 0 2px 6px;
+          border-radius: 999px; padding: 3px 12px; margin-left: 7px;
           font-size: 13px; color: var(--dim); }
   .chip .big { color: var(--text); }
   .soul { color: var(--soul); font-style: italic; min-height: 1.2em;
@@ -259,14 +259,15 @@ PAGE = r"""<!doctype html>
   button:active { transform: translateY(1px); }
   button:disabled { opacity: .45; cursor: default; }
   button.on { border-color: var(--moss); color: var(--moss); }
-  .zoomrow { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+  .zoomrow { display: flex; gap: 8px; align-items: center; margin: 10px 2px 2px; }
   .zoomrow button { padding: 3px 9px; font-size: 12.5px; }
   .zoomrow .hint { color: var(--dim); font-size: 11.5px; margin-left: auto; }
-  .tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+  .tabs { display: flex; gap: 8px; margin: 2px 0 10px; }
   .tabs button { padding: 3px 10px; font-size: 12.5px; }
   .chron, .timeline { list-style: none; margin: 0; padding: 0; }
-  #chron { max-height: 34vh; overflow: auto; font-size: 13.5px; }
-  #chron li { padding: 2px 0; }
+  #chron { max-height: 34vh; overflow: auto; font-size: 13.5px;
+           line-height: 1.55; }
+  #chron li { padding: 4px 0; }
   .chron .when { color: var(--dim); font-size: 11px; margin-left: 6px; }
   .timeline { font-size: 13px; }
   .timeline li { padding: 3px 0; border-top: 1px solid var(--line); }
@@ -340,7 +341,7 @@ PAGE = r"""<!doctype html>
         <button id="zoom2x">2×</button>
         <span class="hint">move to wake · c calm · f full</span>
       </div>
-      <div class="row" style="margin-top:7px">
+      <div class="row" style="margin-top:10px">
         <input id="qinput" placeholder="ask the grove…">
         <button id="askBtn">ask ☾</button>
       </div>
