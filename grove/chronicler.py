@@ -1,11 +1,13 @@
 """Chronicler: turns events into one-line chronicle entries.
 
-Template lines are computed immediately (they show instantly in the feed);
-the LLM versions replace them when a background call succeeds. Both are
-cached by event signature so replays cost nothing.
+Each call narrates ONE event (small models handle single-entry JSONs
+far better than arrays and phantom ids). Template lines are what the
+world shows instantly; a background LLM call replaces them, and a line
+the model got wrong (off-topic, hallucinated, garbage) is discarded.
 """
 
 import json
+import re
 
 from . import events as E
 from . import world as W
@@ -16,18 +18,15 @@ _SEASON_LINES = {0: "Spring came to the grove.", 1: "Summer came to the grove.",
                  2: "Autumn came to the grove.",
                  3: "Winter came to the grove."}
 
-_SYSTEM = (
-    "You are the Chronicler of a living forest. You receive events, each "
-    "with an id (e0, e1, ...), a data slot, and a plain 'base' sentence. "
-    "For EVERY event return exactly one rewritten line of at most 88 "
-    "characters: more vivid than its base, but strictly about the same "
-    "happening — never add animals, plants or weather not present in the "
-    "data or base. Vary your openings; consecutive lines must not start "
-    "the same way or repeat a pattern. Speak of places as they are named "
-    "in the data ('the pond's edge', 'the south-east woods') — never use "
-    "letter-and-number coordinates. Use the creature or tree name if "
-    "given. No moralizing. "
-    'Reply ONLY as JSON: {"entries":[{"id":"e0","text":"..."}, ...]}'
+SYSTEM = (
+    "You are the Chronicler of a living forest. ONE event is given, with "
+    "id e0, a data slot, and its plain base sentence. Reply with ONE line "
+    "of at most 88 characters rewriting it: more vivid than the base, "
+    "but strictly about the same happening — name the same animals or "
+    "plants only, speak of places as named ('the pond's edge', 'the "
+    "north-west woods'), never coordinates. Do not reuse the base wording "
+    "exactly. "
+    'Reply ONLY as JSON: {"entries":[{"id":"e0","text":"..."}]}'
 )
 
 
@@ -82,11 +81,7 @@ def _line(world, e):
 
 
 def batch(events, world):
-    """Prepare a chronicle batch.
-
-    Returns list of dicts: {key, tick, template, slot, place}. The slot for
-    prose carries no coordinates — places are named (pond's edge, woods).
-    """
+    """Prepare chronicle items: {key, tick, template, slot}."""
     out, seen = [], set()
     for e in events:
         key = E.event_key(e)
@@ -99,37 +94,67 @@ def batch(events, world):
         slot["place"] = W.place(world, e.get("x"), e.get("y"))
         if e["kind"] == "op":   # regions become spoken places
             slot["place"] = W.PLACE_WORDS.get(e.get("region"), "the grove")
-        template = _line(world, e)
-        out.append({"key": key, "tick": e["tick"], "template": template,
-                    "slot": slot})
+        out.append({"key": key, "tick": e["tick"],
+                    "template": _line(world, e), "slot": slot})
     return out
 
 
-def build_prompt(items):
-    items = [dict(it, eid=it.get("eid", f"e{i}"))
-             for i, it in enumerate(items)]
-    return "Grove — events for the chronicle:\n" + "\n".join(
-        f"{it['eid']} | {json.dumps(it['slot'], separators=(',', ':'))}"
-        f" | base: {it['template']}" for it in items)
+def build_prompt(item):
+    """item: one batch dict with its eid 'e0'."""
+    return ("Grove — one event:\n"
+            f"{item['eid']} | "
+            f"{json.dumps(item['slot'], separators=(',', ':'))}"
+            f" | base: {item['template']}")
 
 
-def parse(result, items):
-    """Map model output back onto items; text None where the model failed."""
-    got = {}
-    if isinstance(result, dict):
-        for item in result.get("entries", []):
-            if isinstance(item, dict) and "id" in item and "text" in item:
-                text = str(item["text"]).strip().splitlines()
-                if text and 0 < len(text[0]) <= LINE_CAP * 2:
-                    got[str(item["id"])] = text[0]
-    results = []
-    for item in items:
-        text = got.get(item["eid"])
-        if text:
-            text = text.rstrip("}").strip()   # 1B models sometimes leak a '}''
-            text = text.rstrip(".") + "." if text and not \
-                text.endswith((".", "!", "?", "…")) else text
-            if not text:
-                text = None
-        results.append((item["eid"], text))
-    return results
+_STOP = {"the", "an", "at", "and", "was", "a", "of", "in", "on", "for",
+         "with", "from", "by", "its", "his", "her", "into", "over",
+         "near", "then", "young", "base", "this", "that", "were", "are"}
+
+
+def _anchors(base):
+    words = base.replace('"', " ").replace(".", " ").replace(",", " ") \
+        .replace(";", " ").split()
+    return {w for w in words if len(w) >= 3 and w not in _STOP}
+
+
+def _clean(text):
+    text = text.strip().splitlines()[0].rstrip("}").strip()
+    if re.search(r"[a-z_]+\s*:\s*[\d\"{]", text):
+        return None          # the model restated the data slot, not prose
+    if len(text.split()) < 3:
+        return None
+    if not text:
+        return None
+    if not text.endswith((".", "!", "?", "…")):
+        text += "."
+    return text[:LINE_CAP]
+
+
+def parse_single(result, expected_id, base):
+    """One event's requested line: matching id if given, else any entry
+    that clearly speaks of the same subject; None when the model is off
+    on a hallucination or writes garbage."""
+    if not isinstance(result, dict):
+        return None
+    entries = result.get("entries")
+    if not isinstance(entries, list):
+        return None
+    # content words that anchor the line to the event (species, hunter,
+    # place); a line with none of these is discarded
+    anchors = _anchors(base)
+    cands = []
+    for it in entries:
+        if not (isinstance(it, dict) and str(it.get("id", "")).strip()
+                and it.get("text")):
+            continue
+        text = _clean(str(it["text"]))
+        if text and len(text) <= LINE_CAP:
+            cands.append((str(it["id"]).strip(), text))
+    for eid, text in cands:
+        if eid == expected_id and any(a in text for a in anchors):
+            return text          # right id and the right subject
+    for _eid, text in cands:
+        if any(a in text for a in anchors):
+            return text          # wrong id, right subject — still usable
+    return None                  # off-topic or id-empty: keep the template

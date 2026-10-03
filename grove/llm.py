@@ -54,8 +54,9 @@ class LLM:
             return json.loads(resp.read().decode())
 
     def chat_json(self, system, user, schema, max_tokens=160,
-                  temperature=0.8, timeout=None):
-        """One structured completion. dict on success, None on any failure."""
+                  temperature=0.8, timeout=None, retries=1):
+        """One structured completion, retried on unparseable output.
+        dict on success, None on any failure — callers fall back."""
         if not self.enabled:
             return None
         payload = {
@@ -68,26 +69,30 @@ class LLM:
                         "temperature": temperature},
             "keep_alive": "30m",
         }
-        t0 = time.time()
-        try:
-            resp = self._request("POST", "/api/chat", payload)
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
-            self.reason = f"call failed: {e}"
-            return None
-        finally:
-            self.latency = time.time() - t0
-        content = (resp.get("message") or {}).get("content", "")
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            m = re.search(r"\{[\s\S]*\}", content)
-            if m:
-                try:
-                    return json.loads(m.group(0))
-                except json.JSONDecodeError:
-                    pass
-            self.reason = "unparseable JSON"
-            return None
+        timeout = timeout or self.timeout
+        for attempt in range(retries + 1):
+            t0 = time.time()
+            try:
+                resp = self._request("POST", "/api/chat", payload)
+            except (urllib.error.URLError, TimeoutError, OSError) as e:
+                self.reason = f"call failed: {e}"
+                self.latency = time.time() - t0
+                return None
+            finally:
+                self.latency = time.time() - t0
+            content = (resp.get("message") or {}).get("content", "")
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                m = re.search(r"\{[\s\S]*\}", content)
+                if m:
+                    try:
+                        return json.loads(m.group(0))
+                    except json.JSONDecodeError:
+                        pass
+            self.reason = "unparseable JSON (retrying)" \
+                if attempt < retries else "unparseable JSON"
+        return None
 
 
 def status_line(llm):

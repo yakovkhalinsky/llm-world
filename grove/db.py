@@ -24,7 +24,7 @@ class DB:
     def __init__(self, path):
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         self.path = path
-        self.con = sqlite3.connect(path, timeout=30)
+        self.con = sqlite3.connect(path, timeout=30, check_same_thread=False)
         self.con.executescript(SCHEMA)
         self.con.commit()
 

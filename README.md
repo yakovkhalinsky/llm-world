@@ -34,6 +34,32 @@ WEEK 41 · SPRING · 🌧 rain   🐇38 🦌16 🦊9 🦉4 🐦22 🐗6
 Keys in watch mode: `space` pause · `s` step · `n` invite the soul now ·
 `q` quit. Nothing is ever lost — every week is saved to SQLite.
 
+## Viewing it from another device
+
+`grove web` serves a live dashboard (map, soul line, chronicle, population
+sparklines, pause/step controls) over plain HTTP — no build step, works
+offline, one hand-written page:
+
+```sh
+./grove.sh web                  # loopback only (for an ssh tunnel)
+./grove.sh web --public         # reachable from any device on the LAN
+```
+
+- **Same network (LAN):** with `--public`, open `http://<this-box-ip>:8787`
+  on a phone or laptop. (`hostname -I` shows the address.)
+- **Anywhere, if you use Tailscale:** with `--public`, the box's
+  Tailscale address (`tailscale ip -4`) works from any tailnet device.
+- **Or tunnel, without opening the port:** plain `grove web` (loopback),
+  then `ssh -N -L 8787:localhost:8787 yakov@<this-box>` and open
+  `http://localhost:8787` on the other machine.
+- **No browser at all:** `ssh` in and run `./grove.sh run` inside
+  `tmux` (or `nohup ./grove.sh web & > grove.log`) — the terminal view is
+  the same world, and detach/reattach as you like.
+
+Leave it running detached with `tmux` (recommended) or
+`nohup ./grove.sh run-forever 2>&1` style scripts; use `cron`/`systemd`
+if you want the grove to wake up on boot.
+
 ```sh
 ./grove.sh step 200 --offline   # simulate 8+ years headless, fast
 ./grove.sh map                  # render the current map
@@ -92,11 +118,12 @@ same actions ⇒ same world. Tuning constants sit at the top of that file.
 | `grove/llm.py` | Ollama client (JSON-schema chats, never raises) |
 | `grove/render.py` | the emoji map + header + chronicle feed |
 | `grove/db.py` | SQLite: world snapshot, stats, events, chronicle, cache |
-| `grove/__main__.py` | CLI + run loop + background worker |
+| `grove/app.py` | shared runner (used by CLI and web) |
+| `grove/web.py` | the local dashboard: one HTML page + JSON state API |
+| `grove/__main__.py` | CLI + run loop |
 
 ## Ideas on the shelf
 
-- `grove/web.py`: single-file local dashboard (map + chronicle + stats)
 - playable character mode (walk in and talk to the animals)
 - seasons' effect on names ("the winter fox"), wolf packs, bear dens
 - nomic-embed memory: "ask the grove what happened last spring"
