@@ -197,9 +197,16 @@ PAGE = r"""<!doctype html>
     background: var(--panel); border: 1px solid var(--line);
     border-radius: 10px; padding: 12px 14px; margin: 12px 0;
   }
-  .map-scroll { overflow: auto; max-height: 86vh; }
-  #scene { width: 100%; height: auto; display: block; cursor: pointer;
-           border-radius: 8px; }
+  .map-scroll { overflow: auto;
+                height: calc(100vh - 288px);
+                height: calc(100dvh - 288px);
+                min-height: 320px;
+                background: radial-gradient(
+                    ellipse at 50% 30%,
+                    rgba(38, 58, 46, 0.35),
+                    rgba(12, 18, 16, 0.0) 70%); }
+  .map-scroll > * { margin: auto; }    /* centered when small, pannable */
+  #scene { display: block; cursor: pointer; border-radius: 8px; }
   .zoomrow { display: flex; gap: 6px; align-items: center;
              justify-content: center; margin: 6px 0 0; }
   .zoomrow button { padding: 3px 10px; font-size: 13px; }
@@ -384,17 +391,38 @@ const DPR = Math.max(1.5, window.devicePixelRatio || 1);
 /* art factor: everything drawn scales with the tile size */
 const K = TW / 30;
 let OX = 0, OY = 0, CW = 0, CH = 0;
+/* contain-fit: the scene takes whatever room the window gives it,
+   drawn at device resolution so zoom stays sharp; only re-fits when
+   the size, zoom or window box actually changed */
+let VIEW = { dw: 0, dh: 0, zoom: 1 };
 function fitCanvas(size) {
+  const sc = document.querySelector(".map-scroll");
+  const availW = (sc ? sc.clientWidth : window.innerWidth - 20) || 600;
+  const availH = (sc ? sc.clientHeight : window.innerHeight - 200) || 400;
   const w = (size - 1) * TW + TW + PADX * 2;
   const h = (size - 1) * TH + TH + PADY * 2;
-  if (cnv.width !== Math.round(w * DPR)) {
-    CW = w; CH = h;
-    cnv.width = Math.round(w * DPR); cnv.height = Math.round(h * DPR);
-    cnv.style.aspectRatio = `${w} / ${h}`;
-    OX = w / 2;  OY = PADY;          // (0,0) sits at the top corner
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const key = `${size}|${VIEW.zoom}|${Math.round(availW)}x${Math.round(availH)}`;
+  if (fitCanvas.key === key) return;
+  fitCanvas.key = key;
+  CW = w; CH = h;
+  if (VIEW.zoom === 1) {
+    VIEW.dw = Math.min(availW, availH * w / h);
+    VIEW.dh = VIEW.dw * h / w;                 // contain: both fit
+  } else {
+    VIEW.dw = availW * VIEW.zoom;              // zoom wins; user pans
+    VIEW.dh = VIEW.dw * h / w;
   }
+  cnv.width = Math.round(VIEW.dw * DPR);
+  cnv.height = Math.round(VIEW.dh * DPR);
+  cnv.style.width = `${Math.round(VIEW.dw)}px`;
+  cnv.style.height = `${Math.round(VIEW.dh)}px`;
+  OX = w / 2;  OY = PADY;          // (0,0) sits at the top corner
+  const s = VIEW.dw * DPR / w;     // logical → buffer pixels
+  ctx.setTransform(s, 0, 0, s, 0, 0);
 }
+window.addEventListener("resize", () => {
+  if (ST.s && ST.s.size) fitCanvas(ST.s.size);
+});
 /* cell (x, y) → screen position of the diamond's center */
 function iso(x, y) { return [OX + (x - y) * TW / 2, OY + (x + y) * TH / 2]; }
 
@@ -906,15 +934,17 @@ cnv.addEventListener("click", e => {
     ? "Here: " + bits.slice(1).join(" · ") : "Here: " + bits[0];
 });
 
-/* zoom: fit / 1.5x / 2x — the scroller pans when zoomed */
-const ZOOMS = [["zoomFit", "100%"], ["zoom1x", "160%"], ["zoom2x", "220%"]];
-for (const [zid, pct] of ZOOMS)
+/* zoom: fit / 1.5x / 2x — real levels; the scroller pans when zoomed */
+const zoomLevels = [["zoomFit", 1], ["zoom1x", 1.6], ["zoom2x", 2.2]];
+for (const [zid, z] of zoomLevels)
   $(zid).onclick = () => {
-    cnv.style.width = pct;
-    for (const [oid, opct] of ZOOMS)
+    VIEW.zoom = z;
+    fitCanvas.key = null;
+    if (ST.s && ST.s.size) fitCanvas(ST.s.size);
+    for (const [oid] of zoomLevels)
       $(oid).classList.toggle("on", oid === zid);
-    document.querySelector(".map-scroll").scrollLeft = 0;
-    document.querySelector(".map-scroll").scrollTop = 0;
+    const sc = document.querySelector(".map-scroll");
+    if (sc) { sc.scrollLeft = 0; sc.scrollTop = 0; }
   };
 
 poll(); setInterval(poll, 600);

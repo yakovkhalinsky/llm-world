@@ -50,8 +50,11 @@ const fakeFetch = async () => ({ json: async () => state });
 
 new Function("window", "document", "location", "performance",
   "requestAnimationFrame", "setInterval", "fetch", "AbortSignal", js)(
-  { devicePixelRatio: 2 },
+  { devicePixelRatio: 2, innerWidth: 1200, innerHeight: 800,
+    addEventListener: () => {} },
   { getElementById: id => els[id] || (els[id] = el(id)),
+    querySelector: () => ({ clientWidth: 1090, clientHeight: 500,
+                            scrollLeft: 0, scrollTop: 0 }),
     body: { classList: { contains: () => false, add: () => {} } } },
   { search: "" }, { now: () => nowMs },
   fn => { rafQ.push(fn); return 1; },
