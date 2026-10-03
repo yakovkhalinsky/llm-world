@@ -20,7 +20,7 @@ import urllib.request
 DEFAULT_HOST = "http://127.0.0.1:11434"
 
 LOCAL_JOBS = {"soul": "llama3.2:3b", "chron": "llama3.2:1b",
-              "voice": "llama3.2:3b"}
+              "voice": "llama3.2:3b", "ask": "llama3.2:1b"}
 LOCAL_ALT = {"llama3.2:3b": "llama3.2:1b", "llama3.2:1b": "llama3.2:3b"}
 CLOUD_CHAIN = ["glm-5.2:cloud", "deepseek-v4-pro:cloud", "llama3.2:1b"]
 LOCAL_FALLBACK_ORDER = ["llama3.2:1b", "llama3.2:3b"]

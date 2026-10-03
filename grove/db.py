@@ -17,6 +17,11 @@ CREATE TABLE IF NOT EXISTS chron   (id INTEGER PRIMARY KEY AUTOINCREMENT,
                                     tick INTEGER, kind TEXT, source TEXT, text TEXT);
 CREATE INDEX IF NOT EXISTS chron_kind ON chron (kind);
 CREATE TABLE IF NOT EXISTS cache   (key TEXT PRIMARY KEY, text TEXT);
+CREATE TABLE IF NOT EXISTS bio     (oid INTEGER, tick INTEGER, key TEXT,
+                                    id INTEGER PRIMARY KEY AUTOINCREMENT);
+CREATE INDEX IF NOT EXISTS bio_oid ON bio (oid);
+CREATE TABLE IF NOT EXISTS vec     (key TEXT PRIMARY KEY, tick INTEGER,
+                                    text TEXT, vec TEXT, dim INTEGER);
 """
 
 
@@ -121,6 +126,20 @@ class DB:
             if len(out) >= n:
                 break
         return out
+
+    # -- biographies --------------------------------------------------------
+    def add_bio(self, oid, key, tick):
+        self.con.execute(
+            "INSERT INTO bio (oid, tick, key) VALUES (?, ?, ?)",
+            (oid, tick, key))
+        self.con.commit()
+
+    def bio(self, oid):
+        rows = self.con.execute(
+            "SELECT b.tick, c.text FROM bio b "
+            "JOIN chron c ON c.kind = b.key WHERE b.oid = ? "
+            "AND c.source != 'raw' ORDER BY b.tick, b.id", (oid,)).fetchall()
+        return [{"tick": t, "text": tx} for t, tx in rows]
 
     # -- llm narration cache -----------------------------------------------
     def cache_get(self, key):

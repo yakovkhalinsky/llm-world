@@ -75,7 +75,8 @@ setTimeout(() => {
   els.scene.listeners.click({ clientX: 208, clientY: 308 });
   if (!els.look.textContent.trim()) throw new Error("click produced nothing");
   console.log("click OK:", els.look.textContent.slice(0, 90));
-  if (!els.chron.innerHTML) throw new Error("chronicle empty");
+  if (!els.chron.innerHTML && state.chronicle && state.chronicle.length)
+    throw new Error("chronicle empty");   // fresh worlds legitimately have none
   console.log("dom OK |", els.when.textContent);
   console.log("HARNESS PASS");
 }, 40);

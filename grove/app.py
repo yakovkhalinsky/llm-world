@@ -139,6 +139,26 @@ class Grove:
                 if not self.pending_chron:
                     self.pending_since = w["tick"]
                 self.pending_chron[it["eid"]] = it
+
+        # the biographies' ledger: every soul touched by this week's
+        # story gets a row pointing at the chronicle's final line
+        for e in notable:
+            key = evm.event_key(e)
+            ids = []
+            if e["kind"] == "birth":
+                ids += [k for k in (e.get("kids") or [])]
+            elif e["kind"] == "predation":
+                ids += [v for v in (e.get("victims") or
+                                    ([e["victim"]] if e.get("victim")
+                                     else []))]
+                if e.get("hunter_id"):
+                    ids.append(e["hunter_id"])
+            elif e.get("who"):
+                ids.append(e["who"])
+            elif e.get("plant"):
+                ids.append(e["plant"])
+            for oid in dict.fromkeys(ids):
+                self.db.add_bio(int(oid), key, e["tick"])
         return evs, notable
 
     # -- scheduling (run mode) ----------------------------------------------
@@ -299,4 +319,7 @@ class Grove:
             line = f"A newborn {extra['sp']} was named {name}."
         if diary:
             line = f"{line} {diary}"
-        self.db.add_line(w["tick"], "rename", line)
+        rowkey = f"rename:{extra['key']}"
+        self.db.add_line(w["tick"], rowkey, line)
+        if extra["key"] is not None:
+            self.db.add_bio(int(extra["key"]), rowkey, w["tick"])

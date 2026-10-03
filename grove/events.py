@@ -28,6 +28,11 @@ def _fold(events):
                 tgt["n"] = tgt.get("n", 1) + e.get("n", 1)
                 if e.get("kids"):
                     tgt["kids"] = (tgt.get("kids") or []) + e["kids"]
+                if e["kind"] == "predation" and e.get("victim"):
+                    tgt["victims"] = (tgt.get("victims") or
+                                      ([tgt["victim"]] if
+                                       tgt.get("victim") else [])) \
+                        + [e["victim"]]
                 continue
             index[gk] = len(collapsed)
         collapsed.append(e)
@@ -56,5 +61,5 @@ def event_key(e):
     slim = {k: v for k, v in e.items() if k in
             ("tick", "kind", "sp", "hunter", "plant", "x", "y", "n",
              "action", "region", "strength", "season", "cause", "kids",
-             "name", "destiny")}
+             "name", "destiny", "who", "victim", "victims", "hunter_id")}
     return json.dumps(slim, sort_keys=True)

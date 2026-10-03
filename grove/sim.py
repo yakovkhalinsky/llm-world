@@ -350,7 +350,7 @@ def _update_animals(w, evs):
         if a["hp"] <= 0:
             w["cells"][a["y"]][a["x"]]["carcass"] = CARCASS_TTL
             evs.append({"tick": t, "kind": "starve", "sp": a["sp"],
-                        "x": a["x"], "y": a["y"]})
+                        "who": a["id"], "x": a["x"], "y": a["y"]})
             del w["animals"][aid]
             continue
 
@@ -376,7 +376,7 @@ def _update_animals(w, evs):
         if a["age"] >= spec["lifespan"]:
             w["cells"][a["y"]][a["x"]]["carcass"] = CARCASS_TTL
             evs.append({"tick": t, "kind": "oldage", "sp": a["sp"],
-                        "x": a["x"], "y": a["y"]})
+                        "who": a["id"], "x": a["x"], "y": a["y"]})
             del w["animals"][aid]
             continue
 
@@ -535,6 +535,7 @@ def _litter(w, mother, spec, evs, rng, cap):
 def _kill(w, predator, prey_id, prey, evs):
     t = w["tick"]
     evs.append({"tick": t, "kind": "predation", "hunter": predator["sp"],
+                "hunter_id": predator["id"], "victim": prey["id"],
                 "sp": prey["sp"], "x": prey["x"], "y": prey["y"]})
     predator["hunger"] = max(0.0, predator["hunger"] - 9.0)
     predator["energy"] = min(10.0, predator["energy"] + 3.0)
@@ -665,14 +666,14 @@ def _check_destinies(w, evs):
         if a is None or a["sp"] != d["sp"]:
             w["destinies"].remove(d)
             evs.append({"tick": t, "kind": "destiny_lost", "sp": d["sp"],
-                        "destiny": d["text"]})
+                        "who": d["id"], "destiny": d["text"]})
             continue
         hit = _near_water(w, a["x"], a["y"], 1) if d["kind"] == "water" \
             else a["age"] >= W.ANIMAL_SPECIES[d["sp"]]["lifespan"] * 0.4
         if hit:
             w["destinies"].remove(d)
             evs.append({"tick": t, "kind": "destiny", "sp": a["sp"],
-                        "x": a["x"], "y": a["y"],
+                        "who": a["id"], "x": a["x"], "y": a["y"],
                         "name": w["names"].get(str(a["id"])),
                         "destiny": d["text"]})
 

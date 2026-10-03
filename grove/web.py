@@ -20,9 +20,11 @@ import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 from . import llm as llmm
+from . import memory
+from . import operator
 from . import render
 from . import world as W
 from .app import Grove
@@ -91,14 +93,14 @@ def snapshot(grove, runner, lock):
                               round(c["moisture"], 2),
                               1 if c["mushroom"] else 0,
                               1 if c["carcass"] else 0))
-        plants = [{"sp": p["sp"], "x": p["x"], "y": p["y"],
+        plants = [{"id": p["id"], "sp": p["sp"], "x": p["x"], "y": p["y"],
                    "st": p["stage"],
                    "el": 1 if p.get("elder") or p["id"] in w["elder_ids"]
                    else 0,
                    "b": 1 if p.get("berries") else 0,
                    "n": names.get(str(p["id"]))}
                   for p in w["plants"].values()]
-        animals = [{"sp": a["sp"], "x": a["x"], "y": a["y"],
+        animals = [{"id": a["id"], "sp": a["sp"], "x": a["x"], "y": a["y"],
                     "px": a.get("px", a["x"]), "py": a.get("py", a["y"]),
                     "n": names.get(str(a["id"]))}
                    for a in w["animals"].values()]
@@ -243,6 +245,27 @@ PAGE = r"""<!doctype html>
   .err { color: var(--warn); }
   #look { color: var(--moss); font-style: italic; font-size: 14px;
           min-height: 1.4em; }
+  #bio { display: none; position: fixed; right: 14px; bottom: 16px;
+        width: min(360px, 92vw); max-height: 54vh; overflow: auto;
+        z-index: 5; box-shadow: 0 10px 34px rgba(0,0,0,0.55); }
+  #bio.on { display: block; }
+  .biohead { display: flex; justify-content: space-between;
+             align-items: center; gap: 8px; }
+  .biohead h3 { margin: 0; font-size: 15px; }
+  .biohead .x { cursor: pointer; border: none; background: none;
+                color: var(--dim); font-size: 16px;
+                padding: 0 2px 4px; }
+  .timeline { list-style: none; margin: 6px 0 0; padding: 0;
+              font-size: 13.5px; }
+  .timeline li { padding: 3px 0; border-top: 1px solid var(--line); }
+  .timeline .wk { color: var(--dim); font-size: 11px;
+                  display: inline-block; width: 40px; }
+  #followBtn.on { border-color: var(--moss); color: var(--moss); }
+  #qinput { background: var(--panel-2); color: var(--text);
+            border: 1px solid var(--line); border-radius: 8px;
+            padding: 6px 10px; font: inherit; font-size: 14px;
+            flex: 1; min-width: 130px; }
+  #askout { flex-basis: 100%; }
   h2 { font-size: 13px; color: var(--dim); text-transform: uppercase;
        letter-spacing: .12em; margin: 4px 0 8px; font-family: sans-serif; }
 </style>
@@ -279,6 +302,21 @@ PAGE = r"""<!doctype html>
       <button id="soulBtn">☾ invite the soul</button>
       <span class="soul" id="soul"></span>
     </div>
+    <div class="row" style="margin-top:8px">
+      <input id="qinput" placeholder="ask the grove — a name, a season, a fate…">
+      <button id="askBtn">ask ☾</button>
+      <span class="soul" id="askout"></span>
+    </div>
+  </div>
+
+  <div id="bio" class="card">
+    <div class="biohead">
+      <h3 id="bioName">…</h3>
+      <span><button id="followBtn">◎ follow</button>
+      <button class="x" id="bioClose">✕</button></span>
+    </div>
+    <div class="status" id="bioState"></div>
+    <ul class="timeline" id="bioRows"></ul>
   </div>
 
   <div class="card">
@@ -882,6 +920,7 @@ function drawScene(tnow) {
     if (en.k === 1) drawPlant(en.t, tsec);
     else if (en.k === 2) drawAnimal(en.a, glide, tsec, en.i);
   }
+  trackFollow(glide);
   spawnParticles(s, dt);
   drawParticles(dt);
   drawEffects(s);
@@ -908,30 +947,43 @@ function loop(tnow) {
   requestAnimationFrame(loop);
 }
 
-/* look at a tile (click) — inverse isometric mapping */
+/* look at a tile (click) — inverse isometric mapping; a named (or lone)
+   occupant opens its biography */
 cnv.addEventListener("click", e => {
   const s = ST.s;
   if (!s || !s.cells) return;
   const r = cnv.getBoundingClientRect();
-  const u = (e.clientX - r.left) / r.width * CW;
-  const v = (e.clientY - r.top) / r.height * CH;
-  const x = Math.round((u - OX) / (TW / 2) / 2 + (v - OY) / (TH / 2) / 2);
-  const y = Math.round((v - OY) / (TH / 2) / 2 - (u - OX) / (TW / 2) / 2);
+  const u0 = (e.clientX - r.left) / r.width * CW;
+  const v0 = (e.clientY - r.top) / r.height * CH;
+  const x = Math.round((u0 - OX) / (TW / 2) / 2
+                       + (v0 - OY) / (TH / 2) / 2);
+  const y = Math.round((v0 - OY) / (TH / 2) / 2
+                       - (u0 - OX) / (TW / 2) / 2);
   if (x < 0 || y < 0 || x >= s.size || y >= s.size) return;
   const c = s.cells[y * s.size + x];
-  const plants = (s.plants || []).filter(t =>
-    t.x === x && t.y === y && t.n);
-  const critters = (s.animals || []).filter(a => a.x === x && a.y === y);
+  const here = [];
+  for (const a of s.animals || [])
+    if (a.x === x && a.y === y) here.push({ id: a.id, kind: "animal",
+                                            sp: a.sp, n: a.n });
+  for (const t of s.plants || [])
+    if (t.x === x && t.y === y && t.st !== "log") here.push(
+      { id: t.id, kind: "plant", sp: t.sp, n: t.n });
+  const named = here.filter(t => t.n);
+  if (named.length === 1 || here.length === 1) {
+    const one = named[0] || here[0];
+    openBio(one.id, one.kind, one.sp, one.n);
+    $("look").textContent = "Here: " + (one.n || "a wild " + one.sp);
+    return;
+  }
   const bits = [];
   if (c[0] === "w") bits.push("the water");
   else if (c[0] === "r") bits.push("rock");
   else if (c[1] > 0.5) bits.push("long grass");
   else bits.push("open ground");
-  for (const p of plants) bits.push(`${p.n} the ${p.sp} (${p.st})`);
-  for (const a of critters)
-    bits.push(`${a.n || "a wild " + a.sp}${a.n ? " (the " + a.sp + ")" : ""}`);
-  $("look").textContent = bits.length > 1
-    ? "Here: " + bits.slice(1).join(" · ") : "Here: " + bits[0];
+  for (const t of here)
+    bits.push(`${t.n || "a wild " + t.sp} (${t.kind === "plant"
+               ? t.st : "creature"})`);
+  $("look").textContent = "Here: " + bits.join(" · ");
 });
 
 /* zoom: fit / 1.5x / 2x — real levels; the scroller pans when zoomed */
@@ -946,6 +998,76 @@ for (const [zid, z] of zoomLevels)
     const sc = document.querySelector(".map-scroll");
     if (sc) { sc.scrollLeft = 0; sc.scrollTop = 0; }
   };
+
+/* ask the grove a question — answered from the world's own history */
+$("askBtn").onclick = async () => {
+  const q = $("qinput").value.trim();
+  if (!q || !q.length) return;
+  $("askout").textContent = " ☾ the grove ponders…";
+  $("askBtn").disabled = true;
+  try {
+    const r = await fetch("/api/ask", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ q }),
+      signal: AbortSignal.timeout(90000) });
+    const s = await r.json();
+    $("askout").textContent = s.answer ? (" ☾ " + s.answer)
+                                       : " ☾ no answer came";
+  } catch (e) { $("askout").textContent = " ☾ the thought was lost"; }
+  $("askBtn").disabled = false;
+};
+$("qinput").addEventListener("keydown", e => {
+  if (e.key === "Enter") $("askBtn").onclick();
+});
+
+/* the biography panel: any soul's ledger */
+function openBio(oid, kind, sp, name) {
+  $("bio").classList.add("on");
+  $("bioName").textContent = (name || "a wild " + sp) + " · " + sp;
+  $("bioState").textContent = "consulting the ledger…";
+  $("bioRows").innerHTML = "";
+  fetch("/api/bio?id=" + oid).then(r => r.json()).then(b => {
+    const state = b.gone ? "remembered in the chronicle"
+        : (b.alive ? "alive in the grove" : "…");
+    $("bioName").textContent = (b.name || name || "a wild " + b.sp)
+        + " · " + b.sp;
+    $("bioState").textContent = state;
+    const rows = b.events || [];
+    $("bioRows").innerHTML = rows.map(ev =>
+      `<li><span class="wk">wk${ev.tick}</span>${ev.text}</li>`).join("") ||
+      "<li><span class='wk'>—</span>no marked events yet; its story is still quiet.</li>";
+  }).catch(() => { $("bioState").textContent = "the ledger resisted"; });
+}
+$("bioClose").onclick = () => {
+  $("bio").classList.remove("on");
+  setFollow(null);
+};
+$("followBtn").onclick = () =>
+  setFollow($("followBtn").classList.contains("on") ? null : { oid: bio.oid, kind: bio.kind });
+
+/* follow-cam: the camera eases toward a soul each frame */
+function setFollow(b) {
+  ST.follow = b;
+  $("followBtn").classList.toggle("on", !!b);
+  const sc = document.querySelector(".map-scroll");
+  if (!b && sc)
+    sc.scrollTo({ left: 0, top: 0, behavior: "smooth" });
+}
+function trackFollow(glide) {
+  const s = ST.s, f = ST.follow;
+  if (!s || !f) return;
+  const list = f.kind === "animal" ? s.animals : s.plants;
+  let ent = null;
+  for (const q of list || []) if (q.id === f.oid && !q.log) { ent = q; break; }
+  if (!ent) return;
+  const sc = document.querySelector(".map-scroll");
+  if (!sc) return;
+  const scale = VIEW.dw / CW;
+  const px = iso(ent.x, ent.y)[0] * scale,
+        py = iso(ent.x, ent.y)[1] * scale;
+  sc.scrollLeft += (px - sc.clientWidth / 2 - sc.scrollLeft) * 0.14;
+  sc.scrollTop += (py - sc.clientHeight / 2 - sc.scrollTop) * 0.14;
+}
 
 poll(); setInterval(poll, 600);
 requestAnimationFrame(loop);
@@ -982,6 +1104,17 @@ def cmd_web(args):
     runner = SimRunner(g, lock, args.tick_seconds)
     runner.start()
 
+    if g.llm and g.llm.enabled:
+        def indexer():
+            time.sleep(20)
+            while True:
+                try:          # one patient batch per pass; the chronicle
+                    memory.ensure_index(g.db, g.llm, limit=32)
+                except Exception:
+                    pass
+                time.sleep(75)
+        threading.Thread(target=indexer, daemon=True).start()
+
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code, body, ctype):
             data = body if isinstance(body, bytes) else body.encode()
@@ -1006,6 +1139,35 @@ def cmd_web(args):
                 except Exception as e:
                     self._send(500, json.dumps({"error": str(e)}),
                                "application/json")
+            elif path == "/api/bio":
+                qs = parse_qs(urlparse(self.path).query)
+                try:
+                    oid = int((qs.get("id") or ["0"])[0])
+                except ValueError:
+                    oid = 0
+                with lock:
+                    world_w = g.world
+                    if world_w is None:
+                        self._send(404, '{"error": "no world"}',
+                                   "application/json")
+                        return
+                    animal = world_w["animals"].get(str(oid))
+                    plant = world_w["plants"].get(str(oid))
+                    ent = animal or plant
+                    if ent is None:
+                        self._send(200, json.dumps(
+                            {"id": oid, "gone": True,
+                             "events": g.db.bio(oid)}), "application/json")
+                        return
+                    self._send(200, json.dumps({
+                        "id": oid,
+                        "kind": "animal" if animal else "plant",
+                        "sp": ent["sp"],
+                        "name": world_w["names"].get(str(oid)),
+                        "alive": True,
+                        "x": ent["x"], "y": ent["y"],
+                        "events": g.db.bio(oid),
+                    }), "application/json")
             else:
                 self._send(404, "not found", "text/plain")
 
@@ -1035,6 +1197,58 @@ def cmd_web(args):
                             invited = True
                 self._send(200, json.dumps({"invited": invited}),
                            "application/json")
+            elif path == "/api/ask":
+                # the ask waits for its turn, then thinks OUTSIDE the
+                # world lock — the forest keeps ticking while it ponders
+                try:
+                    length = int(self.headers.get("Content-Length", 0) or 0)
+                    q = json.loads(
+                        self.rfile.read(length).decode()).get("q", "")
+                except Exception:
+                    q = ""
+                q = str(q).strip()[:300]
+                if not q:
+                    self._send(200, json.dumps({"answer": "…",
+                                                "excerpts": []}),
+                               "application/json")
+                    return
+                waited = 0.0
+                while g.worker and g.worker.busy and waited < 40:
+                    time.sleep(0.5)
+                    waited += 0.5
+                t0 = time.time()
+                # index newer chronicle lines (out of the lock; the sqlite
+                # connection is serialized, and the forest must not stall)
+                try:
+                    memory.ensure_index(g.db, g.llm)
+                except Exception:
+                    pass
+                with lock:                       # brief reads only
+                    if g.world is None or g.llm is None or not g.llm.enabled:
+                        self._send(200, json.dumps(
+                            {"answer": "the grove is wordless just now "
+                                       "(LLM off)", "excerpts": []}),
+                            "application/json")
+                        return
+                    excerpts = memory.recall(g.db, g.llm, q)
+                    digest_text = operator.digest(g.world, [])
+                prompt = ("question: " + q
+                          + "\n\ndigest of the world now:\n" + digest_text
+                          + "\n\nchronicle excerpts:\n"
+                          + "\n".join(f" wk{e['tick']}: {e['text']}"
+                                      for e in excerpts))
+                ans = g.llm.chat_json(memory.ASK_SYSTEM, prompt,
+                                      memory.ASK_SCHEMA, max_tokens=100,
+                                      temperature=0.7, retries=1,
+                                      job="ask")
+                answer = (ans or {}).get("answer", "")
+                answer = str(answer).strip()[:400]
+                if not answer:
+                    answer = "The grove lost the thought mid-way. Ask again?"
+                self._send(200, json.dumps(
+                    {"answer": answer, "excerpts": excerpts,
+                     "took": round(time.time() - t0, 1)}),
+                    "application/json")
             else:
                 self._send(404, "not found", "text/plain")
 
