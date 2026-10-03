@@ -53,8 +53,7 @@ _KIND_BONES = {
                    "The east wind brought {n} {sp} back to us."],
     "arrival": ["A visitor {sp} entered the grove at {p}.",
                 "A {sp} appeared at {p}, then lingered."],
-    "departure": ["The visitor {sp} moved on, beyond the trees.",
-                  "The {sp} wandered on — the grove is small."],
+    "departure": ["The visitor {sp} moved on, beyond the trees."],
 }
 
 _STOP = {"the", "an", "at", "and", "was", "a", "of", "in", "on", "for",
@@ -105,6 +104,10 @@ def _line(world, e):
         return f"As the soul foretold — {label}: {e.get('destiny', '')}"
     if kind == "destiny_lost":
         return "Under the soul's watch, its creature died and the prophecy went unheard."
+    if kind == "robins_left":
+        return f"The robins have gone south — {e.get('n', 0)} birds."
+    if kind == "robins_return":
+        return f"With the spring, the robins came home — {e.get('n', 0)} returned."
 
     pool = _KIND_BONES.get(kind)
     if not pool:

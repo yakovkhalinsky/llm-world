@@ -87,6 +87,10 @@ def _update_cells(w, evs):
     weather = w["weather"]
     droughts = [e for e in w["effects"] if e["kind"] == "drought"]
     blights = [e for e in w["effects"] if e["kind"] == "blight"]
+    # the sky remembers: a run of rainy weeks soaks the ground
+    w["wet_streak"] = (w.get("wet_streak", 0) + 1
+                       if weather in ("rain", "storm") else 0)
+    soak = min(2.0, w.get("wet_streak", 0) * 0.4)
 
     for y in range(size):
         for x in range(size):
@@ -107,7 +111,7 @@ def _update_cells(w, evs):
             c["moisture"] = _clamp01(m)
 
             # grass
-            regrow = GRASS_REGROW[season]
+            regrow = GRASS_REGROW[season] * (1.0 + soak * 0.15)
             if any((x, y) in _region_set(e["region"], size) for e in droughts):
                 regrow *= 0.2
             light = w["_light"][y][x]
@@ -117,12 +121,16 @@ def _update_cells(w, evs):
             if weather == "frost":
                 c["grass"] *= 0.93
 
-            # mushrooms
+            # mushrooms: they favor humus, and boom after days of rain
             if c["mushroom"] > 0:
                 c["mushroom"] -= 1
-            elif weather in ("rain", "storm") and c["grass"] > 0.25 \
-                    and rng.random() < 0.08:
-                c["mushroom"] = 3
+            elif weather in ("rain", "storm") and \
+                    (c["grass"] > 0.25 or c.get("humus", 0) > 0.3):
+                p_mush = 0.08 * (1.0 + soak)
+                if c.get("humus", 0) > 0.3:
+                    p_mush *= 2.5
+                if rng.random() < p_mush:
+                    c["mushroom"] = 3
 
             if c["carcass"] > 0:
                 c["carcass"] -= 1
@@ -159,6 +167,9 @@ def _update_plants(w, evs, light):
         if p["stage"] == "log":
             p["log"] = p.get("log", LOG_TTL) - 1
             if p["log"] <= 0:
+                # the trunk is gone to humus; the soil remembers the tree
+                c2 = w["cells"][p["y"]][p["x"]]
+                c2["humus"] = min(1.0, c2.get("humus", 0) + 0.25)
                 del w["plants"][pid]
             continue
 
@@ -223,9 +234,9 @@ def _update_plants(w, evs, light):
                 and season == 0 and week_in == 1 and rng.random() < 0.8:
             p["berries"] = True
 
-        # recover or die
+        # recover or die — rot feeds the ground beneath a log
         if not damaged and growing and c["moisture"] > 0.10:
-            p["hp"] = min(10.0, p["hp"] + 0.4)
+            p["hp"] = min(10.0, p["hp"] + 0.4 + c.get("humus", 0) * 0.2)
         if p["hp"] <= 0:
             cause = "blight" if any(blights) else \
                 ("drought" if any(droughts) else "withered")
@@ -692,6 +703,34 @@ def _recolonize(w, evs):
             w["absent"].pop(sp, None)
 
 
+def _migration(w, evs, from_season, to_season):
+    """Robins leave with the cold and return with the spring."""
+    if to_season == 3:                       # into winter
+        n = _pop(w, "robin")
+        if n == 0:
+            return
+        w["robin_last"] = n
+        for aid, a in list(w["animals"].items()):
+            if a["sp"] == "robin":
+                del w["animals"][aid]
+        evs.append({"tick": w["tick"], "kind": "robins_left", "n": n})
+    elif to_season == 0 and from_season == 3:   # back for spring
+        rng = W.rng_for(w["seed"], w["tick"], "return")
+        last = w.get("robin_last", 0)
+        if last > 0 and rng.random() < 0.75:
+            size, n_back = w["size"], max(4, last // 2)
+            spots = [(x, y) for y in range(size) for x in range(size)
+                     if w["cells"][y][x]["terrain"] == "soil"]
+            for _ in range(min(n_back, 30)):
+                x, y = rng.choice(spots)
+                w["animals"][str(w["next_id"])] = W.new_animal(
+                    w["next_id"], "robin", x, y, 1)
+                w["next_id"] += 1
+            evs.append({"tick": w["tick"], "kind": "robins_return",
+                        "n": n_back})
+            w["absent"].pop("robin", None)
+
+
 # --------------------------------------------------------------- entrypoint
 
 def tick(world):
@@ -705,6 +744,8 @@ def tick(world):
     if new_season != prev_season:
         evs.append({"tick": t, "kind": "turn", "season": new_season})
         world["fawns_named"] = 0
+        _migration(w=world, evs=evs, from_season=prev_season,
+                   to_season=new_season)
 
     # queued operator decision lands at the tick boundary
     if world.get("pending_effect"):
