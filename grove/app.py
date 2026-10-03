@@ -77,12 +77,16 @@ class Grove:
         self.db = dbm.DB(os.path.join(args.data, "grove.db"))
         self.world = None
         self.llm = None
-        self.worker = None          # only in `run` mode
+        self.worker = None          # only in `run`/`web` mode
         self.soul_line = None
         self.soul_tick = -1
         self.pending_chron = {}     # eid -> chronicler batch item
         self.pending_since = -1
         self.eid = 0
+        # live counters, exposed on the dashboard for diagnosis
+        self.jobs = {"op": 0, "chron": 0, "voice": 0,
+                     "op_applied": 0, "chron_ok": 0, "chron_rejected": 0,
+                     "last_reject": None}
 
     # -- lifecycle ----------------------------------------------------------
     def load_or_exit(self):
@@ -110,16 +114,22 @@ class Grove:
         self.db.save_world(w)
         self.db.add_stats(w["tick"], W.counts(w), W.plant_counts(w))
 
-        # template lines appear immediately, whatever the LLM is doing
+        # template lines appear immediately, whatever the LLM is doing;
+        # the soul's own events speak for themselves (no narration call)
         items = chronicler.batch(notable, w)
+        llm_items = []
         for it in items:
             cached = self.db.cache_get(it["key"])
-            if cached:
+            if it["slot"].get("kind") == "op":
+                self.db.record(it["key"], it["tick"], it["template"], "soul")
+            elif cached:
                 self.db.record(it["key"], it["tick"], cached, "llm")
             else:
                 self.db.record(it["key"], it["tick"], it["template"])
-        if items and self.worker is not None:
-            for it in items:
+            if it["slot"].get("kind") != "op":
+                llm_items.append(it)
+        if llm_items and self.worker is not None:
+            for it in llm_items:
                 self.eid += 1
                 it["eid"] = f"e{self.eid}"
                 if not self.pending_chron:
@@ -161,6 +171,7 @@ class Grove:
         eid = next(iter(self.pending_chron))
         item = self.pending_chron.pop(eid)
         item["eid"] = "e0"           # the prompt and the parser agree
+        self.jobs["chron"] += 1
         self.worker.submit({
             "kind": "chron", "system": chronicler.SYSTEM,
             "user": chronicler.build_prompt(item),
@@ -173,6 +184,7 @@ class Grove:
         recent = [r[2] for r in self.db.chronicle_lines(5)]
         # provisional schedule; sim._apply_effect sets the real one on apply
         self.world["next_op"] = self.world["tick"] + 8
+        self.jobs["op"] += 1
         self.worker.submit({
             "kind": "op", "system": operator.SYSTEM,
             "user": operator.digest(self.world, recent),
@@ -231,6 +243,7 @@ class Grove:
                 self.soul_line = (f"{effect['action']} {effect['region']}"
                                   f" — {effect['intent']}")
                 self.soul_tick = self.world["tick"]
+                self.jobs["op_applied"] += 1
             elif kind == "chron":
                 text = None
                 if res["ok"]:
@@ -239,6 +252,17 @@ class Grove:
                 if text:
                     self.db.cache_set(res["extra"]["key"], text)
                     self.db.update_text(res["extra"]["key"], text)
+                    self.jobs["chron_ok"] += 1
+                else:
+                    self.jobs["chron_rejected"] += 1
+                    self.jobs["last_reject"] = {
+                        "base": res["extra"]["base"][:110],
+                        "ok": res["ok"],
+                        "reason": getattr(self.llm, "reason", ""),
+                        "reply": (json.dumps(res["data"]) if res["data"]
+                                  else getattr(self.llm, "last_raw", "")
+                                  or "")[:150],
+                    }
             elif kind == "voice":
                 self._apply_voice(res)
 

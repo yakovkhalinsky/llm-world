@@ -156,7 +156,8 @@ def cmd_chronicle(args):
     g = Grove(args)
     rows = g.db.chronicle_all() if args.all else g.db.chronicle(args.tail)
     for _ident, tick, _kind, source, text in rows:
-        mark = {"llm": "☾", "voice": "☂", "template": "·"}.get(source, "?")
+        mark = {"llm": "☾", "soul": "☾", "voice": "☂",
+                "template": "·"}.get(source, "?")
         print(f" wk{tick:>4} {mark} {text}")
     g.db.close()
 

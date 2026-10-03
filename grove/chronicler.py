@@ -121,8 +121,8 @@ def _clean(text):
     text = text.strip().splitlines()[0].rstrip("}").strip()
     if re.search(r"[a-z_]+\s*:\s*[\d\"{]", text):
         return None          # the model restated the data slot, not prose
-    if len(text.split()) < 3:
-        return None
+    if len(text.split()) < 5:
+        return None          # fragments like 'Wisp of pine' are not lines
     if not text:
         return None
     if not text.endswith((".", "!", "?", "…")):

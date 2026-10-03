@@ -126,6 +126,7 @@ def snapshot(grove, runner, lock):
             "ok": bool(g.llm and g.llm.enabled),
         }
         if g.worker is not None:
+            llm_bits["jobs"] = dict(g.jobs)
             llm_bits["worker_busy"] = g.worker.busy
             llm_bits["tasks_pending"] = g.worker.tasks.qsize()
             llm_bits["results_waiting"] = g.worker.results.qsize()
@@ -313,9 +314,10 @@ function updateDom() {
   soulEl.textContent = s.soul ? "☾ " + s.soul : "";
   soulEl.className = "soul" + (s.soul === "listening…" ? " pulse" : "");
   $("chron").innerHTML = s.chronicle.map(c => {
-    const cls = c.source === "llm" ? "mark-llm"
+    const cls = (c.source === "llm" || c.source === "soul") ? "mark-llm"
       : c.source === "voice" ? "mark-voice" : "mark-template";
-    const mark = c.source === "llm" ? "☾" : c.source === "voice" ? "☂" : "·";
+    const mark = (c.source === "llm" || c.source === "soul") ? "☾"
+      : c.source === "voice" ? "☂" : "·";
     return `<li><span class="${cls}">${mark}</span> ${c.text}` +
            `<span class="when">${ago(c.tick, s.tick)}</span></li>`;
   }).join("");
