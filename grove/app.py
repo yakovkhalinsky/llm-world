@@ -106,6 +106,10 @@ class Grove:
     # -- one deterministic step ---------------------------------------------
     def step(self):
         w = self.world
+        # remember where each creature stood at the start of this week so
+        # the web view can glide them between weekly states
+        for a in w["animals"].values():
+            a["px"], a["py"] = a["x"], a["y"]
         evs = sim.tick(w)
         notable = evm.notable(evs)
         self.db.add_events(evs)

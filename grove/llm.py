@@ -25,6 +25,7 @@ class LLM:
         self.enabled = True
         self.reason = ""
         self.latency = 0.0
+        self.last_raw = None     # raw output of the last HTTP response
         self._check()
 
     def _check(self):
