@@ -189,7 +189,7 @@ PAGE = r"""<!doctype html>
     margin: 0; background: var(--bg); color: var(--text);
     font: 16px/1.5 "Georgia", serif;
   }
-  .wrap { max-width: 880px; margin: 0 auto; padding: 16px 14px 40px; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 16px 14px 40px; }
   h1 { font-size: 20px; margin: 6px 0 2px; letter-spacing: .04em; }
   .sub { color: var(--dim); font-size: 13px; }
   .row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; }
@@ -197,8 +197,13 @@ PAGE = r"""<!doctype html>
     background: var(--panel); border: 1px solid var(--line);
     border-radius: 10px; padding: 12px 14px; margin: 12px 0;
   }
+  .map-scroll { overflow: auto; max-height: 86vh; }
   #scene { width: 100%; height: auto; display: block; cursor: pointer;
            border-radius: 8px; }
+  .zoomrow { display: flex; gap: 6px; align-items: center;
+             justify-content: center; margin: 6px 0 0; }
+  .zoomrow button { padding: 3px 10px; font-size: 13px; }
+  .zoomrow .on { border-color: var(--moss); color: var(--moss); }
   .map { font-size: clamp(11px, 3.1vmin, 20px); line-height: 1.12;
          letter-spacing: .08em; text-align: center; white-space: pre;
          font-family: sans-serif; display: none; }
@@ -247,8 +252,16 @@ PAGE = r"""<!doctype html>
   </div>
 
   <div class="card" style="padding:8px">
-    <canvas id="scene"></canvas>
-    <pre class="map" id="map">…</pre>
+    <div class="map-scroll">
+      <canvas id="scene"></canvas>
+      <pre class="map" id="map">…</pre>
+    </div>
+    <div class="zoomrow">
+      <button id="zoomFit" class="on">fit</button>
+      <button id="zoom1x">1.5×</button>
+      <button id="zoom2x">2×</button>
+      <span class="status" id="zoomHint">click a tile to inspect</span>
+    </div>
   </div>
 
   <div class="card">
@@ -363,11 +376,13 @@ catch (e) { document.body.classList.add("plain"); }
 if (new URLSearchParams(location.search).has("plain"))
   document.body.classList.add("plain");
 
-const TW = 30, TH = 15;              // isometric tile diamond (2:1)
-const SIDE = 13;                     // slab thickness under the floor
-const PADX = 26, PADY = 58;          // margins head-/foot-room
+const TW = 40, TH = 20;              // isometric tile diamond (2:1)
+const SIDE = 17;                     // slab thickness under the floor
+const PADX = 30, PADY = 72;          // margins head-/foot-room
 const cnv = $("scene"), ctx = cnv.getContext("2d");
-const DPR = Math.max(1, window.devicePixelRatio || 1);
+const DPR = Math.max(1.5, window.devicePixelRatio || 1);
+/* art factor: everything drawn scales with the tile size */
+const K = TW / 30;
 let OX = 0, OY = 0, CW = 0, CH = 0;
 function fitCanvas(size) {
   const w = (size - 1) * TW + TW + PADX * 2;
@@ -428,7 +443,8 @@ function diamondPath(c, cx, cy) {
 /* soft ellipse shadow that grounds a standing thing */
 function shadow(cx, cy, rx) {
   ctx.fillStyle = "rgba(8,14,11,0.20)";
-  ctx.beginPath(); ctx.ellipse(cx, cy + 2, rx, rx * 0.38, 0, 0, 6.3);
+  ctx.beginPath(); ctx.ellipse(cx, cy + 2 * K, rx * K, rx * 0.38 * K,
+                               0, 0, 6.3);
   ctx.fill();
 }
 
@@ -529,19 +545,19 @@ function drawPlant(t, tsec) {
     ctx.translate(sx, sy);
     ctx.rotate((t.x * 7 % 3 - 1) * 0.25);          // settled at an angle
     ctx.fillStyle = "#6b4a33";
-    roundRect(ctx, -10, -4, 20, 5, 2);
+    roundRect(ctx, -10 * K, -4 * K, 20 * K, 5 * K, 2 * K);
     ctx.fillStyle = "rgba(255,255,255,0.07)";
-    ctx.fillRect(-10, -4, 20, 2);
+    ctx.fillRect(-10 * K, -4 * K, 20 * K, 2 * K);
     ctx.restore();
     return;
   }
   if (t.sp === "fern") {
-    ctx.strokeStyle = "#3f6d38"; ctx.lineWidth = 1.4;
+    ctx.strokeStyle = "#3f6d38"; ctx.lineWidth = 1.4 * K;
     for (let k = -2; k <= 2; k++) {
       ctx.beginPath();
-      ctx.moveTo(sx, sy + 2);
-      ctx.quadraticCurveTo(sx + k * 4, sy - 6, sx + k * 6,
-                           sy - 11 + sway * 26);
+      ctx.moveTo(sx, sy + 2 * K);
+      ctx.quadraticCurveTo(sx + k * 4 * K, sy - 6 * K,
+                           sx + k * 6 * K, sy - 11 * K + sway * 26 * K);
       ctx.stroke();
     }
     return;
@@ -549,11 +565,13 @@ function drawPlant(t, tsec) {
   if (t.sp === "berry") {
     shadow(sx, sy, 6);
     ctx.fillStyle = "#4a7a3a";
-    ctx.beginPath(); ctx.ellipse(sx, sy - 3, 7.5, 5.2, 0, 0, 6.3); ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(sx, sy - 3 * K, 7.5 * K, 5.2 * K, 0, 0, 6.3); ctx.fill();
     if (t.b) {
       ctx.fillStyle = "#b03a48";
       for (const [bx, byy] of [[-3.5, -4], [1, -6.5], [4, -3.5]]) {
-        ctx.beginPath(); ctx.arc(sx + bx, sy + byy, 1.5, 0, 6.3); ctx.fill();
+        ctx.beginPath();
+        ctx.arc(sx + bx * K, sy + byy * K, 1.5 * K, 0, 6.3); ctx.fill();
       }
     }
     return;
@@ -561,18 +579,19 @@ function drawPlant(t, tsec) {
   // trees
   let scale = t.st === "mature" ? 1 : t.st === "old" ? 1.1 : 0.55;
   if (t.el) scale *= 1.12;
+  scale *= K;                                      // art grows with tiles
   shadow(sx, sy, 9 * scale);
   ctx.save();
   ctx.translate(sx, sy);
   ctx.rotate(sway * (isPine ? 0.35 : 0.85));
   const trunkCol = t.sp === "birch" ? "#d9d4c9"
       : t.sp === "willow" ? "#8a7663" : "#5b422f";
-  const trunkH = isPine ? 7 : 10, tw = t.st === "sapling" ? 2 : 3;
+  const trunkH = isPine ? 7 : 10, tw = (t.st === "sapling" ? 2 : 3) * K;
   ctx.fillStyle = trunkCol;
   ctx.fillRect(-tw / 2, -trunkH * scale, tw, trunkH * scale);
   if (t.sp === "birch" && t.st !== "sapling") {
     ctx.fillStyle = "rgba(70,70,70,0.7)";
-    ctx.fillRect(-1.6, -trunkH * scale + 2, 1.5, 1);
+    ctx.fillRect(-1.6 * K, -trunkH * scale + 2, 1.5 * K, K);
   }
   const leafCol = isPine ? p.pine : p.leaf;
   if (isPine) {
@@ -647,13 +666,13 @@ function drawAnimal(a, f, tsec, idx) {
   if (Math.abs(dx) > 0.9) FACING[idx] = dx < 0 ? -1 : 1;
   const flip = FACING[idx] || 1;
   const flyer = a.sp === "owl" || a.sp === "robin";
-  const lift = flyer ? -9 : Math.sin(tsec * 5 + a.x) * 0.8;
-  const cy = OY + gy + lift;
+  const lift = (flyer ? -9 : Math.sin(tsec * 5 + a.x) * 0.8);
+  const cy = OY + gy + lift * K;
   if (flyer) shadow(OX + gx, OY + gy + 2, 3);      // small, distant
   else shadow(OX + gx, OY + gy, 6);
   ctx.save();
   ctx.translate(OX + gx, cy);
-  ctx.scale(flip, 1);
+  ctx.scale(flip * K, K);
   const winter = ST.s && ST.s.season === "winter";
   switch (a.sp) {
     case "rabbit":
@@ -735,9 +754,9 @@ function drawAnimal(a, f, tsec, idx) {
   if (a.n && a.n !== "-") {
     ctx.font = "italic 9px Georgia, serif";
     ctx.fillStyle = "rgba(10,14,12,0.65)";
-    ctx.fillText(a.n, OX + gx + 1, cy - 10);
+    ctx.fillText(a.n, OX + gx + 1, cy - 10 * K);
     ctx.fillStyle = "#dfe9db";
-    ctx.fillText(a.n, OX + gx, cy - 11);
+    ctx.fillText(a.n, OX + gx, cy - 11 * K);
   }
 }
 
@@ -886,6 +905,17 @@ cnv.addEventListener("click", e => {
   $("look").textContent = bits.length > 1
     ? "Here: " + bits.slice(1).join(" · ") : "Here: " + bits[0];
 });
+
+/* zoom: fit / 1.5x / 2x — the scroller pans when zoomed */
+const ZOOMS = [["zoomFit", "100%"], ["zoom1x", "160%"], ["zoom2x", "220%"]];
+for (const [zid, pct] of ZOOMS)
+  $(zid).onclick = () => {
+    cnv.style.width = pct;
+    for (const [oid, opct] of ZOOMS)
+      $(oid).classList.toggle("on", oid === zid);
+    document.querySelector(".map-scroll").scrollLeft = 0;
+    document.querySelector(".map-scroll").scrollTop = 0;
+  };
 
 poll(); setInterval(poll, 600);
 requestAnimationFrame(loop);
