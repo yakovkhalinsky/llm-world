@@ -37,12 +37,15 @@ Keys in watch mode: `space` pause · `s` step · `n` invite the soul now ·
 ## Viewing it from another device
 
 `grove web` serves a live dashboard over plain HTTP — no build step, works
-offline, one hand-written page. The map is a **canvas scene**: procedural
-trees (they sway in the wind), creatures that glide between their weekly
-positions, rain and snowfall, lightning in storms, autumn driftings of
-leaf, season palettes, name tags over named creatures, and translucent
-washes where the soul's effects are active. Click a tile to inspect it.
-`?plain` (or no canvas) falls back to the emoji map.
+offline, one hand-written page. The map is an **isometric canvas scene**:
+the grove stands on a floating earth slab, diamonds shaded by season and
+moisture, procedural pines/birches/willows swaying in the wind and
+occluding each other depth-sorted, creatures gliding to their weekly
+cells with soft shadows (birds hover above theirs), rain and snowfall,
+lightning in storms, autumn leaf-drift, name tags over named creatures
+and elder trees, and translucent diamond washes where the soul's effects
+are active. Click a tile to inspect it. `?plain` (or no canvas) falls
+back to the emoji map.
 
 ```sh
 ./grove.sh web                  # loopback only (for an ssh tunnel)
