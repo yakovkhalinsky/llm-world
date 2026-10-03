@@ -1,14 +1,14 @@
-"""Ollama client for the LLM's three jobs, with tiered model chains.
+"""Ollama client for the grove's LLM jobs, with tiered/per-job models.
 
-Cloud models (reasoning-capable, gated behind an ollama subscription)
-are 10-20x faster than this CPU can manage and write far better prose.
-Local models keep the world self-contained: no network, no account.
-The chain machinery unifies both: start with the preferred tier, and
-auto-fall to the next model after repeated failures — the world runs
-on whatever is available, and on templates alone when nothing is.
+Local hardware reality (measured on the grove's own CPU): llama-3.2-3b
+writes the best prose, names and judgments (~20-60 s warm per call);
+llama-3.2-1b keeps up with the chronicler (~5-8 s per line). So in the
+local tier each job runs on the model that suits its cadence, with an
+automatic swap to the other after repeated failures. The cloud tier
+keeps a single fast chain with local fallback.
 
-Every call is: short prompt, JSON-schema `format`, `think` disabled,
-token cap, hard wall-clock deadline. `chat_json` NEVER raises.
+Local chains also keep ~everything resident: keep_alive 30m both models
+(~3.3 GB), so warm calls stay warm. chat_json NEVER raises.
 """
 
 import json
@@ -19,12 +19,15 @@ import urllib.request
 
 DEFAULT_HOST = "http://127.0.0.1:11434"
 
+LOCAL_JOBS = {"soul": "llama3.2:3b", "chron": "llama3.2:1b",
+              "voice": "llama3.2:3b"}
+LOCAL_ALT = {"llama3.2:3b": "llama3.2:1b", "llama3.2:1b": "llama3.2:3b"}
 CLOUD_CHAIN = ["glm-5.2:cloud", "deepseek-v4-pro:cloud", "llama3.2:1b"]
-LOCAL_CHAIN = ["llama3.2:1b", "llama3.2:3b"]
+LOCAL_FALLBACK_ORDER = ["llama3.2:1b", "llama3.2:3b"]
 
 
 class LLM:
-    def __init__(self, model="auto", tier="auto", host=DEFAULT_HOST,
+    def __init__(self, model="auto", tier="local", host=DEFAULT_HOST,
                  timeout=240.0):
         self.host = host
         self.timeout = timeout
@@ -33,26 +36,51 @@ class LLM:
         self.reason = ""
         self.latency = 0.0
         self.last_raw = None
-        self.fail_streak = 0
         self.notes = []
-        self._tags = self._fetch_tags()
+        self.job_fails = {}               # job -> consecutive failures
+        self.tags = self._fetch_tags()
         if model in ("auto", None, ""):
-            base = CLOUD_CHAIN if self._prefer_cloud() else LOCAL_CHAIN
-            self.chain = list(dict.fromkeys(base))
+            self.explicit = None
         else:
-            self.chain = [model] + [f for f in
-                (CLOUD_CHAIN if ":cloud" in model else LOCAL_CHAIN)
-                if f != model]
-        self.fallbacks = list(self.chain)
-        self.model = None
-        for cand in self.chain:
-            self.model = cand
-            if self._model_ok(cand):
-                break
-        if self.model is None:
-            self.enabled = False
-            self.reason = "no usable model in " + ", ".join(self.chain)
+            self.explicit = model
+        self.job_models = {}
+        for job in LOCAL_JOBS:
+            self.job_models[job] = self._resolve(job)
 
+    # -- model resolution ------------------------------------------------
+    def _available(self, name):
+        for m in self.tags.get("models", []):
+            n = m.get("name", "") or m.get("model", "")
+            if n == name or (n.endswith(":latest") and n[:-7] == name):
+                return True
+        return False
+
+    def _resolve(self, job):
+        if self.explicit:
+            return self.explicit
+        if self.tier == "local":
+            m = LOCAL_JOBS[job]
+            return m if self._available(m) else LOCAL_ALT[m]
+        # auto: start local; the failure machinery can move on
+        m = LOCAL_JOBS[job]
+        return m if self._available(m) else LOCAL_FALLBACK_ORDER[0]
+
+    def _swap_job_model(self, job):
+        cur = self.job_models.get(job)
+        if self.explicit:
+            return False
+        cand = LOCAL_ALT[cur] if cur in LOCAL_ALT else \
+            (CLOUD_CHAIN[0] if self.tier == "auto" and self._available(
+                CLOUD_CHAIN[0]) else LOCAL_FALLBACK_ORDER[0])
+        if cand == cur:
+            return False
+        if self._available(cand):
+            self.job_models[job] = cand
+            self.notes.append(f"{job} moved to {cand}")
+            return True
+        return False
+
+    # -- ollama i/o --------------------------------------------------------
     def _fetch_tags(self):
         try:
             return self._request("GET", "/api/tags", None)
@@ -60,36 +88,6 @@ class LLM:
             self.enabled = False
             self.reason = f"ollama unreachable ({e})"
             return {"models": []}
-
-    def _prefer_cloud(self):
-        if self.tier == "cloud":
-            return True
-        if self.tier == "local":
-            return False
-        # auto: try the cloud first; the failure machinery falls back
-        return True
-
-    def _model_ok(self, name):
-        wanted = name
-        for m in self._tags.get("models", []):
-            if m.get("name") == wanted or m.get("model") == wanted or \
-                    (m.get("name", "").endswith(":latest") and
-                     m["name"][:-7] == wanted):
-                return True
-        return False
-
-    def _advance_chain(self):
-        """After repeated failures, move to the next usable model."""
-        while self.fallbacks:
-            cand = self.fallbacks.pop(0)
-            if self._model_ok(cand):
-                self.model = cand
-                self.fail_streak = 0
-                self.notes.append(f"soul moved to {cand}")
-                return True
-        self.enabled = False
-        self.reason = self.reason or "every model in the chain failed"
-        return False
 
     def _request(self, method, path, payload):
         url = self.host + path
@@ -100,35 +98,27 @@ class LLM:
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode())
 
-    def is_cloud(self):
-        return self.model is not None and self.model.endswith(":cloud")
-
-    def soul_gap(self):
-        """Wall seconds between World Soul invitations, by tier."""
-        if self.is_cloud():
-            return 40 + 40   # a fast model can speak often
-        return 150 + 90      # a slow one must not starve the prose
-
+    # -- the one public call -------------------------------------------------
     def chat_json(self, system, user, schema, max_tokens=160,
-                  temperature=0.8, retries=1):
-        """One streamed structured completion. dict on success, None on
-        any failure — callers fall back and the chain may advance."""
+                  temperature=0.8, retries=1, job="chron"):
+        """One streamed structured completion. dict | None; the job's
+        model may swap after repeated failures."""
         if not self.enabled:
             return None
+        attempts = retries + 1
+        model = self.job_models.get(job, "llama3.2:1b")
         payload = {
-            "model": self.model,
+            "model": model,
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}],
-            "stream": True,          # chunks arrive; a stalled call can be
-            "format": schema,        # abandoned instead of hanging forever
-            "think": False,          # reasoning models must not spend the
-                                     # token budget thinking
+            "stream": True,
+            "format": schema,
+            "think": False,
             "options": {"num_predict": max_tokens, "num_ctx": 4096,
                         "temperature": temperature},
             "keep_alive": "30m",
         }
         deadline = time.time() + self.timeout
-        attempts = (retries + 1) * 3 if self.is_cloud() else retries + 1
         for _attempt in range(attempts):
             t0 = time.time()
             content = self._stream_chat(payload, deadline)
@@ -136,32 +126,30 @@ class LLM:
             if content:
                 try:
                     out = json.loads(content)
-                    self.fail_streak = 0
+                    self.job_fails[job] = 0
                     return out
                 except json.JSONDecodeError:
                     m = re.search(r"\{[\s\S]*\}", content)
                     if m:
                         try:
                             out = json.loads(m.group(0))
-                            self.fail_streak = 0
+                            self.job_fails[job] = 0
                             return out
                         except json.JSONDecodeError:
                             pass
-            self.reason = "unparseable JSON" \
-                if self.reason == "" else self.reason
-            self.fail_streak += 1
-            if self.fail_streak >= 3:
-                if self._advance_chain():
-                    payload["model"] = self.model
-                    deadline = time.time() + self.timeout
-                else:
-                    return None
+            self.reason = self.reason or "unparseable JSON"
+            self.job_fails[job] = self.job_fails.get(job, 0) + 1
+            if self.job_fails[job] >= 2:
+                self._swap_job_model(job)
+                payload["model"] = self.job_models[job]
+                deadline = time.time() + self.timeout
+                self.job_fails[job] = 0
         return None
 
     def _stream_chat(self, payload, deadline):
         """Accumulate a streamed /api/chat response; None on failure.
-        Reasoning chunks may carry their text in `thinking` — never
-        treated as the answer."""
+        Reasoning chunks may carry text in `thinking` — never treated
+        as the answer."""
         content = []
         data = json.dumps(payload).encode()
         req = urllib.request.Request(
@@ -181,9 +169,6 @@ class LLM:
                         break
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             self.reason = f"call failed: {e}"
-            self.fail_streak += 1
-            if self.fail_streak >= 3:
-                self._advance_chain()
             return None
         except (json.JSONDecodeError, ConnectionError):
             self.reason = "bad stream data"
@@ -192,17 +177,25 @@ class LLM:
         self.last_raw = text[:300]
         return text if text else None
 
+    # -- pacing, by what the machine can actually carry ---------------------
+    def is_cloud(self):
+        return ":cloud" in str(self.job_models.get("soul", ""))
+
+    def soul_gap(self):
+        """Wall seconds between World Soul invitations."""
+        if self.is_cloud():
+            return 40 + 40
+        return 90 + 90          # the 3B needs ~20-60s; the world breathes
+
 
 def status_line(llm):
     if llm is None:
         return "LLM off — pure deterministic sim"
     if not llm.enabled:
         return f"LLM off — {llm.reason}"
-    base = f"LLM {llm.model} · last call {llm.latency:.1f}s"
+    base = f"LLM {llm.job_models.get('soul')} (soul) · " \
+           f"{llm.job_models.get('chron')} (prose) · last call " \
+           f"{llm.latency:.1f}s"
     if llm.notes:
         base += f" · {llm.notes[-1]}"
-    if llm.fail_streak:
-        base += f" · {llm.fail_streak} fails ×"
-    elif llm.reason and False:
-        base += f" · {llm.reason[:40]}"
     return base

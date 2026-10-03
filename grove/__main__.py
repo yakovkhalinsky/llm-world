@@ -213,8 +213,9 @@ def _add_llm_flags(sp):
                     help='a model name, or "auto" (cloud-first with '
                          'local fallback)')
     sp.add_argument("--tier", choices=("auto", "cloud", "local"),
-                    default="auto",
-                    help='"local" keeps the grove strictly offline')
+                    default="local",
+                    help='"local" = per-job local models, fully offline '
+                         '(default); "cloud" = fast cloud soul')
     sp.add_argument("--host", default=None)
 
 

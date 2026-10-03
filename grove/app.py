@@ -60,7 +60,8 @@ class SoulWorker(threading.Thread):
                     job["system"], job["user"], job["schema"],
                     max_tokens=job.get("max_tokens", 160),
                     temperature=job.get("temperature", 0.8),
-                    retries=job.get("retries", 1))
+                    retries=job.get("retries", 1),
+                    job=job.get("kind", "chron"))
                 ok = data is not None
             except Exception as e:   # the soul must never crash the world
                 self.client.reason = f"worker error: {e}"
