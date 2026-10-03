@@ -185,7 +185,7 @@ class LLM:
         """Wall seconds between World Soul invitations."""
         if self.is_cloud():
             return 40 + 40
-        return 90 + 90          # the 3B needs ~20-60s; the world breathes
+        return 60 + 60          # the 3B needs ~20-60s per call
 
 
 def status_line(llm):
