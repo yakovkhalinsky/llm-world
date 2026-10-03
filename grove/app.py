@@ -97,7 +97,8 @@ class Grove:
 
     def init_llm(self):
         self.llm = None if self.args.offline else llmm.LLM(
-            model=self.args.model, host=self.args.host)
+            model=self.args.model, tier=getattr(self.args, "tier", "auto"),
+            host=self.args.host)
         if self.llm and self.llm.enabled and self.args.cmd in ("run", "web"):
             self.worker = SoulWorker(self.llm)
             self.worker.start()
@@ -116,18 +117,19 @@ class Grove:
         self.db.add_stats(w["tick"], W.counts(w), W.plant_counts(w))
 
         # template lines appear immediately, whatever the LLM is doing;
-        # the soul's own events speak for themselves (no narration call)
+        # the soul's own events (op + prophecy fulfillments) speak for
+        # themselves; natural happenings get template-then-LLM lines
         items = chronicler.batch(notable, w)
         llm_items = []
         for it in items:
             cached = self.db.cache_get(it["key"])
-            if it["slot"].get("kind") == "op":
+            if it["slot"].get("kind") in ("op", "destiny", "destiny_lost"):
                 self.db.record(it["key"], it["tick"], it["template"], "soul")
             elif cached:
                 self.db.record(it["key"], it["tick"], cached, "llm")
             else:
                 self.db.record(it["key"], it["tick"], it["template"])
-            if it["slot"].get("kind") != "op":
+            if it["slot"].get("kind") not in ("op", "destiny", "destiny_lost"):
                 llm_items.append(it)
         if llm_items and self.worker is not None:
             for it in llm_items:
@@ -145,20 +147,19 @@ class Grove:
         w = self.world
         if self.worker.busy:
             return
-        # the soul is first; idle slots rotate between prose and naming
+        # the soul is first; then prose follows its backlog; naming fills
+        # the rest. A fast (cloud) tier speaks far more often.
         if w["tick"] >= w["next_op"] and \
                 time.time() >= getattr(self, "next_op_wall", 0):
             self._invite_operator()
-            # an LLM turn costs a minute or two on this CPU; keep the
-            # world breathing between fates
-            self.next_op_wall = time.time() + 150 + random.randint(0, 90)
+            self.next_op_wall = time.time() + self.llm.soul_gap()
             return
-        if len(self.pending_chron) > 5:      # cap: drop oldest, keep fresh
-            for eid in list(self.pending_chron)[:len(self.pending_chron) - 5]:
+        if len(self.pending_chron) > 8:      # cap: drop oldest, keep fresh
+            for eid in list(self.pending_chron)[:len(self.pending_chron) - 8]:
                 del self.pending_chron[eid]
         chron_ready = bool(self.pending_chron)
-        self.slot_rot = (getattr(self, "slot_rot", 0) + 1) % 2
-        if chron_ready and self.slot_rot == 0:
+        need = 1 if self.llm.is_cloud() else 2
+        if chron_ready and len(self.pending_chron) >= need:
             self._flush_chron()
             return
         if self._maybe_name(notable):
@@ -195,7 +196,7 @@ class Grove:
     def _maybe_name(self, notable):
         w = self.world
         budget = w.get("name_budget", 0)
-        if budget <= 0 or w.get("fawns_named", 0) >= 3 or self.worker.busy:
+        if budget <= 0 or w.get("fawns_named", 0) >= 8 or self.worker.busy:
             return False
         pool = [kid for kid in w.get("name_pool", [])
                 if str(kid) in w["animals"]]        # only the living

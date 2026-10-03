@@ -214,6 +214,7 @@ def new_state(seed: int, size: int = SIZE_DEFAULT) -> dict:
         "effects": [],               # ongoing operator effects
         "pending_effect": None,      # queued operator effect (applied next tick)
         "name_pool": [],             # newborns awaiting a name from the voice
+        "destinies": [],             # the soul's watch over named creatures
         "next_op": 6,                # tick when the LLM operator is next invited
         "op_history": [],            # last operator decisions (for its own digest)
         "elder_ids": [],             # plants that reached 'old' stage

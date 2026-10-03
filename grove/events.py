@@ -1,8 +1,8 @@
 """Event handling: which happenings deserve a place in the chronicle."""
 
-# priority tiers for clipping loud weeks (lower is more important)
 PRIORITY = {
-    "op": 0, "recolonize": 1, "arrival": 1, "turn": 2, "storm": 3,
+    "op": 0, "recolonize": 1, "destiny": 1, "arrival": 1,
+    "turn": 2, "destiny_lost": 2, "storm": 3,
     "fell": 3, "elder": 4, "predation": 5, "departure": 6,
     "browsed": 7, "birth": 8, "oldage": 9, "starve": 9,
 }
@@ -49,5 +49,6 @@ def event_key(e):
     import json
     slim = {k: v for k, v in e.items() if k in
             ("tick", "kind", "sp", "hunter", "plant", "x", "y", "n",
-             "action", "region", "strength", "season", "cause", "kids")}
+             "action", "region", "strength", "season", "cause", "kids",
+             "name", "destiny")}
     return json.dumps(slim, sort_keys=True)

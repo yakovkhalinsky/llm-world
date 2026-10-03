@@ -637,6 +637,27 @@ def _pop(w, sp):
 
 # --------------------------------------------------------------- population
 
+def _check_destinies(w, evs):
+    """The soul's promises are watched deterministically: by water or
+    by age; a death ends the watch unheard."""
+    t = w["tick"]
+    for d in list(w.get("destinies", [])):
+        a = w["animals"].get(str(d["id"]))
+        if a is None or a["sp"] != d["sp"]:
+            w["destinies"].remove(d)
+            evs.append({"tick": t, "kind": "destiny_lost", "sp": d["sp"],
+                        "destiny": d["text"]})
+            continue
+        hit = _near_water(w, a["x"], a["y"], 1) if d["kind"] == "water" \
+            else a["age"] >= W.ANIMAL_SPECIES[d["sp"]]["lifespan"] * 0.4
+        if hit:
+            w["destinies"].remove(d)
+            evs.append({"tick": t, "kind": "destiny", "sp": a["sp"],
+                        "x": a["x"], "y": a["y"],
+                        "name": w["names"].get(str(a["id"])),
+                        "destiny": d["text"]})
+
+
 def _recolonize(w, evs):
     t = w["tick"]
     size = w["size"]
@@ -688,6 +709,7 @@ def tick(world):
     _update_cells(world, evs)
     _update_plants(world, evs, world.pop("_light"))
     _update_animals(world, evs)
+    _check_destinies(world, evs)
     _recolonize(world, evs)
     world["name_budget"] = 1  # LLM voice may name one creature per week
     return evs
@@ -756,6 +778,20 @@ def _apply_effect(world, effect, evs):
                 ev["n"] = n
         else:
             ev["action"] = "quiet"
+
+    elif action == "destiny":
+        tid = effect.get("target")
+        a = world["animals"].get(str(tid))
+        open_d = {d["id"] for d in world.get("destinies", [])}
+        if a is None or tid in open_d or len(world.get("destinies", [])) >= 3 \
+                or not effect.get("destiny"):
+            ev["action"] = "quiet"   # only souls the engine truly knows
+        else:
+            kind = "water" if a["sp"] in \
+                ("rabbit", "deer", "fox", "wolf", "stag", "boar") else "age"
+            world.setdefault("destinies", []).append(
+                {"id": tid, "sp": a["sp"], "text": effect["destiny"],
+                 "made": t, "kind": kind})
 
     elif action == "visitor":
         sp = effect.get("species") or "stag"

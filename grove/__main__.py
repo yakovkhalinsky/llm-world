@@ -209,7 +209,12 @@ def cmd_new(args):
 def _add_llm_flags(sp):
     sp.add_argument("--offline", action="store_true",
                     help="pure deterministic sim; no LLM calls")
-    sp.add_argument("--model", default=None)
+    sp.add_argument("--model", default="auto",
+                    help='a model name, or "auto" (cloud-first with '
+                         'local fallback)')
+    sp.add_argument("--tier", choices=("auto", "cloud", "local"),
+                    default="auto",
+                    help='"local" keeps the grove strictly offline')
     sp.add_argument("--host", default=None)
 
 

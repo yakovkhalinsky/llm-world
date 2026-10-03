@@ -70,6 +70,12 @@ def _line(world, e):
         return f"A visitor {sp} entered the grove at {place}."
     if kind == "departure":
         return f"The visitor {sp} moved on, beyond the trees."
+    if kind == "destiny":
+        label = f"{e.get('name')} the {sp}" if e.get("name") \
+            else f"the wild {sp}"
+        return f"As the soul foretold — {label}: {e.get('destiny', '')}"
+    if kind == "destiny_lost":
+        return f"Under the soul's watch, {sp} died and the prophecy was unheard."
     if kind == "turn":
         return _SEASON_LINES.get(e.get("season", 0), "A season turned.")
     if kind == "storm":
