@@ -18,7 +18,9 @@ import sys
 import time
 
 from . import chronicler
+from . import db as dbm
 from . import events as evm
+from . import gen
 from . import llm as llmm
 from . import operator
 from . import render
@@ -269,8 +271,8 @@ def main(argv=None):
     if args.cmd == "new" and args.seed is None:
         args.seed = random.randint(1, 10_000)
     # subcommands that didn't set model/host inherit the defaults
-    if getattr(args, "model", None) is None:
-        args.model = llmm.DEFAULT_MODEL
+    if getattr(args, "model", None) is None:   # 'auto'/tier resolved later
+        args.model = "auto"
     if getattr(args, "host", None) is None:
         args.host = llmm.DEFAULT_HOST
     args.func(args)
