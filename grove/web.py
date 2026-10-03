@@ -296,7 +296,9 @@ async function poll() {
     if (s.tick !== ST.seenTick) {          // a NEW sim week: new flight
       ST.seenTick = s.tick;
       const lag = Math.max(0, s.now - s.step_at);   // poll lag, seconds
-      const dur = Math.max(0.25, s.tick_seconds - lag);
+      // creatures cover their journey in the early part of their week,
+      // then browse and rest; the flight still ends before the next week
+      const dur = Math.max(0.5, (s.tick_seconds - lag) * 0.45);
       ST.flight = { start: performance.now() / 1000, dur };
     }
     updateDom();

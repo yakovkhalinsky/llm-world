@@ -228,14 +228,16 @@ def build_parser():
     sp.add_argument("--force", action="store_true")
     sp.set_defaults(func=cmd_new, offline=True, model=None, host=None)
     sp = sub.add_parser("run", help="live watch mode")
-    sp.add_argument("--tick-seconds", type=float, default=8.0)
+    sp.add_argument("--tick-seconds", type=float, default=12.0,
+                    help="wall seconds per simulated week")
     _add_llm_flags(sp)
     sp.set_defaults(func=cmd_run)
     sp = sub.add_parser("web", help="live dashboard for other devices")
     sp.add_argument("--port", type=int, default=8787)
     sp.add_argument("--public", action="store_true",
                     help="bind 0.0.0.0 so other devices can reach it")
-    sp.add_argument("--tick-seconds", type=float, default=8.0)
+    sp.add_argument("--tick-seconds", type=float, default=12.0,
+                    help="wall seconds per simulated week")
     _add_llm_flags(sp)
     sp.set_defaults(func=cmd_web)
     sp = sub.add_parser("step", help="advance N weeks (batch)")
