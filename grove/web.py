@@ -110,7 +110,8 @@ def snapshot(grove, runner, lock):
         hist = g.db.history(36)
         pops_now = W.counts(w)
         plants_now = W.plant_counts(w)
-        pop_chips = [{"emo": render.ANIMAL_EMOJI.get(sp, "·"), "n": n}
+        pop_chips = [{"emo": render.ANIMAL_EMOJI.get(sp, "·"), "n": n,
+                      "name": sp}
                      for sp, n in sorted(pops_now.items(), key=lambda kv: -kv[1])]
         series = []
         for sp, n in sorted(pops_now.items()):
@@ -208,8 +209,20 @@ PAGE = r"""<!doctype html>
     backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
     padding: 14px 18px 13px;
   }
-  .idbox { top: 14px; right: 16px; text-align: right;
-           max-width: min(420px, 60vw); }
+  .idbox { top: 14px; right: 16px; max-width: min(240px, 62vw); }
+  .idrow { display: flex; gap: 12px; justify-content: flex-end;
+           align-items: baseline; font-size: 13.5px; color: var(--dim);
+           letter-spacing: .02em; }
+  .idrow #when { color: var(--text); }
+  .poplines { margin-top: 10px; }
+  .popline { display: grid; grid-template-columns: 24px 1fr auto;
+             gap: 8px; align-items: baseline; padding: 3px 0;
+             font-size: 13.5px; }
+  .popline + .popline { border-top: 1px solid rgba(46,68,54,0.35); }
+  .popline .picon { text-align: center; }
+  .popline .pname { color: var(--dim); }
+  .popline .pnum { font-variant-numeric: tabular-nums;
+                   font-family: "Menlo", monospace; font-size: 12.5px; }
   .souline { top: 52px; left: 16px; max-width: min(430px, 60vw); }
   .feed { left: 16px; bottom: 16px; width: min(560px, 60vw); }
   .ctl { right: 16px; bottom: 16px; width: min(430px, 92vw); }
@@ -308,9 +321,11 @@ PAGE = r"""<!doctype html>
     <div class="panel title">☁ ☾ grove</div>
 
     <div class="panel idbox" id="idbox">
-      <span class="chip" id="when">…</span>
-      <span class="chip" id="weather">…</span>
-      <span class="chip" id="pops">…</span>
+      <div class="idrow">
+        <span id="when">…</span>
+        <span id="weather">…</span>
+      </div>
+      <div class="poplines" id="pops"></div>
     </div>
 
     <div class="panel souline">
@@ -404,8 +419,10 @@ function updateDom() {
   if (s.error) { $("status").textContent = s.error; return; }
   $("when").textContent = `Week ${s.tick} · ${s.season}`;
   $("weather").textContent = `${s.weather_emo} ${s.weather}`;
-  $("pops").textContent = (s.pop_chips || [])
-    .map(c => c.emo + c.n).join(" ");
+  $("pops").innerHTML = (s.pop_chips || []).map(c =>
+    `<div class="popline"><span class="picon">${c.emo}</span>` +
+    `<span class="pname">${c.name}</span>` +
+    `<span class="pnum">${c.n}</span></div>`).join("");
   if (document.body.classList.contains("plain"))
     $("map").textContent = s.map.join("\n");
   const soulEl = $("soul");
