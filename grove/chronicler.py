@@ -28,9 +28,9 @@ _KIND_BONES = {
     "predation": ["{H} took a wild {sp} at {p}.",
                   "{H} caught a wild {sp} at {p}.",
                   "A wild {sp} fell to the {sp2} at {p}."],
-    "birth": ["{n} young {sp} were born at {p}.",
+    "birth": ["{n} young {sp} {Vb} born at {p}.",
               "{n} {sp} young entered the world at {p}.",
-              "Newborn {sp} — {n} appeared at {p}."],
+              "Newborn {sp} — {n} appeared at {pp}."],
     "fell": ["{C} {V} {L} at {p}.",
              "At {p}, {Cl} {V} {L}.",
              "{L} {Be} fallen at {p} — {Cl}."],
@@ -122,10 +122,11 @@ def _line(world, e):
     bones = {"sp": sp, "ph": ph, "p": place, "n": bones_n,
              "A": A, "L": L if L else f"the {ph}",
              "Be": "are" if bones_n > 1 else "is",
+             "Vb": "were" if bones_n > 1 else "was",
              "H": H or "It",
              "Cl": (_CAUSE_HEADS.get(
                  e.get("cause") or "age", ("Slow decline",))[0]).lower(),
-             "sp2": e.get("hunter", sp), "C": _CAUSE_HEADS.get(
+             "pp": place, "sp2": e.get("hunter", sp), "C": _CAUSE_HEADS.get(
                  e.get("cause") or "age", ("Slow decline",))[0],
              "V": _CAUSE_VERBS[_stable(seed, tick, 7) % len(_CAUSE_VERBS)]}
     if bones_n > 1 and "{L}" in variant and not name:

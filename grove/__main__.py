@@ -167,7 +167,8 @@ def cmd_map(args):
 
 def cmd_chronicle(args):
     g = Grove(args)
-    rows = g.db.chronicle_all() if args.all else g.db.chronicle(args.tail)
+    rows = g.db.chronicle_all() if args.all else list(
+        reversed(g.db.chronicle(args.tail)))   # newest first, like a feed
     for _ident, tick, _kind, source, text in rows:
         mark = {"llm": "☾", "soul": "☾", "voice": "☂",
                 "template": "·"}.get(source, "?")
