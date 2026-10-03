@@ -361,17 +361,25 @@ catch (e) { document.body.classList.add("plain"); }
 if (new URLSearchParams(location.search).has("plain"))
   document.body.classList.add("plain");
 
-const TS = 22;                       // logical tile size
+const TW = 30, TH = 15;              // isometric tile diamond (2:1)
+const SIDE = 13;                     // slab thickness under the floor
+const PADX = 26, PADY = 58;          // margins head-/foot-room
 const cnv = $("scene"), ctx = cnv.getContext("2d");
 const DPR = Math.max(1, window.devicePixelRatio || 1);
+let OX = 0, OY = 0, CW = 0, CH = 0;
 function fitCanvas(size) {
-  const px = size * TS;
-  if (cnv.width !== px * DPR) {
-    cnv.width = px * DPR; cnv.height = px * DPR;
-    cnv.style.aspectRatio = "1 / 1";
+  const w = (size - 1) * TW + TW + PADX * 2;
+  const h = (size - 1) * TH + TH + PADY * 2;
+  if (cnv.width !== Math.round(w * DPR)) {
+    CW = w; CH = h;
+    cnv.width = Math.round(w * DPR); cnv.height = Math.round(h * DPR);
+    cnv.style.aspectRatio = `${w} / ${h}`;
+    OX = w / 2;  OY = PADY;          // (0,0) sits at the top corner
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   }
 }
+/* cell (x, y) → screen position of the diamond's center */
+function iso(x, y) { return [OX + (x - y) * TW / 2, OY + (x + y) * TH / 2]; }
 
 const SEASONS = {
   spring: { grass: "#6fa053", soil: "#4a3a29", water: "#2a4d66",
@@ -405,169 +413,244 @@ function roundRect(c, x, y, w, h, r) {
   c.fill();
 }
 
+/* one isometric ground diamond centered at (cx, cy) */
+function diamondPath(c, cx, cy) {
+  c.beginPath();
+  c.moveTo(cx, cy - TH / 2);
+  c.lineTo(cx + TW / 2, cy);
+  c.lineTo(cx, cy + TH / 2);
+  c.lineTo(cx - TW / 2, cy);
+  c.closePath();
+}
+
+/* soft ellipse shadow that grounds a standing thing */
+function shadow(cx, cy, rx) {
+  ctx.fillStyle = "rgba(8,14,11,0.20)";
+  ctx.beginPath(); ctx.ellipse(cx, cy + 2, rx, rx * 0.38, 0, 0, 6.3);
+  ctx.fill();
+}
+
 function drawTerrain(s, tsec) {
   const p = pal(), size = s.size;
   for (let i = 0; i < s.cells.length; i++) {
     const c = s.cells[i];
-    const x = (i % size) * TS, y = Math.floor(i / size) * TS;
+    const [sx, sy] = iso(i % size, Math.floor(i / size));
+
     if (c[0] === "w") {
       ctx.fillStyle = p.water;
-      ctx.fillRect(x, y, TS, TS);
+      diamondPath(ctx, sx, sy); ctx.fill();
       const wob = Math.sin(tsec * 1.4 + i * 1.7) * 2;
-      ctx.strokeStyle = "rgba(200,225,240,0.16)";
+      ctx.strokeStyle = "rgba(200,225,240,0.22)";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(x + 4, y + TS * 0.4 + wob);
-      ctx.lineTo(x + TS - 6, y + TS * 0.4 + wob);
+      ctx.moveTo(sx - 7, sy + wob);
+      ctx.lineTo(sx + 4, sy + wob);
       ctx.stroke();
       continue;
     }
-    // soil blends toward grass with the grass value
-    const g = c[1];
-    const soilmix = 1 - Math.min(1, c[2] * 0.5);   // wet soil darker
+
+    diamondPath(ctx, sx, sy);
     ctx.fillStyle = p.soil;
-    ctx.fillRect(x, y, TS, TS);
+    ctx.fill();
+    const g = c[1];
     if (g > 0.06) {
       ctx.globalAlpha = Math.min(1, g * 0.9);
       ctx.fillStyle = p.grass;
-      ctx.fillRect(x, y, TS, TS);
+      diamondPath(ctx, sx, sy); ctx.fill();
       ctx.globalAlpha = 1;
     }
     if (c[2] > 0.75) {                             // soaked ground
       ctx.fillStyle = "rgba(30,50,66,0.18)";
-      ctx.fillRect(x, y, TS, TS);
+      diamondPath(ctx, sx, sy); ctx.fill();
     }
     if (c[0] === "r") {
       ctx.fillStyle = p.rock;
-      ctx.fillRect(x, y, TS, TS);
+      diamondPath(ctx, sx, sy); ctx.fill();
       ctx.fillStyle = "rgba(255,255,255,0.07)";
       ctx.beginPath();
-      ctx.moveTo(x + 3, y + 15); ctx.lineTo(x + 10, y + 5);
-      ctx.lineTo(x + 17, y + 15); ctx.closePath(); ctx.fill();
+      ctx.moveTo(sx - 5, sy); ctx.lineTo(sx, sy - 5);
+      ctx.lineTo(sx + 5, sy); ctx.closePath(); ctx.fill();
     }
+
+    /* faint diamond seams so the grid reads */
+    ctx.strokeStyle = "rgba(0,0,0,0.055)";
+    ctx.lineWidth = 1;
+    diamondPath(ctx, sx, sy); ctx.stroke();
+
     if (c[3]) {                                    // mushrooms
       ctx.fillStyle = "#e8e3d2";
-      ctx.fillRect(x + 9, y + 13, 2, 5);
+      ctx.fillRect(sx - 1, sy - 2, 2, 5);
       ctx.fillStyle = "#b0483c";
-      ctx.beginPath(); ctx.arc(x + 10, y + 13, 4, 3.2, 6.1); ctx.fill();
+      ctx.beginPath(); ctx.arc(sx, sy - 2, 4, 3.2, 6.1); ctx.fill();
     }
     if (c[4]) {                                    // carrion
       ctx.fillStyle = "#c9c2b8";
-      ctx.beginPath(); ctx.arc(x + 11, y + 13, 3.5, 0, 6.3); ctx.fill();
+      ctx.beginPath(); ctx.arc(sx, sy + 2, 3.2, 0, 6.3); ctx.fill();
     }
   }
 }
 
-function drawPlants(s, tsec) {
-  const p = pal(), sway = Math.sin(tsec * 1.1) * 0.045;
-  for (const t of s.plants) {
-    const cx = t.x * TS + TS / 2, by = t.y * TS + TS - 2;
-    const isPine = t.sp === "pine", isFern = t.sp === "fern",
-          isBerry = t.sp === "berry";
-    if (t.st === "log") {
-      ctx.fillStyle = "#6b4a33";
-      roundRect(ctx, t.x * TS + 3, by - 6, TS - 6, 5, 2); ctx.fill();
-      ctx.fillStyle = "rgba(255,255,255,0.06)";
-      ctx.fillRect(t.x * TS + 3, by - 6, TS - 6, 2);
-      continue;
+/* the world sits on a raised earth slab */
+function drawSlab(s) {
+  const size = s.size, p = pal();
+  const [rx, ry] = iso(size - 1, 0);
+  const [bx, by] = iso(size - 1, size - 1);
+  const [lx, ly] = iso(0, size - 1);
+  ctx.fillStyle = "#4a392a";                       // sunlit side
+  ctx.beginPath();
+  ctx.moveTo(rx + TW / 2, ry);
+  ctx.lineTo(bx, by + TH / 2);
+  ctx.lineTo(bx, by + TH / 2 + SIDE);
+  ctx.lineTo(rx + TW / 2, ry + SIDE);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#3a2d20";                       // shaded side
+  ctx.beginPath();
+  ctx.moveTo(bx, by + TH / 2);
+  ctx.lineTo(lx - TW / 2, ly);
+  ctx.lineTo(lx - TW / 2, ly + SIDE);
+  ctx.lineTo(bx, by + TH / 2 + SIDE);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "rgba(0,0,0,0.22)";              // soft ground shadow
+  ctx.beginPath();
+  ctx.ellipse(OX, OY + (size - 1) * TH + SIDE + 8,
+              (size - 1) * TW / 2 + 30, 20, 0, 0, 6.3);
+  ctx.fill();
+}
+
+function drawPlant(t, tsec) {
+  const p = pal(), sway = Math.sin(tsec * 1.1) * 0.05;
+  const [sx, sy] = iso(t.x, t.y);
+  const isPine = t.sp === "pine";
+
+  if (t.st === "log") {                            // flat lying trunk
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate((t.x * 7 % 3 - 1) * 0.25);          // settled at an angle
+    ctx.fillStyle = "#6b4a33";
+    roundRect(ctx, -10, -4, 20, 5, 2);
+    ctx.fillStyle = "rgba(255,255,255,0.07)";
+    ctx.fillRect(-10, -4, 20, 2);
+    ctx.restore();
+    return;
+  }
+  if (t.sp === "fern") {
+    ctx.strokeStyle = "#3f6d38"; ctx.lineWidth = 1.4;
+    for (let k = -2; k <= 2; k++) {
+      ctx.beginPath();
+      ctx.moveTo(sx, sy + 2);
+      ctx.quadraticCurveTo(sx + k * 4, sy - 6, sx + k * 6,
+                           sy - 11 + sway * 26);
+      ctx.stroke();
     }
-    if (isFern) {
-      ctx.strokeStyle = "#3f6d38"; ctx.lineWidth = 1.4;
-      for (let k = -1; k <= 1; k++) {
+    return;
+  }
+  if (t.sp === "berry") {
+    shadow(sx, sy, 6);
+    ctx.fillStyle = "#4a7a3a";
+    ctx.beginPath(); ctx.ellipse(sx, sy - 3, 7.5, 5.2, 0, 0, 6.3); ctx.fill();
+    if (t.b) {
+      ctx.fillStyle = "#b03a48";
+      for (const [bx, byy] of [[-3.5, -4], [1, -6.5], [4, -3.5]]) {
+        ctx.beginPath(); ctx.arc(sx + bx, sy + byy, 1.5, 0, 6.3); ctx.fill();
+      }
+    }
+    return;
+  }
+  // trees
+  let scale = t.st === "mature" ? 1 : t.st === "old" ? 1.1 : 0.55;
+  if (t.el) scale *= 1.12;
+  shadow(sx, sy, 9 * scale);
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.rotate(sway * (isPine ? 0.35 : 0.85));
+  const trunkCol = t.sp === "birch" ? "#d9d4c9"
+      : t.sp === "willow" ? "#8a7663" : "#5b422f";
+  const trunkH = isPine ? 7 : 10, tw = t.st === "sapling" ? 2 : 3;
+  ctx.fillStyle = trunkCol;
+  ctx.fillRect(-tw / 2, -trunkH * scale, tw, trunkH * scale);
+  if (t.sp === "birch" && t.st !== "sapling") {
+    ctx.fillStyle = "rgba(70,70,70,0.7)";
+    ctx.fillRect(-1.6, -trunkH * scale + 2, 1.5, 1);
+  }
+  const leafCol = isPine ? p.pine : p.leaf;
+  if (isPine) {
+    ctx.fillStyle = leafCol;
+    for (let k = 0; k < 3; k++) {
+      const w = (11 - k * 3) * scale, h = (9 - k) * scale,
+            oy = -(7 + k * 4.5) * scale;
+      ctx.beginPath();
+      ctx.moveTo(0, oy - h);
+      ctx.lineTo(w, oy);
+      ctx.lineTo(-w, oy);
+      ctx.closePath(); ctx.fill();
+    }
+    if (ST.s && ST.s.season === "winter") {
+      ctx.fillStyle = "rgba(240,246,250,0.55)";
+      ctx.beginPath();
+      ctx.moveTo(0, -22 * scale); ctx.lineTo(3.5 * scale, -17 * scale);
+      ctx.lineTo(-3.5 * scale, -17 * scale);
+      ctx.closePath(); ctx.fill();
+    }
+  } else {
+    const r = 9.5 * scale;
+    const cy = -trunkH * (t.st === "sapling" ? 1.15 : 1) - r * 0.55;
+    ctx.fillStyle = leafCol;
+    ctx.beginPath();
+    ctx.ellipse(0, cy, r, r * 0.72, 0, 0, 6.3); ctx.fill();
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.ellipse(r * 0.5, cy + r * 0.3, r * 0.68, r * 0.5, 0, 0, 6.3);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(-r * 0.55, cy + r * 0.15, r * 0.6, r * 0.45, 0, 0, 6.3);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    if (t.sp === "willow") {                       // drooping fronds
+      ctx.strokeStyle = leafCol; ctx.lineWidth = 1.3;
+      for (let k = -2; k <= 2; k++) {
         ctx.beginPath();
-        ctx.moveTo(cx, by);
-        ctx.quadraticCurveTo(cx + k * 6, by - 8, cx + k * 9,
-                             by - 13 + sway * 30);
+        ctx.moveTo(k * 3, cy + r * 0.3);
+        ctx.quadraticCurveTo(k * 5.5, cy + r * 0.9, k * 7, cy + r * 1.6);
         ctx.stroke();
       }
-      continue;
     }
-    if (isBerry) {
-      ctx.fillStyle = "#4a7a3a";
-      roundRect(ctx, cx - 7, by - 9, 14, 9, 4);
-      if (t.b) {
-        ctx.fillStyle = "#b03a48";
-        for (const [bx, byy] of [[-4, -3], [1, -6], [4, -2]]) {
-          ctx.beginPath(); ctx.arc(cx + bx, by + byy, 1.6, 0, 6.3); ctx.fill();
-        }
-      }
-      continue;
+    if (t.st === "old" || t.el) {
+      ctx.fillStyle = "rgba(30,42,28,0.22)";
+      ctx.beginPath();
+      ctx.ellipse(-r * 0.3, cy - r * 0.35, r * 0.5, r * 0.38, 0, 0, 6.3);
+      ctx.fill();
     }
-    // trees
-    let scale = t.st === "mature" ? 1 : t.st === "old" ? 1.08 : 0.55;
-    if (t.el) scale *= 1.12;
-    const leafCol = isPine ? p.pine : p.leaf;
-    // trunk
-    ctx.fillStyle = t.sp === "birch" ? "#d9d4c9"
-        : t.sp === "willow" ? "#8a7663" : "#5b422f";
-    const trunkH = isPine ? 6 : 9, tw = t.st === "sapling" ? 2 : 3;
-    ctx.fillRect(cx - tw / 2, by - trunkH, tw, trunkH);
-    if (t.sp === "birch" && t.st !== "sapling") {
-      ctx.fillStyle = "rgba(60,60,60,0.7)";
-      ctx.fillRect(cx - 1.6, by - trunkH + 2, 1.5, 1);   // birch marks
-    }
-    ctx.save();
-    ctx.translate(cx, by);
-    ctx.rotate(sway * (isPine ? 0.4 : 1.0));
-    const C = TS * scale;
-    if (isPine) {
-      ctx.fillStyle = leafCol;
-      for (let k = 0; k < 3; k++) {
-        const w = 11 - k * 3, h = 8 - k, oy = -7 - k * 4.5;
-        ctx.beginPath();
-        ctx.moveTo(0, oy - h);
-        ctx.lineTo(w, oy);
-        ctx.lineTo(-w, oy);
-        ctx.closePath(); ctx.fill();
-      }
-      if (ST.s && ST.s.season === "winter") {
-        ctx.fillStyle = "rgba(240,246,250,0.5)";
-        ctx.beginPath();
-        ctx.moveTo(0, -21); ctx.lineTo(3.5, -16); ctx.lineTo(-3.5, -16);
-        ctx.closePath(); ctx.fill();
-      }
-    } else {
-      const r = C * 0.42;
-      ctx.fillStyle = leafCol;
-      ctx.beginPath(); ctx.arc(0, -trunkH - r * 0.7, r, 0, 6.3); ctx.fill();
-      ctx.globalAlpha = 0.85;
-      ctx.beginPath(); ctx.arc(r * 0.55, -trunkH - r * 0.35, r * 0.7,
-                               0, 6.3); ctx.fill();
-      ctx.beginPath(); ctx.arc(-r * 0.6, -trunkH - r * 0.5, r * 0.62,
-                               0, 6.3); ctx.fill();
-      ctx.globalAlpha = 1;
-      if (t.st === "old" || t.el) {
-        ctx.fillStyle = "rgba(40,50,35,0.25)";
-        ctx.beginPath(); ctx.arc(-r * 0.3, -trunkH - r * 0.6,
-                                 r * 0.5, 0, 6.3); ctx.fill();
-      }
-    }
-    ctx.restore();
-    if ((t.st === "old" || t.el) && t.n && t.n !== "-") {
-      ctx.font = "italic 9px Georgia, serif";
-      ctx.fillStyle = "rgba(10,14,12,0.65)";
-      ctx.fillText(t.n, cx + 1, by - TS * 0.7);
-      ctx.fillStyle = "#dfe9db";
-      ctx.fillText(t.n, cx, by - TS * 0.7 - 1);
-    }
+  }
+  ctx.restore();
+  if ((t.st === "old" || t.el) && t.n && t.n !== "-") {
+    const ly = -trunkH * 2 - 16 * scale;
+    ctx.font = "italic 9px Georgia, serif";
+    ctx.fillStyle = "rgba(10,14,12,0.65)";
+    ctx.fillText(t.n, sx + 1, ly);
+    ctx.fillStyle = "#dfe9db";
+    ctx.fillText(t.n, sx, ly - 1);
   }
 }
 
 function drawAnimal(a, f, tsec, idx) {
-  const cx0 = a.px * TS + TS / 2, cy0 = a.py * TS + TS / 2;
-  const cx1 = a.x * TS + TS / 2, cy1 = a.y * TS + TS / 2;
-  // creatures that didn't move stay put; movers glide with easing
+  // glide between week-start and week-end cells — in iso space
   const e = f < 1 ? (f * f * (3 - 2 * f)) : 1;   // smoothstep
-  const cx = cx0 + (cx1 - cx0) * e, cy = cy0 + (cy1 - cy0) * e;
+  const cx0 = ((a.px - a.py) * TW / 2), cy0 = ((a.px + a.py) * TH / 2);
+  const cx1 = ((a.x - a.y) * TW / 2), cy1 = ((a.x + a.y) * TH / 2);
+  const gx = cx0 + (cx1 - cx0) * e, gy = cy0 + (cy1 - cy0) * e;
   const body = ANIMAL_BODY[a.sp] || "#999";
   // face the direction of glide; keep the facing when the glide is done
   // or when a creature briefly stands still (index-sticky across polls)
   const dx = cx1 - cx0;
   if (Math.abs(dx) > 0.9) FACING[idx] = dx < 0 ? -1 : 1;
   const flip = FACING[idx] || 1;
-  const bob = Math.sin(tsec * 5 + a.x) * 0.8;
+  const flyer = a.sp === "owl" || a.sp === "robin";
+  const lift = flyer ? -9 : Math.sin(tsec * 5 + a.x) * 0.8;
+  const cy = OY + gy + lift;
+  if (flyer) shadow(OX + gx, OY + gy + 2, 3);      // small, distant
+  else shadow(OX + gx, OY + gy, 6);
   ctx.save();
-  ctx.translate(cx, cy + (a.sp === "owl" ? 0 : bob * 0.6));
+  ctx.translate(OX + gx, cy);
   ctx.scale(flip, 1);
   const winter = ST.s && ST.s.season === "winter";
   switch (a.sp) {
@@ -650,13 +733,13 @@ function drawAnimal(a, f, tsec, idx) {
   if (a.n && a.n !== "-") {
     ctx.font = "italic 9px Georgia, serif";
     ctx.fillStyle = "rgba(10,14,12,0.65)";
-    ctx.fillText(a.n, cx + 1, cy - 9);
+    ctx.fillText(a.n, OX + gx + 1, cy - 10);
     ctx.fillStyle = "#dfe9db";
-    ctx.fillText(a.n, cx, cy - 10);
+    ctx.fillText(a.n, OX + gx, cy - 11);
   }
 }
 
-/* particles */
+/* particles fall over the whole scene */
 const dots = [];
 function spawnParticles(s, dt) {
   const storm = s.weather === "storm", rain = s.weather === "rain",
@@ -664,14 +747,14 @@ function spawnParticles(s, dt) {
   const count = kind => dots.reduce((n, d) => n + (d.kind === kind), 0);
   if ((rain || storm) && count("rain") < (storm ? 120 : 36) &&
       Math.random() < 0.5)
-    dots.push({ kind: "rain", x: Math.random() * 560, y: -6,
+    dots.push({ kind: "rain", x: Math.random() * CW, y: -6,
                 v: 190 + Math.random() * 90, dx: storm ? 42 : 12 });
   if (frost && count("snow") < 70)
     for (let k = 0; k < 2; k++)
-      dots.push({ kind: "snow", x: Math.random() * 560, y: -4,
+      dots.push({ kind: "snow", x: Math.random() * CW, y: -4,
                   v: 18 + Math.random() * 14, dx: Math.random() * 10 - 5 });
   if (s.season === "autumn" && count("leaf") < 10 && Math.random() < 0.015)
-    dots.push({ kind: "leaf", x: Math.random() * 560, y: -4,
+    dots.push({ kind: "leaf", x: Math.random() * CW, y: -4,
                 v: 22 + Math.random() * 16, dx: Math.random() * 24 - 12 });
 }
 
@@ -680,7 +763,7 @@ function drawParticles(dt) {
     const d = dots[i];
     d.y += d.v * dt; d.x += d.dx * dt;
     if (d.kind === "leaf") d.x += Math.sin((d.y + i * 10) * 0.05) * 12 * dt;
-    if (d.y > 540) { dots.splice(i, 1); continue; }
+    if (d.y > CH - 4) { dots.splice(i, 1); continue; }
     ctx.save();
     ctx.globalAlpha = d.kind === "rain" ? 0.55 : 0.8;
     if (d.kind === "rain") {
@@ -704,17 +787,23 @@ const REGIONS = { all: [0,0,1,1], NW: [0,0,.5,.5], NE: [.5,0,1,.5],
                   SW: [0,.5,.5,1], SE: [.5,.5,1,1] };
 function drawEffects(s) {
   for (const e of s.effects || []) {
-    const r = REGIONS[e.split(" over ")[1].split(" ")[0]] || REGIONS.all;
+    const reg = REGIONS[e.split(" over ")[1].split(" ")[0]] || REGIONS.all;
+    const x0 = reg[0] * s.size, xe = reg[2] * s.size;
+    const y0 = reg[1] * s.size, ye = reg[3] * s.size;
     ctx.fillStyle = e.startsWith("blight")
-        ? "rgba(120,60,140,0.14)"
-        : e.startsWith("drought") ? "rgba(190,140,40,0.15)"
+        ? "rgba(120,60,140,0.15)"
+        : e.startsWith("drought") ? "rgba(190,140,40,0.16)"
         : "rgba(140,210,140,0.10)";
-    ctx.fillRect(r[0] * s.size * TS, r[1] * s.size * TS,
-                 (r[2] - r[0]) * s.size * TS, (r[3] - r[1]) * s.size * TS);
-    ctx.strokeStyle = "rgba(230,230,230,0.12)";
-    ctx.setLineDash([4, 4]); ctx.strokeRect(
-      r[0] * s.size * TS, r[1] * s.size * TS,
-      (r[2] - r[0]) * s.size * TS, (r[3] - r[1]) * s.size * TS);
+    ctx.beginPath();
+    ctx.moveTo(...iso(x0, y0));
+    ctx.lineTo(...iso(xe, y0));
+    ctx.lineTo(...iso(xe, ye));
+    ctx.lineTo(...iso(x0, ye));
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(230,230,230,0.14)";
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
     ctx.setLineDash([]);
   }
 }
@@ -730,23 +819,36 @@ function drawScene(tnow) {
   // fraction of the glide between weekly positions, from the true phase
   const glide = glidePhase();
 
+  drawSlab(s);
   drawTerrain(s, tsec);
-  drawPlants(s, tsec);
-  s.animals.forEach((a, i) => drawAnimal(a, glide, tsec, i));
+
+  /* depth sorting: entities paint far-to-near (by x+y); within one
+     diamond the ground cover comes first, creatures in front */
+  const ents = [];
+  for (const t of s.plants)
+    ents.push({ d: t.x + t.y, k: t.st === "log" ? 0 : 1, t });
+  s.animals.forEach((a, i) => ents.push({ d: a.x + a.y, k: 2, a, i }));
+  ents.sort((p, q) => p.d - q.d || p.k - q.k);
+  for (const en of ents) {
+    if (en.k === 1) drawPlant(en.t, tsec);
+    else if (en.k === 2) drawAnimal(en.a, glide, tsec, en.i);
+  }
   spawnParticles(s, dt);
   drawParticles(dt);
   drawEffects(s);
 
-  ctx.fillStyle = (pal().wash || SEASONS.winter.wash);
-  if (pal().wash) ctx.fillRect(0, 0, s.size * TS, s.size * TS);
+  if (pal().wash) {
+    ctx.fillStyle = pal().wash;
+    ctx.fillRect(0, 0, CW, CH);
+  }
   if (s.weather === "storm") {
     ctx.fillStyle = "rgba(20,28,40,0.25)";
-    ctx.fillRect(0, 0, s.size * TS, s.size * TS);
+    ctx.fillRect(0, 0, CW, CH);
     if (Math.random() < 0.006) flash = 0.30;
   }
   if (flash > 0) {
     ctx.fillStyle = `rgba(240,245,255,${flash})`;
-    ctx.fillRect(0, 0, s.size * TS, s.size * TS);
+    ctx.fillRect(0, 0, CW, CH);
     flash -= dt * 1.8;
   }
 }
@@ -757,13 +859,16 @@ function loop(tnow) {
   requestAnimationFrame(loop);
 }
 
-/* look at a tile (click) */
+/* look at a tile (click) — inverse isometric mapping */
 cnv.addEventListener("click", e => {
   const s = ST.s;
   if (!s || !s.cells) return;
   const r = cnv.getBoundingClientRect();
-  const x = Math.floor((e.clientX - r.left) / r.width * s.size);
-  const y = Math.floor((e.clientY - r.top) / r.height * s.size);
+  const u = (e.clientX - r.left) / r.width * CW;
+  const v = (e.clientY - r.top) / r.height * CH;
+  const x = Math.round((u - OX) / (TW / 2) / 2 + (v - OY) / (TH / 2) / 2);
+  const y = Math.round((v - OY) / (TH / 2) / 2 - (u - OX) / (TW / 2) / 2);
+  if (x < 0 || y < 0 || x >= s.size || y >= s.size) return;
   const c = s.cells[y * s.size + x];
   const plants = (s.plants || []).filter(t =>
     t.x === x && t.y === y && t.n);
