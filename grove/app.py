@@ -227,6 +227,7 @@ class Grove:
         if submitted:
             w["name_budget"] -= 1
             w["fawns_named"] += 1
+            self.jobs["voice"] += 1
             if pool and target_key == pool[0]:
                 w["name_pool"].pop(0)
         return submitted
