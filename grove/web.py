@@ -99,6 +99,8 @@ def snapshot(grove, runner, lock):
             llm_bits["worker_busy"] = g.worker.busy
             llm_bits["tasks_pending"] = g.worker.tasks.qsize()
             llm_bits["results_waiting"] = g.worker.results.qsize()
+            if getattr(g.llm, "last_raw", None):
+                llm_bits["last_raw"] = g.llm.last_raw
         return {
             "tick": w["tick"],
             "season": W.season_name(w["tick"]),
