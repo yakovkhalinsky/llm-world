@@ -1,5 +1,8 @@
 # Grove — a self-contained forest, operated by a small local LLM
 
+<p align="center"><img src="docs/grove.svg" alt="the grove, week by week"
+ width="700"></p>
+
 A living forest biome that runs entirely on your machine: ponds, pines,
 willows, berry glades, grass, mushrooms — and rabbits, deer, foxes, owls,
 robins and boars living, hunting, starving and being born through the

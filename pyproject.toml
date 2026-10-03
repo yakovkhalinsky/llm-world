@@ -2,6 +2,8 @@
 name = "grove"
 version = "0.1.0"
 description = "A self-contained forest biome, operated by a small local LLM"
+readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.11"
 dependencies = []
 

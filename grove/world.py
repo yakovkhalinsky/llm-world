@@ -247,8 +247,3 @@ def plant_label(world: dict, p: dict) -> str:
     name = (world["names"].get(str(p["id"])) or p.get("name"))
     return f"{name} the {PLANT_SPECIES[p['sp']]['desc']}" if name \
         else f"a {p['stage']} {PLANT_SPECIES[p['sp']]['desc']}"
-
-def animal_label(world: dict, a: dict) -> str:
-    name = (world["names"].get(str(a["id"])) or a.get("name"))
-    sp = a["sp"]
-    return f"{name} the {sp}" if name else f"a wild {sp}"
