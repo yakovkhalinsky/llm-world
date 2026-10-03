@@ -55,32 +55,27 @@ class LLM:
 
     def chat_json(self, system, user, schema, max_tokens=160,
                   temperature=0.8, timeout=None, retries=1):
-        """One structured completion, retried on unparseable output.
-        dict on success, None on any failure — callers fall back."""
+        """One streamed structured completion with a hard wall-clock
+        deadline. dict on success, None on failure — callers fall back."""
         if not self.enabled:
             return None
         payload = {
             "model": self.model,
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}],
-            "stream": False,
-            "format": schema,
+            "stream": True,          # chunks arrive; a stalled call can be
+            "format": schema,        # abandoned instead of hanging forever
             "options": {"num_predict": max_tokens, "num_ctx": 4096,
                         "temperature": temperature},
             "keep_alive": "30m",
         }
-        timeout = timeout or self.timeout
-        for attempt in range(retries + 1):
+        deadline = time.time() + (timeout or self.timeout)
+        for _attempt in range(retries + 1):
             t0 = time.time()
-            try:
-                resp = self._request("POST", "/api/chat", payload)
-            except (urllib.error.URLError, TimeoutError, OSError) as e:
-                self.reason = f"call failed: {e}"
-                self.latency = time.time() - t0
-                return None
-            finally:
-                self.latency = time.time() - t0
-            content = (resp.get("message") or {}).get("content", "")
+            content = self._stream_chat(payload, deadline)
+            self.latency = time.time() - t0
+            if content is None:
+                return None          # connection or deadline failure
             try:
                 return json.loads(content)
             except json.JSONDecodeError:
@@ -91,8 +86,36 @@ class LLM:
                     except json.JSONDecodeError:
                         pass
             self.reason = "unparseable JSON (retrying)" \
-                if attempt < retries else "unparseable JSON"
+                if _attempt < retries else "unparseable JSON"
+            self.last_raw = content[:300]
         return None
+
+    def _stream_chat(self, payload, deadline):
+        """Accumulate a streamed /api/chat response; None on failure."""
+        content = []
+        data = json.dumps(payload).encode()
+        req = urllib.request.Request(
+            self.host + "/api/chat", data=data, method="POST",
+            headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=45) as resp:
+                for line in resp:
+                    if time.time() > deadline:
+                        self.reason = "deadline exceeded"
+                        break
+                    part = json.loads(line.decode())
+                    content.append(part.get("message", {}).get("content", ""))
+                    if part.get("done"):
+                        break
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            self.reason = f"call failed: {e}"
+            return None
+        except (json.JSONDecodeError, ConnectionError):
+            self.reason = "bad stream data"
+            return None
+        text = "".join(content)
+        self.last_raw = text[:300]
+        return text if text else None
 
 
 def status_line(llm):
