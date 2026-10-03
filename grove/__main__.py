@@ -189,8 +189,8 @@ def cmd_status(args):
     for tick, data in hist[-args.width:]:
         print(f"{tick:>6} " + " ".join(
             f"{data.get(s, {}).get(sp, 0):>7}" for s, sp in keys))
-    caps = {"rabbit": 80, "deer": 22, "fox": 14, "owl": 6, "robin": 60,
-            "boar": 10, "pine": 250, "birch": 250}
+    caps = {"rabbit": 24, "deer": 10, "fox": 6, "owl": 3, "robin": 14,
+            "boar": 5, "pine": 500, "birch": 250}
     for _sect, sp in keys:
         series = [d.get(_sect, {}).get(sp, 0) for _t, d in hist[-args.width:]]
         print(f"  {sp:>6} {render.spark(series, caps.get(sp, 120))}")

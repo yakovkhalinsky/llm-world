@@ -120,7 +120,7 @@ def generate(seed: int, size: int = W.SIZE_DEFAULT) -> dict:
             cluster = (elev[y][x] + wet[y][x]) / 2
             p_tree = 0.0
             if c["moisture"] > 0.40 and c["fert"] > 0.35:
-                p_tree = 0.18 + 0.45 * (cluster - 0.1)
+                p_tree = 0.13 + 0.33 * (cluster - 0.1)
             if rng.random() < p_tree:
                 n_here = rng.choice((1, 1, 2))
                 for _ in range(n_here):
@@ -151,6 +151,8 @@ def generate(seed: int, size: int = W.SIZE_DEFAULT) -> dict:
             c["grass"] = round(min(1.0, 0.3 + c["fert"] * 0.5 + rng.uniform(-0.2, 0.3)), 3)
     st["plants"] = plants
     st["next_id"] = pid
+    st["seedbank"] = {"pine": 8, "birch": 8, "willow": 4,
+                      "berry": 6, "fern": 8}
 
     # ferns take root wherever the young canopy already shades
     from . import sim as S   # local import to reuse shade field

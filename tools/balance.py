@@ -21,11 +21,15 @@ from grove import world as W        # noqa: E402
 CHECKS = {
     "plants_min": 120,          # the grove must keep cover
     "species_min": 6,           # every base resident alive in the end
+    # every plant species must still be living at the end of the run —
+    # the seed bank exists so no species goes permanently extinct
+    "plant_species": ("pine", "birch", "willow", "fern", "berry"),
 }
 
 
 def run_world(seed, weeks):
     w = gen.generate(seed, 24)
+    last_tick = {"t": 0}
     pops_hist, plant_hist = [], []
     extinctions = recolonizations = 0
     absent_before = set()
@@ -58,6 +62,7 @@ def run_world(seed, weeks):
                if sp in (c or {})]
         spans[sp] = (min(ser) if ser else 0, max(ser) if ser else 0)
     return {"seed": seed, "weeks": weeks,
+            "end_season": W.season_name(w["tick"]),
             "end": pops_hist[-1] | plant_hist[-1],
             "ended_absent": ended_absent,
             "recolonizations": recolonizations,
@@ -70,10 +75,18 @@ def judge(report, weeks):
     if sum(n for sp, n in end.items()
            if sp in ("pine", "birch", "willow")) < CHECKS["plants_min"]:
         fails.append("the forest lost its canopy")
-    missing = [sp for sp in ("rabbit", "deer", "fox", "owl", "robin",
+    rosters = [sp for sp in ("rabbit", "deer", "fox", "owl", "robin",
                              "boar") if end.get(sp, 0) == 0]
+    # robins read as gone only if the run doesn't END in winter, when
+    # they are legitimately south
+    if report.get("end_season") == "winter":
+        rosters = [sp for sp in rosters if sp != "robin"]
+    missing = rosters
     if missing:
         fails.append(f"species gone: {','.join(missing)}")
+    missing = [sp for sp in CHECKS["plant_species"] if end.get(sp, 0) == 0]
+    if missing:
+        fails.append(f"plant species extinct: {','.join(missing)}")
     if all(n == 0 for n in end.values()):
         fails.append("the world died entirely")
     return fails
@@ -90,13 +103,13 @@ def _worker(args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seeds", type=int, default=10)
-    ap.add_argument("--weeks", type=int, default=600)
+    ap.add_argument("--weeks", type=int, default=900)
     ap.add_argument("--jobs", type=int, default=mp.cpu_count() or 2)
     ap.add_argument("--start-seed", type=int, default=1)
     a = ap.parse_args()
 
     seeds = [(a.start_seed + i, a.weeks) for i in range(a.seeds)]
-    print(f"balance: {a.seeds} worlds × {a.weeks} weeks "
+    print(f"balance: {a.seeds} worlds × {a.weeks} weeks ({a.weeks // 48:.0f} yrs) "
           f"({a.jobs} processes)")
     t0 = time.time()
     worst, all_fails = [], []

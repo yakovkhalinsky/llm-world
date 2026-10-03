@@ -194,10 +194,11 @@ def _update_plants(w, evs, light):
                 damaged = True
 
         # weather stress
-        if w["weather"] == "frost":
-            if spec["frost_hp"]:
-                p["hp"] -= spec["frost_hp"]
-                damaged = True
+        if w["weather"] == "frost" and spec["frost_hp"]:
+            p["hp"] -= spec["frost_hp"]
+            damaged = True
+            if p["hp"] < 1.0 and spec["kind"] != "tree":
+                p["hp"] = 1.0      # the cold stuns; it does not murder
         if w["weather"] == "storm":
             base = (spec["storm_fall_old"] if p["stage"] == "old"
                     else spec["storm_fall_mature"]
@@ -225,7 +226,7 @@ def _update_plants(w, evs, light):
                         "age": p["age"]})
 
         # ferns scorch in full sun
-        if p["sp"] == "fern" and li > 0.75:
+        if p["sp"] == "fern" and li > 0.85:
             p["hp"] -= 0.6
             damaged = True
 
@@ -248,16 +249,20 @@ def _update_plants(w, evs, light):
 
         # reproduction
         if spec["kind"] == "tree" and p["stage"] in ("mature", "old") \
-                and season == spec["seed_season"] \
+                and season in _seasons(spec["seed_season"]) \
                 and rng.random() < spec["seed_prob"]:
             _seed(w, p, spec, light, rng)
         if p["sp"] == "fern" and p["stage"] == "mature" and growing \
                 and rng.random() < spec.get("spread_prob", 0):
             _spread_fern(w, p, spec, light, rng)
+            _spread_fern(w, p, spec, light, rng)   # spores go out twice
         if p["sp"] == "berry" and p["stage"] in ("mature", "old") \
-                and season == spec["seed_season"] \
+                and season in _seasons(spec["seed_season"]) \
                 and rng.random() < spec["seed_prob"]:
             _seed(w, p, spec, light, rng)
+        if p["sp"] == "berry" and p["stage"] in ("mature", "old") \
+                and growing and rng.random() < 0.045:
+            _spread_berry(w, p, rng)   # suckering: a clone next door
 
 
 def _fell(w, p, evs, cause):
@@ -282,12 +287,99 @@ def _seed(w, p, spec, light, rng):
         if spec.get("near_water") and not _near_water(w, sx, sy,
                                                       spec["near_water"]):
             continue
-        if light[sy][sx] < spec["light_need"] * 0.8:
+        tol = 0.6 if c.get("humus", 0) > 0.25 else 0.8    # rot feeds light
+        if light[sy][sx] < spec["light_need"] * tol:
             continue
-        if _plants_in_cell(w, sx, sy) >= 3:
-            continue
+        if _trees_in_cell(w, sx, sy) >= 1:
+            _bank(w, p["sp"])          # crowded: the seed waits in soil
+            return
         w["plants"][str(w["next_id"])] = W.new_plant(
             w["next_id"], p["sp"], sx, sy, "sapling", 0)
+        w["next_id"] += 1
+        return
+    _bank(w, p["sp"])                  # shaded/no soil/water: the bank too
+
+
+def _seasons(v):
+    return tuple(v) if isinstance(v, tuple) else (v,)
+
+
+def _bank(w, sp):
+    """A failed landing sleeps in the seed bank (capped)."""
+    bank = w.setdefault("seedbank", {})
+    bank[sp] = min(90, bank.get(sp, 0) + 1)
+
+
+def _germinate(w, evs):
+    """When a species is gone from the living forest, autumn lets the
+    bank speak: the species returns from the soil's memory."""
+    t = w["tick"]
+    if W.season_index(t) != 2:          # autumn
+        return
+    bank = w.setdefault("seedbank", {})
+    for sp in list(bank):
+        alive = sum(1 for p in w["plants"].values()
+                    if p["sp"] == sp and p["stage"] != "log")
+        if alive >= 3:                      # a thriving stand needs no rescue
+            continue
+        # the bank is the soil's memory, not a consumable ledger: the
+        # rescue draws on it without emptying it; decay is the only loss
+        n = min(8, max(3, bank.get(sp, 0) // 10)) if bank.get(sp) else 0
+        if n <= 0 or (alive and t % 48 < 24):
+            continue                        # don't smother a surviving handful
+        size = w["size"]
+        rng = W.rng_for(w["seed"], t, f"germ:{sp}")
+        spec = W.PLANT_SPECIES[sp]
+        light = build_light(w)
+        # the bank doesn't gamble: enumerate where it could actually live
+        spots = []
+        for y in range(size):
+            for x in range(size):
+                c = w["cells"][y][x]
+                if c["terrain"] != "soil":
+                    continue
+                if spec.get("near_water") and not _near_water(
+                        w, x, y, spec["near_water"]):
+                    continue
+                li = light[y][x]
+                if sp == "fern":
+                    if not li < spec["light_need"] * 1.2:
+                        continue
+                elif li < spec["light_need"] * 0.8:
+                    continue
+                understory = sp in ("fern", "berry")
+                if understory:
+                    if _understory_in_cell(w, x, y) >= 1:
+                        continue
+                elif _trees_in_cell(w, x, y) >= 1:
+                    continue
+                spots.append((x, y))
+        if not spots:
+            bank[sp] = min(90, bank.get(sp, 0) + 1)   # keep waiting in soil
+            continue
+        made = 0
+        for x, y in rng.sample(spots, min(n, len(spots))):
+            w["plants"][str(w["next_id"])] = W.new_plant(
+                w["next_id"], sp, x, y, "sapling", 0)
+            w["next_id"] += 1
+            made += 1
+        evs.append({"tick": t, "kind": "germinate", "sp": sp, "n": made})
+
+
+def _spread_berry(w, p, rng):
+    """A mature bush root-suckers: a clone in the pocket next door."""
+    size = w["size"]
+    for _ in range(2):
+        sy = p["y"] + rng.randint(-1, 1)
+        sx = p["x"] + rng.randint(-1, 1)
+        if not W.in_bounds(size, sx, sy):
+            continue
+        if w["cells"][sy][sx]["terrain"] != "soil":
+            continue
+        if _understory_in_cell(w, sx, sy) >= 1:
+            continue
+        w["plants"][str(w["next_id"])] = W.new_plant(
+            w["next_id"], "berry", sx, sy, "sapling", 0)
         w["next_id"] += 1
         return
 
@@ -301,11 +393,26 @@ def _spread_fern(w, p, spec, light, rng):
     c = w["cells"][sy][sx]
     if c["terrain"] != "soil" or light[sy][sx] >= spec["light_need"] * 1.2:
         return
-    if _plants_in_cell(w, sx, sy) >= 3:
+    if _understory_in_cell(w, sx, sy) >= 1:
+        _bank(w, "fern")               # spores sleep in the soil instead
         return
     w["plants"][str(w["next_id"])] = W.new_plant(
         w["next_id"], "fern", sx, sy, "sapling", 0)
     w["next_id"] += 1
+
+
+def _understory_in_cell(w, x, y):
+    return sum(1 for p in w["plants"].values()
+               if p["x"] == x and p["y"] == y and p["stage"] != "log"
+               and W.PLANT_SPECIES[p["sp"]]["kind"] in ("understory",
+                                                       "shrub"))
+
+
+def _trees_in_cell(w, x, y):
+    return sum(1 for p in w["plants"].values()
+               if p["x"] == x and p["y"] == y
+               and p["stage"] != "log"
+               and W.PLANT_SPECIES[p["sp"]]["kind"] != "understory")
 
 
 def _plants_in_cell(w, x, y):
@@ -397,7 +504,7 @@ def _behave(w, a, spec, evs, rng, winter):
         # density-dependent hunting: when the warren is thin, predators
         # miss more — the classic loop that keeps boom-bust from collapsing
         hp_scaled = spec.get("hunt_prob", 0.5) * \
-            _clamp(_pop(w, hunt) / 30.0, 0.35, 1.0)
+            _clamp(_pop(w, hunt) / 12.0, 0.35, 1.0)
         if prey and rng.random() < hp_scaled:
             step_toward(w, a, prey["x"], prey["y"], speed, spec.get("flyer"))
             dist = abs(a["x"] - prey["x"]) + abs(a["y"] - prey["y"])
@@ -759,6 +866,11 @@ def tick(world):
     _update_cells(world, evs)
     _update_plants(world, evs, world.pop("_light"))
     _update_animals(world, evs)
+    _germinate(world, evs)
+    bank = world.setdefault("seedbank", {})
+    if bank and world["tick"] % 4 == 0:
+        for sp in bank:
+            bank[sp] = int(bank[sp] * 0.995)
     _check_destinies(world, evs)
     _recolonize(world, evs)
     world["name_budget"] = 1  # LLM voice may name one creature per week

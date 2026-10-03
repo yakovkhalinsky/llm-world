@@ -29,7 +29,7 @@ PLANT_SPECIES = {
     "birch": {
         "kind": "tree",
         "mature_age": 12, "old_age": 88, "max_age": 160,
-        "seed_season": 2, "seed_prob": 0.30, "seed_radius": 4,
+        "seed_season": 2, "seed_prob": 0.20, "seed_radius": 4,
         "light_need": 0.45,
         "shade_self": 0.45, "shade_adjacent": 0.22,
         "storm_fall_mature": 0.09, "storm_fall_old": 0.22,
@@ -49,21 +49,21 @@ PLANT_SPECIES = {
     },
     "fern": {
         "kind": "understory",
-        "mature_age": 2, "old_age": 12, "max_age": 22,
+        "mature_age": 2, "old_age": 30, "max_age": 58,
         "light_need": 0.65,        # needs SHADE: grows when light BELOW this
-        "spread_prob": 0.10, "spread_radius": 1,
+        "spread_prob": 0.16, "spread_radius": 1,
         "storm_fall_mature": 0.02, "storm_fall_old": 0.05,
         "frost_hp": 0.25, "emoji": "fern",
         "desc": "fern",
     },
     "berry": {
         "kind": "shrub",
-        "mature_age": 3, "old_age": 18, "max_age": 30,
-        "seed_season": 0, "seed_prob": 0.10, "seed_radius": 2,
+        "mature_age": 3, "old_age": 22, "max_age": 40,
+        "seed_season": (0, 2), "seed_prob": 0.22, "seed_radius": 3,
         "light_need": 0.50,
         "shade_self": 0.03, "shade_adjacent": 0.0,
         "storm_fall_mature": 0.06, "storm_fall_old": 0.15,
-        "frost_hp": 0.50, "emoji": "berry",
+        "frost_hp": 0.20, "emoji": "berry",
         "desc": "berry bush",
     },
 }
@@ -76,35 +76,35 @@ ANIMAL_SPECIES = {
     "rabbit": {
         "hunger_drain": 0.8, "lifespan": 60, "speed": 3, "scan": 4,
         "lit_size": 3, "lit_prob": 0.28, "breed_seasons": (0, 1),
-        "energy_breed": 6.0, "cap": 60, "winterslow": 0.4,
+        "energy_breed": 6.0, "cap": 24, "winterslow": 0.4,
         "predators": ("fox", "owl", "wolf"),
     },
     "deer": {
         "hunger_drain": 0.55, "lifespan": 200, "speed": 2, "scan": 5,
         "lit_size": 1, "lit_prob": 0.10, "breed_seasons": (0,),
-        "energy_breed": 8.0, "cap": 22, "winterslow": 0.5,
+        "energy_breed": 8.0, "cap": 10, "winterslow": 0.5,
     },
     "fox": {
         "hunt": "rabbit", "hunt_prob": 0.5, "hunger_drain": 0.7,
         "lifespan": 130, "speed": 3, "scan": 6,
         "lit_size": 2, "lit_prob": 0.09, "breed_seasons": (0, 2),
-        "energy_breed": 7.0, "cap": 14, "winterslow": 0.6,
+        "energy_breed": 7.0, "cap": 6, "winterslow": 0.6,
     },
     "owl": {
         "strike": ("rabbit", "robin"), "strike_prob": 0.18, "strike_range": 5,
         "hunger_drain": 0.5, "lifespan": 160, "speed": 2, "scan": 2,
         "lit_size": 1, "lit_prob": 0.10, "breed_seasons": (0, 1),
-        "energy_breed": 6.0, "cap": 6, "winterslow": 1.0,
+        "energy_breed": 6.0, "cap": 3, "winterslow": 1.0,
     },
     "robin": {
         "hunger_drain": 0.5, "lifespan": 40, "speed": 4, "scan": 3,
         "lit_size": 3, "lit_prob": 0.30, "breed_seasons": (0, 1),
-        "energy_breed": 5.0, "cap": 30, "winterslow": 0.75, "flyer": True,
+        "energy_breed": 5.0, "cap": 14, "winterslow": 0.75, "flyer": True,
     },
     "boar": {
         "hunger_drain": 0.5, "lifespan": 140, "speed": 1, "scan": 3,
         "lit_size": 2, "lit_prob": 0.15, "breed_seasons": (1, 2),
-        "energy_breed": 6.0, "cap": 10, "winterslow": 0.7,
+        "energy_breed": 6.0, "cap": 5, "winterslow": 0.7,
     },
     # transient visitors (never recolonized, never permanent residents)
     "stag": {  # lone wandering stag
@@ -214,6 +214,7 @@ def new_state(seed: int, size: int = SIZE_DEFAULT) -> dict:
         "effects": [],               # ongoing operator effects
         "pending_effect": None,      # queued operator effect (applied next tick)
         "name_pool": [],             # newborns awaiting a name from the voice
+        "seedbank": {},              # dormant seeds in the soil
         "destinies": [],             # the soul's watch over named creatures
         "next_op": 6,                # tick when the LLM operator is next invited
         "op_history": [],            # last operator decisions (for its own digest)

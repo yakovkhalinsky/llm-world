@@ -104,6 +104,31 @@ tuned for slow silicon:
 `grove run --offline` (or a missing/unreachable model) gives the same
 world with deterministic template prose instead of LLM prose.
 
+## The ecology
+
+A layered forest: **one tree per cell** (a grove, not a wall) with an
+understory pocket beneath it — ferns and berry bushes live in the
+canopy's shade. The food web is small and legible by design: ~24 rabbits,
+14 robins, 10 deer, 6 foxes, 3 owls, 5 boars — each one a character you
+can name, follow and lose.
+
+- **Seed bank**: every seed that fails to land sleeps in the soil
+  instead of dying; when a species dwindles, autumn lets the bank speak
+  into genuinely suitable spots (light, water, crowding aware). The soil
+  is memory, not a ledger — the forest can never lose a species forever.
+- **Succession**: birches are pioneers that open up ground, pines slow
+  and shade-tolerant, willows tied to the pond's edge, ferns shade-loving,
+  berry bushes fruiting in spring and rooting clones next door. Dead
+  trunks decay into **humus** that feeds mushrooms (the boars' winter
+  food) and tree recovery.
+- **The robin migration**: at the frost, every robin flies south; come
+  spring three of four springs they return. Winter is a season without
+  song, and the owls then live on rabbits alone.
+- **Density-dependent predation**: foxes and owls hunt less efficiently
+  when the warren is thin — the boom-bust loop that keeps collapse away.
+- `tools/balance.py` is the gate: 8 seeded worlds × 19 years must keep
+  every species alive or the change doesn't ship.
+
 ## How it stays robust (the one design rule)
 
 > The simulation engine owns ALL state. The LLM never holds the world in
@@ -151,6 +176,8 @@ all species must persist).
 | `tools/balance.py` | the ecologist's gate: 8 worlds × 10 years, all must pass |
 | `tools/check_page.py` | headless verification of the served page |
 | `tools/render_svg.py` | the README's scene, rendered from the live world |
+| `docs/ARCHITECTURE.md` | how it all works: tick order, contracts, threads |
+| `docs/TUNING.md` | the honest numbers: species knobs, tempo, the gate |
 
 ## Ideas on the shelf
 

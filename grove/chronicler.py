@@ -94,6 +94,9 @@ def _line(world, e):
 
     if kind == "turn":
         return _SEASON_LINES.get(e.get("season", 0), "A season turned.")
+    if kind == "germinate":
+        return (f"Old seeds remembered themselves — {e.get('n', 1)} young "
+                f"{e.get('sp')} broke the soil where the species had gone.")
     if kind == "storm":
         return "A squall ran through the trees and was gone."
     if kind == "op":

@@ -5,6 +5,7 @@ with same-week same-story events folded into one counted event."""
 PRIORITY = {
     "op": 0, "recolonize": 1, "destiny": 1, "arrival": 1,
     "turn": 2, "destiny_lost": 2, "robins_left": 2, "robins_return": 2,
+    "germinate": 3,
     "storm": 3,
     "fell": 3, "elder": 4, "predation": 5, "departure": 6,
     "browsed": 7, "picked": 7, "birth": 8, "oldage": 9, "starve": 9,
