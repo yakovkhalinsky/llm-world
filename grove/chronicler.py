@@ -21,11 +21,12 @@ _SEASON_LINES = {0: "Spring came to the grove.", 1: "Summer came to the grove.",
 SYSTEM = (
     "You are the Chronicler of a living forest. ONE event is given, with "
     "id e0, a data slot, and its plain base sentence. Reply with ONE line "
-    "of at most 88 characters rewriting it: more vivid than the base, "
-    "but strictly about the same happening — name the same animals or "
-    "plants only, speak of places as named ('the pond's edge', 'the "
-    "north-west woods'), never coordinates. Do not reuse the base wording "
-    "exactly. "
+    "of at most 88 characters rewriting it. It must stay about the SAME "
+    "animal or plant in the SAME place as the base sentence names: reuse "
+    "those words (species, creature, pond) but reshape the sentence — new "
+    "rhythm, new verbs. Never write about a different scene, never "
+    "continue an unfinished thought, never start with '...' or an "
+    "ellipsis; a complete little sentence on its own. Never coordinates. "
     'Reply ONLY as JSON: {"entries":[{"id":"e0","text":"..."}]}'
 )
 
