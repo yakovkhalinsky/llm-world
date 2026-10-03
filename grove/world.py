@@ -39,12 +39,12 @@ PLANT_SPECIES = {
     "willow": {
         "kind": "tree",
         "mature_age": 9, "old_age": 72, "max_age": 140,
-        "seed_season": 2, "seed_prob": 0.28, "seed_radius": 3,
+        "seed_season": 2, "seed_prob": 0.45, "seed_radius": 3,
         "near_water": 2,           # must spawn within N cells of water
         "light_need": 0.40,
         "shade_self": 0.40, "shade_adjacent": 0.20,
         "storm_fall_mature": 0.12, "storm_fall_old": 0.30,
-        "frost_hp": 0.30, "emoji": "leaf",
+        "frost_hp": 0.15, "emoji": "leaf",
         "desc": "willow",
     },
     "fern": {

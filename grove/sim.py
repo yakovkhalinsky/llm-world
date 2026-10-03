@@ -132,6 +132,10 @@ def _region_set(region, size):
     return set(W.region_cells(size, region)) if region != "all" else None
 
 
+def _clamp(v, lo, hi):
+    return lo if v < lo else hi if v > hi else v
+
+
 def _clamp01(v):
     return max(0.0, min(1.0, v))
 
@@ -379,7 +383,11 @@ def _behave(w, a, spec, evs, rng, winter):
     hunt = spec.get("hunt")
     if hunt:
         prey = _nearest(w, a["x"], a["y"], hunt, spec["scan"])
-        if prey and rng.random() < spec.get("hunt_prob", 0.5):
+        # density-dependent hunting: when the warren is thin, predators
+        # miss more — the classic loop that keeps boom-bust from collapsing
+        hp_scaled = spec.get("hunt_prob", 0.5) * \
+            _clamp(_pop(w, hunt) / 30.0, 0.35, 1.0)
+        if prey and rng.random() < hp_scaled:
             step_toward(w, a, prey["x"], prey["y"], speed, spec.get("flyer"))
             dist = abs(a["x"] - prey["x"]) + abs(a["y"] - prey["y"])
             if dist <= 1 and rng.random() < 0.5:
