@@ -40,15 +40,19 @@ Keys in watch mode: `space` pause · `s` step · `n` invite the soul now ·
 ## Viewing it from another device
 
 `grove web` serves a live dashboard over plain HTTP — no build step, works
-offline, one hand-written page. The map is an **isometric canvas scene**:
-the grove stands on a floating earth slab, diamonds shaded by season and
-moisture, procedural pines/birches/willows swaying in the wind and
-occluding each other depth-sorted, creatures gliding to their weekly
-cells with soft shadows (birds hover above theirs), rain and snowfall,
-lightning in storms, autumn leaf-drift, name tags over named creatures
-and elder trees, and translucent diamond washes where the soul's effects
-are active. Click a tile to inspect it. `?plain` (or no canvas) falls
-back to the emoji map.
+offline, one hand-written page. It is a **full-screen HUD**: the isometric
+map fills the window and the controls float as translucent panels that
+**fade away after a few still seconds** — only the grove remains. The
+scene: a floating earth slab, diamonds shaded by season and moisture,
+procedural pines/birches/willows swaying and occluding each other
+depth-sorted, creatures gliding to their weekly cells with soft shadows
+(birds hover above theirs), rain and snowfall, lightning in storms,
+autumn leaf-drift, name tags over named souls, and Diamond washes where
+the soul's effects are active. Click a named creature for its biography
+(born → named → hunted → remembered) with a follow-cam; ask the grove
+questions and it answers from the world's own history. Keys: `space`
+pause · `s` step · `n` invite the soul · `f` fullscreen · `c` calm.
+`?plain` (or no canvas) falls back to the emoji page.
 
 ```sh
 ./grove.sh web                  # loopback only (for an ssh tunnel)
@@ -83,13 +87,19 @@ if you prefer.
 ## The model
 
 Small-model reality: on a ~2 GHz 4-core CPU there is no GPU and inference
-is CPU-bound. Measured here: **~1.9 tok/s generation on Llama-3.2-3B**,
-~3–6 × that on the 1B. So the defaults are tuned for it:
+is CPU-bound — ~1.9 tok/s generation on Llama-3.2-3B. The defaults are
+tuned for slow silicon:
 
-- `llama3.2:1b` is the default soul (**~25–60 s per intervention**)
-- `--model llama3.2:3b` gives richer prose but ~2–3 min per decision
-- the world never waits on the model: the sim ticks happily while the
-  soul ponders, and results land at the next week boundary
+- **`--tier local` (default): fully offline.** The soul and the naming
+  voice run on `llama3.2:3b` (best judgment/prose, ~20–60 s warm per
+  turn), the chronicle on `llama3.2:1b` (~5–8 s per line) — two models
+  kept resident, swapping the slower one out automatically after two bad
+  calls.
+- **`--tier cloud`**: a fast, richer soul (~1–2 s per decision) through
+  the same Ollama, still gated by the same schema validation, and falling
+  back to local on any failure.
+- The world never waits on the model: the sim ticks happily while the
+  soul ponders, and results land at the next week boundary.
 
 `grove run --offline` (or a missing/unreachable model) gives the same
 world with deterministic template prose instead of LLM prose.
@@ -100,19 +110,25 @@ world with deterministic template prose instead of LLM prose.
 > context and never writes world state. It gets small, bounded jobs with
 > schema-validated outputs and deterministic fallbacks.
 
-- **World Soul** — every ~6–12 weeks (of world time): a ≤ 400-token digest
-  → one JSON decision from an enumerated menu (`storm, drought, blight,
-  bloom, migration, visitor, quiet`), applied by validated, deterministic
-  rules. Nonsense in → `quiet` out. Ollama down → `quiet`.
+- **World Soul** — roughly one decision every few minutes (wall time):
+  a ≤ 400-token digest → one JSON decision from an enumerated menu
+  (`storm, drought, blight, bloom, migration, visitor, destiny, quiet`),
+  applied by validated, deterministic rules. Nonsense in → `quiet` out.
+  Ollama down → `quiet`.
 - **Chronicler** — notable events are described by template lines the
   instant they happen; a background call rewrites them when the model is
-  ready (☾). Every line is cached by event signature, so replays and
+  ready (☾), rejecting lines that hallucinate off-event, restate the
+  data, or echo recent lines. Same-week stories fold into one counted
+  line ("5 pines are fallen — great age"). Every line is cached by
+  event signature, so replays and
   `--offline` runs cost nothing.
 - **Voice** — newborns and elder trees get names (one-word JSON, charset
   validated, list fallback), sometimes with a one-line diary.
 
 The engine (`grove/sim.py`) is fully deterministic per seed: same seed +
-same actions ⇒ same world. Tuning constants sit at the top of that file.
+same actions ⇒ same world. Tuning constants sit at the top of that file;
+the food web is gated by `tools/balance.py` (many seeded worlds × years,
+all species must persist).
 
 ## Layout
 
@@ -125,15 +141,21 @@ same actions ⇒ same world. Tuning constants sit at the top of that file.
 | `grove/operator.py` | World Soul: digest, menu schema, validation |
 | `grove/chronicler.py` | narration prompts + template fallbacks |
 | `grove/voice.py` | naming |
-| `grove/llm.py` | Ollama client (JSON-schema chats, never raises) |
+| `grove/memory.py` | ask-the-grove: chronicle retrieval + answer |
+| `grove/llm.py` | Ollama client (schema chats, per-job model chains) |
 | `grove/render.py` | the emoji map + header + chronicle feed |
-| `grove/db.py` | SQLite: world snapshot, stats, events, chronicle, cache |
+| `grove/db.py` | SQLite: world, stats, events, chronicle, cache, biographies |
 | `grove/app.py` | shared runner (used by CLI and web) |
-| `grove/web.py` | the local dashboard: one HTML page + JSON state API |
+| `grove/web.py` | the full-screen isometric dashboard (one HTML page) |
 | `grove/__main__.py` | CLI + run loop |
+| `tools/balance.py` | the ecologist's gate: 8 worlds × 10 years, all must pass |
+| `tools/check_page.py` | headless verification of the served page |
+| `tools/render_svg.py` | the README's scene, rendered from the live world |
 
 ## Ideas on the shelf
 
 - playable character mode (walk in and talk to the animals)
+- the time-travel scrubber (replay any stretch of the world's past)
+- an offline soundscape: procedural wind, rain and a distant wolf
+- the book of grove: seasonal reflections + a saga export
 - seasons' effect on names ("the winter fox"), wolf packs, bear dens
-- nomic-embed memory: "ask the grove what happened last spring"
