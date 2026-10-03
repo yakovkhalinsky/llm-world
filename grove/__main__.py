@@ -203,7 +203,20 @@ def cmd_new(args):
         if not args.force:
             sys.exit(f"'{args.data}' already holds a world; "
                      f"use --force to start over")
-        os.remove(path)   # a fresh world starts with a fresh ledger
+        # the old grove is archived, not destroyed: its chronicle
+        # and history outlive the reset
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        old_tick = "?"
+        try:
+            db = dbm.DB(path)
+            w = db.load_world()
+            old_tick = w and w["tick"]
+            db.close()
+        except Exception:
+            pass
+        archive = os.path.join(args.data, f"archive-{stamp}-wk{old_tick}.db")
+        os.rename(path, archive)
+        print(f"previous grove archived at {archive}")
     w = gen.generate(args.seed, args.size)
     db = dbm.DB(os.path.join(args.data, "grove.db"))
     db.save_world(w)
