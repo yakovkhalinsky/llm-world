@@ -18,6 +18,7 @@ Default bind is loopback only (viewable through an ssh tunnel); pass
 import json
 import socket
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
@@ -26,7 +27,7 @@ from . import render
 from . import world as W
 from .app import Grove
 
-POLL_MS = 2500
+POLL_MS = 600           # creature polls; the scene rebuild is cheap
 
 
 class SimRunner(threading.Thread):
@@ -40,6 +41,7 @@ class SimRunner(threading.Thread):
         self.tick_seconds = tick_seconds
         self.paused = False          # an ambient dashboard lives by default
         self.steps_requested = 0
+        self.last_step_at = None     # wall time of the last simulated week
         self.stopping = threading.Event()
 
     def run(self):
@@ -51,12 +53,14 @@ class SimRunner(threading.Thread):
                         _evs, notable = self.grove.step()
                         self.grove.apply_results()
                         self.grove.maybe_schedule(notable)
+                        self.last_step_at = time.time()
                 self.stopping.wait(0.15)
                 continue
             with self.lock:
                 _evs, notable = self.grove.step()
                 self.grove.apply_results()
                 self.grove.maybe_schedule(notable)
+                self.last_step_at = time.time()
             self.stopping.wait(self.tick_seconds)
 
 
@@ -150,6 +154,10 @@ def snapshot(grove, runner, lock):
             "llm": llm_bits,
             "paused": runner.paused,
             "tick_seconds": runner.tick_seconds,
+            # wall-clock anchors so the canvas can glide creatures by the
+            # true phase of the simulated week, independent of poll timing
+            "now": time.time(),
+            "step_at": runner.last_step_at or time.time(),
         }
 
 
@@ -261,15 +269,34 @@ const ago = (tick, now) => { const d = now - tick;
   return d <= 0 ? "now" : d + "wk ago"; };
 
 /* ================= state ================= */
-const ST = { s: null, lastPoll: 0 };
+/* Creature movement: the sim knows each creature's week-start (px,py)
+   and week-end (x,y) cells. The client flies them between the two,
+   anchored to poll ARRIVAL and ending exactly when the next simulation
+   week lands — re-polls of the same week never restart a flight. */
+const ST = { s: null, flight: null, seenTick: -1 };
+const FACING = [];                 // sticky per-creature facing (by index)
 async function poll() {
   try {
     const r = await fetch("/api/state",
                           { signal: AbortSignal.timeout(4000) });
-    ST.s = await r.json();
-    ST.lastPoll = performance.now();
+    const s = await r.json();
+    if (s.error) { $("status").textContent = s.error; return; }
+    ST.s = s;
+    if (s.tick !== ST.seenTick) {          // a NEW sim week: new flight
+      ST.seenTick = s.tick;
+      const lag = Math.max(0, s.now - s.step_at);   // poll lag, seconds
+      const dur = Math.max(0.25, s.tick_seconds - lag);
+      ST.flight = { start: performance.now() / 1000, dur };
+    }
     updateDom();
   } catch (e) { $("status").textContent = "reconnecting…"; }
+}
+
+function glidePhase() {
+  const s = ST.s;
+  if (!s || s.paused || !ST.flight) return 1;
+  const p = (performance.now() / 1000 - ST.flight.start) / ST.flight.dur;
+  return Math.max(0, Math.min(1, p));
 }
 
 function updateDom() {
@@ -514,14 +541,18 @@ function drawPlants(s, tsec) {
   }
 }
 
-function drawAnimal(a, f, tsec) {
+function drawAnimal(a, f, tsec, idx) {
   const cx0 = a.px * TS + TS / 2, cy0 = a.py * TS + TS / 2;
   const cx1 = a.x * TS + TS / 2, cy1 = a.y * TS + TS / 2;
   // creatures that didn't move stay put; movers glide with easing
   const e = f < 1 ? (f * f * (3 - 2 * f)) : 1;   // smoothstep
   const cx = cx0 + (cx1 - cx0) * e, cy = cy0 + (cy1 - cy0) * e;
   const body = ANIMAL_BODY[a.sp] || "#999";
-  const dx = cx1 - cx0, flip = dx < -0.5 ? -1 : 1;
+  // face the direction of glide; keep the facing when the glide is done
+  // or when a creature briefly stands still (index-sticky across polls)
+  const dx = cx1 - cx0;
+  if (Math.abs(dx) > 0.9) FACING[idx] = dx < 0 ? -1 : 1;
+  const flip = FACING[idx] || 1;
   const bob = Math.sin(tsec * 5 + a.x) * 0.8;
   ctx.save();
   ctx.translate(cx, cy + (a.sp === "owl" ? 0 : bob * 0.6));
@@ -684,13 +715,12 @@ function drawScene(tnow) {
   const tsec = tnow / 1000;
   const dt = Math.min(0.1, (tnow - (drawScene.last || tnow)) / 1000);
   drawScene.last = tnow;
-  // fraction of the glide between weekly positions
-  const glide = s.paused ? 1 : Math.min(
-    1, (performance.now() - ST.lastPoll) / (s.tick_seconds * 1000));
+  // fraction of the glide between weekly positions, from the true phase
+  const glide = glidePhase();
 
   drawTerrain(s, tsec);
   drawPlants(s, tsec);
-  for (const a of s.animals) drawAnimal(a, glide, tsec);
+  s.animals.forEach((a, i) => drawAnimal(a, glide, tsec, i));
   spawnParticles(s, dt);
   drawParticles(dt);
   drawEffects(s);
@@ -738,7 +768,7 @@ cnv.addEventListener("click", e => {
     ? "Here: " + bits.slice(1).join(" · ") : "Here: " + bits[0];
 });
 
-poll(); setInterval(poll, 2500);
+poll(); setInterval(poll, 600);
 requestAnimationFrame(loop);
 // test/debug hook: lets a headless harness (or the console) reach the scene
 if (typeof globalThis !== "undefined" && !("groveDebug" in globalThis))
