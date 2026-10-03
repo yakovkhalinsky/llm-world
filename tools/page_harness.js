@@ -36,6 +36,9 @@ function el(id) {
   const e = {
     id, textContent: "", innerHTML: "", disabled: false, className: "",
     style: {}, width: 0, height: 0, listeners: {},
+    classList: { add() {}, remove() {}, toggle() {},
+                 contains: () => false },
+    addEventListener: (ev, fn) => { e.listeners[ev] = fn; },
     addEventListener: (ev, fn) => { e.listeners[ev] = fn; },
     getBoundingClientRect: () => ({ left: 8, top: 8, width: 528, height: 528 }),
     getContext: () => ctx,

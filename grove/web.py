@@ -217,11 +217,15 @@ PAGE = r"""<!doctype html>
          max-height: 50vh; overflow: auto; z-index: 6; display: none;
          box-shadow: 0 10px 34px rgba(0,0,0,0.55); }
   #bio.on { display: block; }
-  /* the panels fade when the viewer is still: only the grove remains */
-  .hud { opacity: 0; transition: opacity .6s ease; z-index: 4;
-         position: absolute; inset: 0; pointer-events: none; }
-  body.hud-on .hud { opacity: 1; }
-  body.hud-on .hud > * { pointer-events: auto; }
+  /* the HUD persists; only the chronicle/census fades when the viewer
+     is still; 'c' (calm) hides everything once more */
+  .hud { position: absolute; inset: 0; z-index: 4;
+         pointer-events: none; opacity: 1; }
+  .hud > * { pointer-events: auto; }
+  .feed { transition: opacity .6s ease; }
+  body:not(.hud-on) .feed { opacity: 0; pointer-events: none; }
+  body.calm .hud { opacity: 0; }
+  body.calm .hud > * { pointer-events: none; }
   .map-scroll { position: absolute; inset: 0; overflow: auto;
                 background: radial-gradient(ellipse at 50% 32%,
                     rgba(40, 62, 48, 0.5), rgba(10, 15, 12, 0) 72%); }
@@ -1118,7 +1122,9 @@ function setHudVisibility() {
   const idle = performance.now() - wakeAt > WAKE_MS;
   const reading = document.getElementById("bio") &&
       document.getElementById("bio").classList.contains("on");
-  document.body.classList.toggle("hud-on", !calm && (!idle || reading));
+  // panels always stay; the feed alone follows stillness or calm
+  document.body.classList.toggle("hud-on", !calm && !idle || !!reading);
+  document.body.classList.toggle("calm", calm && !reading);
 }
 setInterval(setHudVisibility, 400);
 window.addEventListener("keydown", e => {
