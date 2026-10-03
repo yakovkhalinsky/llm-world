@@ -129,11 +129,11 @@ def cmd_step(args):
             w["pending_effect"] = operator.validate(raw)
         items = chronicler.batch(notable, w)
         if items and w["tick"] - last_chron_week >= 4:
-            for item in items[:5]:    # one event per call; small models
-                item["eid"] = "e0"    # write single-entry JSONs reliably
+            for item in items[:5]:    # one flat call per event
+                item["eid"] = "e0"
                 raw = g.llm.chat_json(
                     chronicler.SYSTEM, chronicler.build_prompt(item),
-                    CHRON_SCHEMA, max_tokens=120, temperature=0.9, retries=2)
+                    CHRON_SCHEMA, max_tokens=60, temperature=0.9, retries=2)
                 text = chronicler.parse_single(raw, "e0", item["template"])
                 if text:
                     g.db.cache_set(item["key"], text)

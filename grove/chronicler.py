@@ -19,15 +19,13 @@ _SEASON_LINES = {0: "Spring came to the grove.", 1: "Summer came to the grove.",
                  3: "Winter came to the grove."}
 
 SYSTEM = (
-    "You are the Chronicler of a living forest. ONE event is given, with "
-    "id e0, a data slot, and its plain base sentence. Reply with ONE line "
-    "of at most 88 characters rewriting it. It must stay about the SAME "
-    "animal or plant in the SAME place as the base sentence names: reuse "
-    "those words (species, creature, pond) but reshape the sentence — new "
-    "rhythm, new verbs. Never write about a different scene, never "
-    "continue an unfinished thought, never start with '...' or an "
-    "ellipsis; a complete little sentence on its own. Never coordinates. "
-    'Reply ONLY as JSON: {"entries":[{"id":"e0","text":"..."}]}'
+    "You are the Chronicler of a living forest. ONE event is given: its "
+    "data slot and a plain base sentence. Write ONE improved line (no "
+    "more than 88 characters) about the SAME animal or plant in the SAME "
+    "place the base sentence names — keep the subject words (species, "
+    "creature, pond), reshape the rhythm and verbs. A complete little "
+    "sentence; never an ellipsis; never another scene; never coordinates. "
+    'Reply ONLY: {"text":"..."}'
 )
 
 
@@ -133,29 +131,34 @@ def _clean(text):
 
 
 def parse_single(result, expected_id, base):
-    """One event's requested line: matching id if given, else any entry
-    that clearly speaks of the same subject; None when the model is off
-    on a hallucination or writes garbage."""
+    """The requested line for ONE event: a flat {"text": ...} reply is
+    preferred (the shape small models hold best); the older
+    {"entries": [...]} shape is accepted too. Anchors decide: a line
+    that doesn't speak of the event's subject is discarded."""
     if not isinstance(result, dict):
         return None
+    cands = []
+    if isinstance(result.get("text"), str) and result["text"].strip():
+        text = _clean(result["text"])
+        if text and len(text) <= LINE_CAP:
+            cands.append((str(expected_id), text))
     entries = result.get("entries")
-    if not isinstance(entries, list):
+    if isinstance(entries, list):
+        for it in entries:
+            if not (isinstance(it, dict) and it.get("text")):
+                continue
+            text = _clean(str(it["text"]))
+            if text and len(text) <= LINE_CAP:
+                cands.append((str(it.get("id", "")).strip(), text))
+    if not cands:
         return None
     # content words that anchor the line to the event (species, hunter,
     # place); a line with none of these is discarded
     anchors = _anchors(base)
-    cands = []
-    for it in entries:
-        if not (isinstance(it, dict) and str(it.get("id", "")).strip()
-                and it.get("text")):
-            continue
-        text = _clean(str(it["text"]))
-        if text and len(text) <= LINE_CAP:
-            cands.append((str(it["id"]).strip(), text))
     for eid, text in cands:
-        if eid == expected_id and any(a in text for a in anchors):
+        if eid == str(expected_id) and any(a in text for a in anchors):
             return text          # right id and the right subject
     for _eid, text in cands:
         if any(a in text for a in anchors):
             return text          # wrong id, right subject — still usable
-    return None                  # off-topic or id-empty: keep the template
+    return None                  # off-topic: keep the template

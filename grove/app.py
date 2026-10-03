@@ -22,14 +22,8 @@ from . import world as W
 
 CHRON_SCHEMA = {
     "type": "object",
-    "properties": {
-        "entries": {"type": "array", "items": {
-            "type": "object",
-            "properties": {"id": {"type": "string"},
-                           "text": {"type": "string"}},
-            "required": ["id", "text"]}},
-    },
-    "required": ["entries"],
+    "properties": {"text": {"type": "string"}},
+    "required": ["text"],
 }
 
 
@@ -170,7 +164,7 @@ class Grove:
         self.worker.submit({
             "kind": "chron", "system": chronicler.SYSTEM,
             "user": chronicler.build_prompt(item),
-            "schema": CHRON_SCHEMA, "max_tokens": 120, "temperature": 0.9,
+            "schema": CHRON_SCHEMA, "max_tokens": 60, "temperature": 0.9,
             "extra": {"base": item["template"], "key": item["key"],
                       "tick": item["tick"]},
             "retries": 2})
