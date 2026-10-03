@@ -153,7 +153,7 @@ def snapshot(grove, runner, lock):
         }
 
 
-PAGE = """<!doctype html>
+PAGE = r"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
