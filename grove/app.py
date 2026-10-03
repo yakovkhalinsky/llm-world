@@ -159,7 +159,9 @@ class Grove:
                 del self.pending_chron[eid]
         chron_ready = bool(self.pending_chron)
         need = 1 if self.llm.is_cloud() else 2
-        if chron_ready and len(self.pending_chron) >= need:
+        self.slot_rot = (getattr(self, "slot_rot", 0) + 1) % 3
+        if chron_ready and (len(self.pending_chron) >= need
+                            and self.slot_rot < 2):
             self._flush_chron()
             return
         if self._maybe_name(notable):

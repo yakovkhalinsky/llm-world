@@ -22,7 +22,7 @@ from grove.web import snapshot, SimRunner   # noqa: E402
 
 TMP = pathlib.Path("/tmp")
 args = types.SimpleNamespace(
-    data="./grove_data", model=llmm.DEFAULT_MODEL,
+    data="./grove_data", model="auto", tier="local",
     host=llmm.DEFAULT_HOST, offline=True, cmd="web", tick_seconds=4)
 g = Grove(args)
 g.load_or_exit()
