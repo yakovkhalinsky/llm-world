@@ -521,18 +521,52 @@ function iso(x, y) { return [OX + (x - y) * TW / 2, OY + (x + y) * TH / 2]; }
 const SEASONS = {
   spring: { grass: "#6fa053", soil: "#4a3a29", water: "#2a4d66",
             rock: "#5d6266", pine: "#2f6038", leaf: "#6f9f4a",
-            canopyDim: 1.0, wash: null },
+            canopyDim: 1.0, wash: null,
+            nightT: "#141a22", nightB: "#1c2419" },
   summer: { grass: "#5d8f45", soil: "#45362a", water: "#27496b",
             rock: "#5a6062", pine: "#2a5630", leaf: "#5f9440",
-            canopyDim: 1.0, wash: null },
+            canopyDim: 1.0, wash: null,
+            nightT: "#101820", nightB: "#18251a" },
   autumn: { grass: "#9a8a4a", soil: "#4d3a28", water: "#284a5e",
             rock: "#5d6266", pine: "#2d5035", leaf: "#b0762f",
-            canopyDim: 1.0, wash: null },
+            canopyDim: 1.0, wash: null,
+            nightT: "#161418", nightB: "#241f16" },
   winter: { grass: "#a8b3ad", soil: "#5a5148", water: "#31536e",
             rock: "#68707a", pine: "#2c4a42", leaf: "#86775d",
-            canopyDim: 0.85, wash: "rgba(190,215,225,0.10)" },
+            canopyDim: 0.85, wash: "rgba(190,215,225,0.10)",
+            nightT: "#0d1218", nightB: "#1a2226" },
 };
-const pal = () => SEASONS[(ST.s && ST.s.season) || "spring"] || SEASONS.spring;
+function hexToRgb(h) {
+  const v = parseInt(h.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+/* two palettes blend mid-air between seasons: the first leaves of
+   spring arrive in the air of winter */
+function mixPal(a, b, m) {
+  const out = { wash: b.wash, mix: m };
+  for (const k of ["grass", "soil", "water", "rock", "pine", "leaf"]) {
+    const A = hexToRgb(a[k]), B = hexToRgb(b[k]);
+    out[k] = "rgb(" + Math.round(A[0] + (B[0] - A[0]) * m) + "," +
+        Math.round(A[1] + (B[1] - A[1]) * m) + "," +
+        Math.round(A[2] + (B[2] - A[2]) * m) + ")";
+  }
+  out.canopyDim = a.canopyDim + (b.canopyDim - a.canopyDim) * m;
+  out.nightT = "rgb(" + hexToRgb(a.nightT).map((v, i) =>
+      Math.round(v + (hexToRgb(b.nightT)[i] - v) * m)).join(",") + ")";
+  out.nightB = "rgb(" + hexToRgb(a.nightB).map((v, i) =>
+      Math.round(v + (hexToRgb(b.nightB)[i] - v) * m)).join(",") + ")";
+  return out;
+}
+function pal() {
+  const s = ST.s || {};
+  const cur = SEASONS[s.season || "spring"] || SEASONS.spring;
+  if (!s.tick) return cur;
+  const weekIn = ((s.tick - 1) % 12) + 1;
+  if (weekIn > 2) return cur;            // the blend only spans two weeks
+  const names = ["spring", "summer", "autumn", "winter"];
+  const prev = SEASONS[names[(names.indexOf(s.season) + 3) % 4]];
+  return mixPal(prev, cur, weekIn / 3);
+}
 
 const ANIMAL_BODY = {
   rabbit: "#9b8d90", deer: "#a8834f", fox: "#c26a35", owl: "#8d7358",
@@ -566,6 +600,65 @@ function shadow(cx, cy, rx) {
   ctx.beginPath(); ctx.ellipse(cx, cy + 2 * K, rx * K, rx * 0.38 * K,
                                0, 0, 6.3);
   ctx.fill();
+}
+
+/* -------- the air the world floats in —— ----------------------------- */
+/* deterministic star field, built once */
+const STARS = (() => {
+  let x = 99;
+  const r = () => (x = (x * 48271) % 2147483647) / 2147483647;
+  const arr = [];
+  for (let i = 0; i < 110; i++)
+    arr.push({ u: r(), v: r() * 0.9, s: 0.5 + r() * 1.1,
+               tw: r() * 6.3, br: 0.25 + r() * 0.4 });
+  return arr;
+})();
+
+function drawBackdrop(tsec) {
+  // the slab floats over a deep, season-tinted night; stars shine far
+  // off and cloud shadows drift beneath the world
+  const p = pal();
+  const sky = ctx.createLinearGradient(0, 0, 0, CH);
+  sky.addColorStop(0, p.nightT);
+  sky.addColorStop(1, p.nightB);
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, CW, CH);
+  for (const st of STARS) {
+    const a = st.br * (0.6 + 0.4 * Math.sin(tsec * 1.7 + st.tw));
+    ctx.fillStyle = "rgba(226,236,235," + a.toFixed(3) + ")";
+    ctx.fillRect(st.u * CW, st.v * CH, st.s, st.s);
+  }
+  // three slow cloud shadows beneath the world
+  for (let i = 0; i < 3; i++) {
+    const cx = ((tsec * 11 + i * 470) % (CW + 400)) - 200;
+    const cy = CH * (0.18 + i * 0.26);
+    ctx.fillStyle = "rgba(10,16,13,0.10)";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 150 + i * 40, 34, 0, 0, 6.3);
+    ctx.fill();
+  }
+}
+
+function drawMist() {
+  // far-side mist: the fog lives at the scene's top, above the far woods
+  const s = ST.s || {};
+  const deep = (s.season === "winter") ? 0.30 :
+      (s.weather === "clear") ? 0.16 : 0.23;
+  const fog = ctx.createLinearGradient(0, 0, 0, CH * 0.58);
+  fog.addColorStop(0, "rgba(178,206,205," + deep + ")");
+  fog.addColorStop(1, "rgba(178,206,205,0)");
+  ctx.fillStyle = fog;
+  ctx.fillRect(0, 0, CW, CH * 0.58);
+}
+
+function drawVignette() {
+  const v = ctx.createRadialGradient(
+      CW / 2, CH / 2, Math.min(CW, CH) * 0.36,
+      CW / 2, CH / 2, Math.max(CW, CH) * 0.74);
+  v.addColorStop(0, "rgba(2,6,5,0)");
+  v.addColorStop(1, "rgba(2,6,5,0.32)");
+  ctx.fillStyle = v;
+  ctx.fillRect(0, 0, CW, CH);
 }
 
 function drawTerrain(s, tsec) {
@@ -897,12 +990,33 @@ function spawnParticles(s, dt) {
   if (s.season === "autumn" && count("leaf") < 10 && Math.random() < 0.015)
     dots.push({ kind: "leaf", x: Math.random() * CW, y: -4,
                 v: 22 + Math.random() * 16, dx: Math.random() * 24 - 12 });
+  /* the air holds its own quiet life: pollen in spring, fireflies on
+     summer weeks — they drift rather than fall */
+  if (s.season === "spring" && count("pollen") < 18 && Math.random() < 0.06)
+    dots.push({ kind: "pollen", x: Math.random() * CW,
+                y: CH * (0.15 + Math.random() * 0.6),
+                v: 7 + Math.random() * 8,
+                dx: Math.random() * 8 - 4, ph: Math.random() * 6.3 });
+  if (s.season === "summer" && count("fly") < 16 && Math.random() < 0.05)
+    dots.push({ kind: "fly", x: Math.random() * CW,
+                y: CH * (0.25 + Math.random() * 0.55),
+                v: 0, dx: 0, ph: Math.random() * 6.3 });
 }
 
 function drawParticles(dt) {
   for (let i = dots.length - 1; i >= 0; i--) {
     const d = dots[i];
+    if (d.kind === "fly") {
+      d.x += Math.sin(dt * 40 + d.ph) * 0.02 * 60 * dt + 6 * dt;
+      d.y += Math.cos(dt * 37 + d.ph) * 0.018 * 60 * dt;
+      if (d.x > CW + 6) { dots.splice(i, 1); continue; }
+      const glow = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(d.ph * 7 + i));
+      ctx.fillStyle = "rgba(232,212,137," + (glow * 0.9).toFixed(3) + ")";
+      ctx.beginPath(); ctx.arc(d.x, d.y, 1.6, 0, 6.3); ctx.fill();
+      continue;
+    }
     d.y += d.v * dt; d.x += d.dx * dt;
+    if (d.kind === "pollen") d.x += Math.sin(d.y * 0.05 + d.ph) * 4 * dt;
     if (d.kind === "leaf") d.x += Math.sin((d.y + i * 10) * 0.05) * 12 * dt;
     if (d.y > CH - 4) { dots.splice(i, 1); continue; }
     ctx.save();
@@ -914,8 +1028,9 @@ function drawParticles(dt) {
       ctx.lineTo(d.x - d.dx * 0.05, d.y - d.v * 0.05);
       ctx.stroke();
     } else {
-      ctx.fillStyle = d.kind === "leaf" ? "#a5763c" : "#eef4f6";
-      ctx.beginPath(); ctx.arc(d.x, d.y, d.kind === "leaf" ? 2.2 : 1.4,
+      ctx.fillStyle = d.kind === "leaf" ? "#a5763c"
+          : d.kind === "pollen" ? "#e6e0c8" : "#eef4f6";
+      ctx.beginPath(); ctx.arc(d.x, d.y, d.kind === "leaf" ? 2.2 : 1.3,
                                0, 6.3);
       ctx.fill();
     }
@@ -960,6 +1075,7 @@ function drawScene(tnow) {
   // fraction of the glide between weekly positions, from the true phase
   const glide = glidePhase();
 
+  drawBackdrop(tsec);
   drawSlab(s);
   drawTerrain(s, tsec);
 
@@ -988,6 +1104,8 @@ function drawScene(tnow) {
     ctx.fillRect(0, 0, CW, CH);
     if (Math.random() < 0.006) flash = 0.30;
   }
+  drawMist();
+  drawVignette();
   if (flash > 0) {
     ctx.fillStyle = `rgba(240,245,255,${flash})`;
     ctx.fillRect(0, 0, CW, CH);

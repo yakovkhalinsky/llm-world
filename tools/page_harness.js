@@ -16,13 +16,22 @@ const ctxTarget = {};
 for (const k of ["fillRect","strokeRect","beginPath","moveTo","lineTo",
   "arc","arcTo","ellipse","quadraticCurveTo","closePath","fill","stroke",
   "fillText","save","restore","translate","scale","rotate","setTransform",
-  "setLineDash","clearRect","createLinearGradient"])
+  "setLineDash","clearRect"])
   ctxTarget[k] = (...a) => {
     calls++;
     for (const q of a)
       if (typeof q === "number" && !isFinite(q))
         throw new Error(`non-finite arg in ctx.${k}(${a.join(",")})`);
     return undefined;
+  };
+/* gradients: a stub the canvas gradient stops can be added to */
+for (const gk of ["createLinearGradient", "createRadialGradient"])
+  ctxTarget[gk] = (...a) => {
+    calls++;
+    for (const q of a)
+      if (typeof q === "number" && !isFinite(q))
+        throw new Error(`non-finite arg in ctx.${gk}(${a.join(",")})`);
+    return { addColorStop: () => {} };
   };
 const ctx = new Proxy(ctxTarget, {
   get(t, k) { return t[k]; },
