@@ -79,6 +79,11 @@ const ctx2d = new Proxy({}, {
         const [xp, yp] = map(a[R[0]], a[R[1]]);
         a[R[0]] = xp; a[R[1]] = yp;
       }
+      const P = { moveTo: 1, lineTo: 1, quadraticCurveTo: 2 }[k];
+      if (P) for (let pi = 0; pi < P; pi++) {
+        const [xp, yp] = map(a[pi * 2], a[pi * 2 + 1]);
+        a[pi * 2] = xp; a[pi * 2 + 1] = yp;
+      }
       TRACE.push(k + "(" + a.map(fmt).join(",") + ")");
     };
   },
@@ -184,6 +189,11 @@ const driver = `
     out.crash = String(e && e.stack || e);
   }
 
+  const sB = cnv.width / CW;   // buffer pixels per logical unit — read
+  ok("the canvas has real bounds",               // after a frame has
+     sB > 0 && isFinite(sB),                     // fitted, never before
+     "scale " + sB);
+
   // every fillRect lands on the canvas — nothing drawn offscreen.
   // (the trace records buffer-space coords; cnv.width is the buffer)
   const full = TRACE.slice();
@@ -211,6 +221,40 @@ const driver = `
   ok("the frame draws the same twice", full1 === full2,
      firstDiff || "identical");
 
+  // the living ground: tufts on tall grass, pebbles and cracks on
+  // rocks, reeds and stones at the shore, a wet rim ringing water.
+  // Everything is found by its mapped position near a known tile.
+  // (coords parsed from the trace without regex gymnastics)
+  const num2 = (s2, kind) => {
+    if (!s2.startsWith(kind + "(")) return null;
+    const body = s2.slice(kind.length + 1, s2.length - 1).split(",");
+    const fx2 = parseFloat(body[0]), fy2 = parseFloat(body[1]);
+    return isFinite(fx2) && isFinite(fy2) ? [fx2, fy2] : null;
+  };
+  const near = (s2, kind, x2, y2, tol) => {
+    const xy = num2(s2, kind);
+    return !!xy && Math.abs(xy[0] - x2 * sB) < tol * sB &&
+           Math.abs(xy[1] - y2 * sB) < tol * sB;
+  };
+  const frame = tr1;                        // the whole world's strokes
+  const tile6 = iso(6, 1);                  // grass 0.9: tall grass
+  const tufts = frame.filter(s2 =>
+      (s2.startsWith("quadraticCurveTo(") || s2.startsWith("moveTo(")) &&
+      (near(s2, "quadraticCurveTo", tile6[0], tile6[1], 8) ||
+       near(s2, "moveTo", tile6[0], tile6[1], 8))).length;
+  const rock7 = iso(7, 7);                  // the rock cell
+  const pebble = frame.filter(s2 =>
+      s2.startsWith("ellipse(") && near(s2, "ellipse",
+      rock7[0], rock7[1], 7)).length;
+  ok("the rock carries its pebbles", pebble >= 2, pebble + " pebbles");
+  const shore2 = iso(2, 4);                 // touches water at (2,5)
+  const reed = frame.filter(s2 =>
+      s2.startsWith("quadraticCurveTo(") &&
+      near(s2, "quadraticCurveTo", shore2[0], shore2[1], 8)).length;
+  ok("the shore grows reeds", reed >= 3, reed + " reed strokes");
+  ok("the wet rim rings the water",
+     frame.includes("fillStyle=rgba(24,20,12,0.16)"));
+
   // a tree draws the same twice, and a different tree draws differently
   const tw = (id) => ({ id, x: 5, y: 6, sp: "willow", st: "mature" });
   const hA1 = hash(traceOf(() => drawPlant(tw(11), tsec)));
@@ -221,9 +265,7 @@ const driver = `
      hA1 !== hA3, \`\${hA1} vs \${hA3}\`);
 
   // each cactus draws on its own tile — the saguaro's marks sit within
-  // a tile's width of the cell's iso position (buffer space: the base
-  // setTransform scale is cnv.width / CW)
-  const sB = cnv.width / CW;
+  // a tile's width of the cell's iso position (buffer space)
   for (const c of [plants[8], plants[9]]) {
     let stray = null;
     TRACE.length = 0; drawPlant(c, tsec);

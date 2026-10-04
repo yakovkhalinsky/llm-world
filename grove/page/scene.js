@@ -268,6 +268,19 @@ function drawTerrain(s, tsec) {
       diamondPath(ctx, sx, sy); ctx.fill();
       ctx.globalAlpha = 1;
     }
+    if (g > 0.45) {              // tall grass carries tufts of its own
+      const T = 2 + i * 7 % 3;
+      ctx.strokeStyle = p.grass; ctx.lineWidth = 1;
+      for (let u = 0; u < T; u++) {
+        const ux = ((i * 31 + u * 13) % 21 - 10) * 0.8,
+              uy = ((i * 17 + u * 29) % 13 - 6) * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(sx + ux, sy + uy + 3);
+        ctx.quadraticCurveTo(sx + ux + 2, sy + uy - 1,
+                             sx + ux + 1.4, sy + uy - 5 - u * 1.6);
+        ctx.stroke();
+      }
+    }
     if (c[2] > 0.75) {                             // soaked ground
       ctx.fillStyle = "rgba(30,50,66,0.18)";
       diamondPath(ctx, sx, sy); ctx.fill();
@@ -279,6 +292,56 @@ function drawTerrain(s, tsec) {
       ctx.beginPath();
       ctx.moveTo(sx - 5, sy); ctx.lineTo(sx, sy - 5);
       ctx.lineTo(sx + 5, sy); ctx.closePath(); ctx.fill();
+      // each rock keeps its pebbles and a line or two of cracks
+      ctx.fillStyle = "rgba(255,255,255,0.10)";
+      for (let u = 0; u < 3; u++) {
+        ctx.beginPath();
+        ctx.ellipse(sx + ((i * 23 + u * 41) % 17 - 8) * 0.9,
+                    sy + ((i * 37 + u * 19) % 11 - 5) * 0.6,
+                    1.6, 1.1, 0, 0, 6.3);
+        ctx.fill();
+      }
+      ctx.strokeStyle = "rgba(0,0,0,0.14)"; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(sx - 6, sy + 1);
+      ctx.lineTo(sx + 3 - (i % 5), sy - 2 - (i % 3));
+      ctx.stroke();
+    }
+
+    /* the shore: ground that touches water wears a wet rim, and the
+       quiet edges grow reeds and hold stones */
+    const nbrs4 = [i + 1, i - 1, i + size, i - size];
+    let wet = false;
+    for (let e = 0; e < 4; e++) {
+      const j = nbrs4[e];
+      if (j >= 0 && j < s.cells.length &&
+          !(e === 0 && (i % size) === size - 1) &&
+          !(e === 1 && (i % size) === 0) &&
+          s.cells[j][0] === "w") wet = true;
+    }
+    if (wet) {
+      ctx.fillStyle = "rgba(24,20,12,0.16)";
+      diamondPath(ctx, sx, sy); ctx.fill();
+      if (c[1] < 0.5 && i * 13 % 3 !== 2) {          // reeds at the shore
+        ctx.strokeStyle = p.under; ctx.lineWidth = 1.1;
+        for (let u = 0; u < 3; u++) {
+          const ux = ((i * 23 + u * 41) % 17 - 8) * 0.75,
+                h2 = 5 + (i * 11 + u * 7) % 4;
+          ctx.beginPath();
+          ctx.moveTo(sx + ux, sy + 2);
+          ctx.quadraticCurveTo(sx + ux + 0.6, sy - h2 * 0.5,
+                               sx + ux + 1, sy - h2);
+          ctx.stroke();
+          ctx.fillStyle = "#6b4a33";
+          ctx.fillRect(sx + ux + 0.7, sy - h2 - 2.4, 1.2, 2.4);
+        }
+      } else {                                       // or holds a stone
+        ctx.fillStyle = "rgba(94,98,102,0.6)";
+        ctx.beginPath();
+        ctx.ellipse(sx + (i * 19 % 9 - 4), sy + (i * 7 % 5 - 2) * 0.6,
+                    2.4, 1.5, 0, 0, 6.3);
+        ctx.fill();
+      }
     }
 
     /* faint diamond seams so the grid reads */
@@ -287,6 +350,9 @@ function drawTerrain(s, tsec) {
     diamondPath(ctx, sx, sy); ctx.stroke();
 
     if (c[3]) {                                    // mushrooms
+      ctx.fillStyle = "rgba(8,14,11,0.10)";
+      ctx.beginPath(); ctx.ellipse(sx + 1, sy + 4, 4, 1.6, 0, 0, 6.3);
+      ctx.fill();
       ctx.fillStyle = "#e8e3d2";
       ctx.fillRect(sx - 1, sy - 2, 2, 5);
       ctx.fillStyle = "#b0483c";
