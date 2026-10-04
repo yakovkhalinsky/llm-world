@@ -126,16 +126,16 @@ def tree(world, p, pal):
                        (cx + tw*0.3, cy - trunkH*scale),
                        (cx + tw*0.8, cy)], trunk))
     col = pal["pine"] if p["sp"] == "pine" else pal["leaf"]
+    dim = pal.get("canopyDim", 1.0) or 1.0     # winter thins the canopy
     if p["sp"] == "pine":
         for k in range(3):
             wd, h = (11 - k * 3) * scale, (9 - k) * scale
             oy = (7 + k * 4.5) * scale
             parts.append(poly([(cx, cy - oy - h), (cx + wd, cy - oy),
-                               (cx - wd, cy - oy)],
-                              col))
+                               (cx - wd, cy - oy)], col, opacity=dim))
             parts.append(poly([(cx, cy - oy - h), (cx + wd, cy - oy),
                                (cx + wd*0.12, cy - oy - h*0.3)],
-                              "rgba(8,18,14,0.14)"))   # the tier's shade
+                              "rgba(8,18,14,0.14)", opacity=dim))
         if W.season_name(world["tick"]) == "winter":
             parts.append(poly([(cx, cy - 22*scale), (cx + 3.5*scale,
                                                     cy - 17*scale),
@@ -144,11 +144,15 @@ def tree(world, p, pal):
     else:
         r = 9.5 * scale
         cyy = cy - trunkH * scale - r * 0.55
-        for ex, ey, er in ((0, 0, 1.0), (0.5, 0.3, 0.68),
-                           (-0.55, 0.15, 0.6)):
+        parts.append(f'<ellipse cx="{cx + 0*r:.1f}" '
+                     f'cy="{cyy:.1f}" rx="{r:.1f}" '
+                     f'ry="{r*0.72:.1f}" fill="{col}" '
+                     f'opacity="{dim:.2f}"/>')
+        for ex, ey, er in ((0.5, 0.3, 0.68), (-0.55, 0.15, 0.6)):
             parts.append(f'<ellipse cx="{cx + ex*r:.1f}" '
                          f'cy="{cyy + ey*r:.1f}" rx="{r*er:.1f}" '
-                         f'ry="{r*er*0.72:.1f}" fill="{col}"/>')
+                         f'ry="{r*er*0.72:.1f}" fill="{col}" '
+                         f'opacity="{dim*0.85:.2f}"/>')
         parts.append(f'<ellipse cx="{cx - r*0.42:.1f}" '
                      f'cy="{cyy - r*0.34:.1f}" rx="{r*0.5:.1f}" '
                      f'ry="{r*0.36:.1f}" fill="rgba(255,244,200,0.13)"/>')
@@ -182,6 +186,66 @@ def creature(world, a, pal):
     sh = (f'<ellipse cx="{cx:.1f}" cy="{cy+2:.1f}" rx="{6*js:.1f}" '
           f'ry="{2.3*js:.1f}" fill="rgba(8,14,11,0.2)"/>')
     return [sh, body]
+
+
+def reflections(world, pal):
+    """The mirrored world: shore plants lean into the water below them,
+    upside down and quiet, clipped inside the tile they lean on."""
+    parts, at, size = [], {}, world["size"]
+    for t in world["plants"].values():
+        at[(t["x"], t["y"])] = t
+    for y, row in enumerate(world["cells"]):
+        for x, c in enumerate(row):
+            if c["terrain"] != "water":
+                continue
+            for nx, ny in ((x - 1, y), (x, y - 1)):
+                t = at.get((nx, ny))
+                if not t or t["stage"] == "log":
+                    continue
+                cx, cy = iso(x, y)
+                tx, ty = cx + (nx - x) * TW / 4, cy - TH * 0.1
+                col = pal["pine"] if t["sp"] == "pine" else pal["leaf"]
+                cid = f"w{x}-{y}-{nx}-{ny}"
+                parts.append(
+                    f'<clipPath id="{cid}"><polygon points='
+                    f'"{cx-TW/2:.1f},{cy:.1f} {cx:.1f},{cy-TH/2:.1f} '
+                    f'{cx+TW/2:.1f},{cy:.1f} {cx:.1f},{cy+TH/2:.1f}"/>'
+                    f'</clipPath>')
+                if t["sp"] == "pine":
+                    lean = (f'<polygon points="0,-15 7,0 -7,0" '
+                            f'fill="{col}"/>')
+                else:
+                    lean = (f'<ellipse cx="0" cy="-7" rx="7.5" ry="5" '
+                            f'fill="{col}"/>'
+                            f'<rect x="-1" y="-1" width="2" height="5" '
+                            f'fill="{col}"/>')
+                parts.append(f'<g clip-path="url(#{cid})">'
+                             f'<g transform="translate({tx:.1f},{ty:.1f}) '
+                             f'scale(1,-0.5)" opacity="0.09">{lean}</g></g>')
+    return parts
+
+
+def glint(world):
+    """Moonlight finds the water: a shimmer column over the pond's heart."""
+    size = world["size"]
+    xi = yi = n = 0
+    for y, row in enumerate(world["cells"]):
+        for x, c in enumerate(row):
+            if c["terrain"] == "water":
+                xi += x; yi += y; n += 1
+    if not n:
+        return []
+    gx, gy = iso(xi / n, yi / n)
+    return [path(f"M {gx+(k-1.5)*9-5:.1f},{gy+(k-1.5)*5:.1f} "
+                 f"L {gx+(k-1.5)*9+5:.1f},{gy+(k-1.5)*5:.1f}",
+                 "rgba(210,228,246,0.14)", 1.4) for k in range(4)]
+
+
+def cloud_shadows(span_w, span_h):
+    """The sky's weather drifts across the ground itself, faint."""
+    return [blob(span_w * (0.22 + 0.28 * k), span_h * (0.30 + 0.18 * k),
+                 120 + k * 36, 26, "rgba(10,16,13,0.05)")
+            for k in range(3)]
 
 
 def main(out):
@@ -247,6 +311,10 @@ def main(out):
                         parts.append(blob(cx + (i * 19 % 9 - 4),
                                           cy + (i * 7 % 5 - 2) * 0.6,
                                           2.4, 1.5, "rgba(94,98,102,0.6)"))
+
+    parts += cloud_shadows(span_w, span_h)
+    parts += reflections(world, pal)
+    parts += glint(world)
 
     # entities, depth-sorted
     ents = [(p["x"] + p["y"], 0, ("plant", p)) for p in world["plants"].values()]
