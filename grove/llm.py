@@ -173,7 +173,7 @@ class LLM:
             self.job_fails[job] = self.job_fails.get(job, 0) + 1
             if self.job_fails[job] >= 2:
                 self._swap_job_model(job)
-                payload["model"] = self.job_models[job]
+                payload["model"] = self.job_models.get(job, model)
                 deadline = time.time() + self.timeout
                 self.job_fails[job] = 0
         return None

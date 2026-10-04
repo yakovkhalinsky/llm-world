@@ -174,7 +174,7 @@ instead (say so in the commit either way).
 **Check** `status_line` prints the same model for (soul) and (prose) in
 `--tier local`, and a forced soul failure moves all three (or none).
 
-### b5 · [ ] `job="op"` is missing from every table — KeyError after two failures
+### b5 · [x] `job="op"` is missing from every table — KeyError after two failures
 
 **Where** `grove/llm.py:170` — `payload["model"] = self.job_models[job]`
 raises KeyError for `job="op"`: it is in neither `LOCAL_JOBS` nor the
