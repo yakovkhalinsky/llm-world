@@ -66,8 +66,10 @@ Measured on this machine (4 weak CPU cores, no GPU):
 - llama-3.2-1b: best throughput; ~5–8 s per line. The memory-keeper
   (ask), and the voice's fallback seat when 3b fails twice.
 - qwen3 (all sizes): no speed win here; dropped.
-- Reasoning models must be called with `think: false` — their thinking
-  would otherwise consume the whole token budget in a hidden channel.
+- Reasoning clouds (the flash class): their thinking runs in a hidden
+  `thinking` channel — send NO `think` key (with `think:false` the proxy
+  streams the reasoning into the answer's own field) and give
+  `num_predict` ~500 tokens of headroom; the answer stops naturally.
 - Structured outputs (`format` = the schema) make valid JSON ~certain;
   the acceptance filters catch the *content* failures instead.
 - One flat `{"text": …}` per call beats arrays: small models truncate

@@ -90,14 +90,15 @@ Small-model reality: on a ~2 GHz 4-core CPU there is no GPU and inference
 is CPU-bound — ~1.9 tok/s generation on Llama-3.2-3B. The defaults are
 tuned for slow silicon:
 
-- **`--tier local` (default): fully offline.** The soul, the chronicle
-  and the naming voice all speak with ONE model — `llama3.2:3b` (best
-  judgment/prose, ~20–60 s warm per turn) — moving as one down its chain
-  when two calls in a row fail. The memory-keeper (`ask`) stays on
-  `llama3.2:1b` (~5–8 s per line) for the fast, cheap retrievals.
-- **`--tier cloud`**: a fast, richer soul (~1–2 s per decision) through
-  the same Ollama, still gated by the same schema validation, and falling
-  back to local on any failure.
+- **the default tier: one cloud voice with local fallback.** Every
+  job — the World Soul's decisions, the chronicle, naming and diaries,
+  the asks, the steward — speaks with ONE model and moves as one down
+  its chain. The default is `glm-5.3-flash:cloud` (~1–2 s per call
+  through the same Ollama); two failed calls step down the chain, and
+  when no cloud model is reachable the forest falls back onto the local
+  llama.
+- **`--tier local`**: fully offline and spend-free: the same one voice
+  pinned to `llama3.2:3b` across every job.
 - The world never waits on the model: the sim ticks happily while the
   soul ponders, and results land at the next week boundary.
 

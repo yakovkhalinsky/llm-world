@@ -235,11 +235,12 @@ def _add_llm_flags(sp):
                     help='a model name, or "auto" (cloud-first with '
                          'local fallback)')
     sp.add_argument("--tier", choices=("local", "cloud", "hybrid"),
-                    default="local",
-                    help='"local" = fully offline (default); "cloud" = all '
-                         'jobs on a cloud model; "hybrid" = the soul in '
-                         'the cloud, the forest\'s own words local (the '
-                         'cheapest tokens)')
+                    default="cloud",
+                    help='"cloud" (default) = every job on one cloud '
+                         'model (glm-5.3-flash) with local fallback; '
+                         '"local" = fully offline, the forest on the '
+                         'llama; "hybrid" = like cloud (kept for old '
+                         'scripts)')
     sp.add_argument("--token-budget", type=int, default=None,
                     help="max cloud tokens per day; over it the grove "
                          "thins to local narration and slows the soul")

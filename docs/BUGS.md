@@ -354,3 +354,20 @@ during a slow embed).
   for their turn at the file's write lock and can never land
   mid-`step()`. If anything odd ever shows in the vec table, the
   ollama queue is the suspect now, not sqlite.
+
+- [x] **b18** "one model, moving as one" extended to EVERY job, and the
+  default tier made cloud-first. ask and review still resolved on their
+  own tables (1b/3b), the "hybrid" tier had died silently, and the
+  `--model auto` help's promise ("cloud-first with local fallback")
+  never existed in code — the default tier fell through to the local
+  tables. Now: one resolution, one chain, all six jobs (soul, chron,
+  voice, op, ask, review), in every tier — the default resolves
+  glm-5.3-flash:cloud (fd46dc1's choice); `--tier local` pins the
+  llama; nothing reachable → the chain slides to llama3.2:3b. A
+  flash-compat finding landed with it: with `think:false` the flash
+  proxy streams its REASONING into the answer's `content` (no JSON ever
+  parses) while with no `think` key the reasoning goes to the hidden
+  `thinking` field — so the client drops the key and gives cloud calls
+  ~500 tokens of `num_predict` headroom; the answer stops naturally and
+  the ceiling only truncates. The embedder (nomic) is not a language
+  model and is untouched.
