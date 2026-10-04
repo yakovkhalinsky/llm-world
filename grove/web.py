@@ -96,7 +96,8 @@ def snapshot(grove, runner, lock):
                 cells.append((c["terrain"][0], round(c["grass"], 2),
                               round(c["moisture"], 2),
                               1 if c["mushroom"] else 0,
-                              1 if c["carcass"] else 0))
+                              1 if c["carcass"] else 0,
+                              round(c.get("elev", 0), 2)))
         plants = [{"id": p["id"], "sp": p["sp"], "x": p["x"], "y": p["y"],
                    "st": p["stage"],
                    "el": 1 if p.get("elder") or p["id"] in w["elder_ids"]
@@ -143,7 +144,8 @@ def snapshot(grove, runner, lock):
         pres = rules.R["presentation"]
         biome = {"seasons": pres.get("seasons_palette"),
                  "bodies": pres.get("animal_body"),
-                 "shapes": pres.get("shapes")}
+                 "shapes": pres.get("shapes"),
+                 "elev_px": pres.get("elev_px", 26)}
         llm_bits = {
             "status": llmm.status_line(g.llm),
             "ok": bool(g.llm and g.llm.enabled),
