@@ -102,14 +102,17 @@ class LLM:
 
     def _swap_job_model(self, job):
         """Move this job along its chain, and the whole voice tier with
-        it: soul, chron and voice share the model and move as one."""
-        for step_job in ("soul", "chron", "voice"):
+        it: soul, chron, voice and op share the model and move as one."""
+        before = dict(self.job_models)
+        for step_job in ("soul", "chron", "voice", "op"):
             chain = [m for m in self.job_chains.get(step_job, [])
                      if m != self.job_models.get(step_job)]
             if chain and self._available(chain[0]):
                 self.job_models[step_job] = chain[0]
-        self.notes.append("the grove's voice moved to "
-                          + self.job_models["soul"])
+        if self.job_models != before:
+            self.notes.append("the grove's voice moved to "
+                              + self.job_models["soul"])
+        self.notes = self.notes[-4:]
         return True
 
     # -- ollama i/o --------------------------------------------------------

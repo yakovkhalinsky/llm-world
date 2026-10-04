@@ -201,7 +201,7 @@ payload["model"] = self.job_models.get(job, model)
 `host` at a staller) — no traceback; the op falls back and the next
 invitation still fires.
 
-### b6 · [ ] the swap note lies, and nothing bounds `notes`
+### b6 · [x] the swap note lies, and nothing bounds `notes`
 
 **Where** `grove/llm.py:105-106` — `"the grove's voice moved to …"` is
 appended even when nothing moved (e.g. only `1b` installed: every chain
