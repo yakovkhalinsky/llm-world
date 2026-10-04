@@ -218,8 +218,7 @@ class LLM:
         if self.tok.get("day") != day:
             self.tok = {"day": day, "in": 0, "out": 0, "calls": 0}
         self.tok["calls"] += 1
-        self.tok["in"] += int(last_part.get("prompt_eval_count")
-                              or self.tok.get("_pin", 0) or 0)
+        self.tok["in"] += int(last_part.get("prompt_eval_count") or 0)
         self.tok["out"] += int(last_part.get("eval_count", 0) or 0)
 
     def over_budget(self):
