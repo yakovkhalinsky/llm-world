@@ -129,8 +129,10 @@ class LLM:
         # key (with think:false the proxy streams the reasoning INTO the
         # answer's channel and the JSON never parses), and reasoning
         # headroom so the JSON survives the reasoning's budget — the
-        # answer costs only its own tokens; the ceiling merely truncates
-        headroom = 500 if ":cloud" in model else 0
+        # answer costs only its own tokens; the ceiling merely truncates.
+        # 1100: live op/chron prompts reasoned past the first ~500-slot;
+        # truncation mid-reasoning is the failure mode the swap then acts on
+        headroom = 1100 if ":cloud" in model else 0
         payload = {
             "model": model,
             "messages": [{"role": "system", "content": system},

@@ -368,6 +368,10 @@ during a slow embed).
   proxy streams its REASONING into the answer's `content` (no JSON ever
   parses) while with no `think` key the reasoning goes to the hidden
   `thinking` field — so the client drops the key and gives cloud calls
-  ~500 tokens of `num_predict` headroom; the answer stops naturally and
-  the ceiling only truncates. The embedder (nomic) is not a language
+  generous `num_predict` headroom (1100: the model stops naturally and
+  the ceiling only truncates; the first ~500 setting was passed
+  mid-reasoning by live prompts — two flash calls failed at the
+  dashboard's cold start and the whole voice stepped down to
+  glm-5.2:cloud in exactly one honest move, which is how the swap is
+  meant to behave). The embedder (nomic) is not a language
   model and is untouched.
