@@ -151,7 +151,7 @@ def cmd_step(args):
                                                recents=recents)
                 if text and text.strip().lower() != \
                         item["template"].strip().lower():
-                    g.db.cache_set(item["key"], text)
+                    g.db.cache_set(item["narr_key"], text)
                     g.db.update_text(item["key"], text)
             last_chron_week = w["tick"]
     g.db.close()

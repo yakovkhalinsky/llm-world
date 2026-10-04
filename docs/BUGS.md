@@ -66,7 +66,7 @@ rename rows; a birthed kid's `/api/bio` shows its birth line.
 
 ---
 
-### b2 · [ ] the narr-cache never hits — written and read under different keys
+### b2 · [x] the narr-cache never hits — written and read under different keys
 
 **Where** The read is `cache_get(it["narr_key"])` (`grove/app.py:136`).
 Both writes still use the per-event key:

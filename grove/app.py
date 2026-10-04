@@ -306,7 +306,7 @@ class Grove:
                     text = None if text.strip().lower() == \
                         res["extra"]["base"].strip().lower() else text
             if text:
-                self.db.cache_set(res["extra"]["key"], text)
+                self.db.cache_set(res["extra"]["narr"], text)
                 self.db.update_text(res["extra"]["key"], text)
                 self.jobs["chron_ok"] += 1
             else:
