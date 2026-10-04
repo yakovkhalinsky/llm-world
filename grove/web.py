@@ -670,13 +670,45 @@ function drawTerrain(s, tsec) {
     if (c[0] === "w") {
       ctx.fillStyle = p.water;
       diamondPath(ctx, sx, sy); ctx.fill();
-      const wob = Math.sin(tsec * 1.4 + i * 1.7) * 2;
-      ctx.strokeStyle = "rgba(200,225,240,0.22)";
+      // depth: a darker heart in the water, the shallows reading lighter
+      const D = 0.62;
+      ctx.fillStyle = "rgba(6,14,26,0.16)";
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - TH / 2 * D);
+      ctx.lineTo(sx + TW / 2 * D, sy);
+      ctx.lineTo(sx, sy + TH / 2 * D);
+      ctx.lineTo(sx - TW / 2 * D, sy);
+      ctx.closePath(); ctx.fill();
+      // caustics: two slow light-lines drifting over each sheet of water
+      const w1 = Math.sin(tsec * 1.4 + i * 1.7) * 2;
+      const w2 = Math.sin(tsec * 0.9 + i * 2.3) * 3;
+      ctx.strokeStyle = "rgba(200,225,240,0.20)";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(sx - 7, sy + wob);
-      ctx.lineTo(sx + 4, sy + wob);
+      ctx.moveTo(sx - 7, sy + w1);
+      ctx.lineTo(sx + 4, sy + w1);
+      ctx.moveTo(sx - 2, sy + 1 + w2 * 0.7);
+      ctx.lineTo(sx + 8, sy + 1 + w2 * 0.7);
       ctx.stroke();
+      // foam: light rim along every edge that faces land
+      const nbrs = [i + 1, i - 1, i + size, i - size];
+      for (let e = 0; e < 4; e++) {
+        const j = nbrs[e];
+        if (j < 0 || j >= s.cells.length || s.cells[j][0] === "w" ||
+            (e === 0 && (i % size) === size - 1) ||
+            (e === 1 && (i % size) === 0))
+          continue;
+        const pts = { 0: [sx, sy + TH / 2, sx + TW / 2, sy],   // +x: SE edge
+                      1: [sx - TW / 2, sy, sx, sy - TH / 2],   // -x: NW edge
+                      2: [sx - TW / 2, sy, sx, sy + TH / 2],   // +y: SW edge
+                      3: [sx, sy - TH / 2, sx + TW / 2, sy] }; // -y: NE edge
+        const pt = pts[e];
+        ctx.strokeStyle = "rgba(205,228,238,0.28)";
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(pt[0], pt[1]); ctx.lineTo(pt[2], pt[3]);
+        ctx.stroke();
+      }
       continue;
     }
 
