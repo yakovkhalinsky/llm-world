@@ -517,30 +517,51 @@ function drawAnimal(a, f, tsec, idx) {
   const lift =
       flyer ? -9 + (f < 1 ? Math.sin(tsec * 14 + a.id) * 1.1 : 0)
       : (a.sp === "rabbit" && f < 1
-         ? -Math.abs(Math.sin(tsec * 9 + a.id)) * 5   // rabbits hop
+         ? -Math.abs(Math.sin(f * 12 + a.id)) * 5   // rabbits hop with the glide
          : Math.sin(tsec * 5 + a.x) * 0.8) * sz;
+  /* landing: the hop's own phase tells when a rabbit touches ground —
+     mid-air they stretch, on the landing they squash */
+  const hopP = a.sp === "rabbit" && f < 1 ?
+      Math.abs(Math.sin(f * 12 + a.id)) : 0;
+  const sqx = hopP && hopP < 0.3 ? 1.08 : 1,
+        sqy = hopP && hopP < 0.3 ? 0.88 : 1;
+  /* every gait rides the glide too: while a creature covers its journey
+     its legs swing through a stride or two; standing, they rest */
+  const stride = f < 1 ? 1 : 0;
   const cy = OY + gy + lift * K + jy;
   if (flyer) shadow(OX + gx + jx, OY + gy + 2, 3 * sz);   // small, distant
   else shadow(OX + gx + jx, OY + gy, 6 * sz);
   ctx.save();
   ctx.translate(OX + gx + jx, cy);
-  ctx.scale(flip * K * sz * js, K * sz * js);
+  ctx.scale(flip * K * sz * js * sqx, K * sz * js * sqy);
   const winter = ST.s && ST.s.season === "winter";
   switch (A_SHAPES[a.sp] || a.sp) {
     case "rabbit":
       ctx.fillStyle = body;
       ctx.beginPath(); ctx.ellipse(0, 2, 5, 4, 0, 0, 6.3); ctx.fill();
+      // ears: the far one flicks on its own quiet alarm
+      const flick = Math.pow(Math.max(0,
+          Math.sin(tsec * 0.9 + a.id * 2) - 0.94) / 0.06, 2);
       ctx.beginPath(); ctx.ellipse(2, -3, 1.6, 4, 0.35, 0, 6.3); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(4.4, -3, 1.6, 4, 0.2, 0, 6.3); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(4.4, -3, 1.6, 4, 0.2 - flick * 0.4,
+                                   0, 6.3); ctx.fill();
       ctx.fillStyle = "#fff";
       ctx.beginPath(); ctx.arc(-4.5, 1, 2.2, 0, 6.3); ctx.fill();
       break;
     case "deer": case "stag": {
       const sz = a.sp === "stag" ? 1.2 : 1;
       ctx.fillStyle = body;
-      ctx.beginPath(); ctx.ellipse(0, 1, 7, 4, 0, 0, 6.3); ctx.fill();
-      ctx.fillRect(-5, 4, 1.6, 4); ctx.fillRect(3, 4, 1.6, 4);
-      ctx.beginPath(); ctx.arc(6, -2, 2.4, 0, 6.3); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(0, 1, 7 * sz, 4 * sz, 0, 0, 6.3);
+      ctx.fill();
+      // a trot: each pair swings against the other, the far pair dimmer
+      const trot = stride * Math.sin(f * 14 + a.id * 2) * 1.2;
+      ctx.fillStyle = "#8a6a45";
+      ctx.fillRect(-3.6 - trot, 4.2, 1.4, 3.6 * sz);
+      ctx.fillRect(4.4 + trot, 4.2, 1.4, 3.6 * sz);
+      ctx.fillStyle = body;
+      ctx.fillRect(-5 + trot, 4, 1.6, 4 * sz);
+      ctx.fillRect(3 - trot, 4, 1.6, 4 * sz);
+      ctx.beginPath(); ctx.arc(6, -2 * sz, 2.4, 0, 6.3); ctx.fill();
       ctx.strokeStyle = winter ? "#d9d4c9" : "#775f38"; ctx.lineWidth = 1.2;
       ctx.beginPath();
       ctx.moveTo(6.5, -4); ctx.lineTo(7.5, -8); ctx.lineTo(9.5, -9);
@@ -553,7 +574,9 @@ function drawAnimal(a, f, tsec, idx) {
       ctx.beginPath(); ctx.ellipse(0, 2, 6, 3.2, 0, 0, 6.3); ctx.fill();
       ctx.beginPath(); ctx.arc(5.4, 0, 2.1, 0, 6.3); ctx.fill();
       ctx.fillStyle = "#e8dccb";
-      const tailSway = Math.sin(tsec * 3 + a.id) * 1.6;
+      // the tail flicks quicker in flight
+      const tailSway = Math.sin(tsec * (f < 1 ? 5.5 : 3) + a.id) *
+          (f < 1 ? 2.4 : 1.6);
       ctx.beginPath();
       ctx.moveTo(-4, 1.5);
       ctx.quadraticCurveTo(-9, -1 + tailSway, -8, -6 + tailSway * 1.4);
@@ -566,6 +589,15 @@ function drawAnimal(a, f, tsec, idx) {
       }
       break;
     case "owl":
+      // the wings beat behind the body, once or twice a glide
+      const flap = f < 1 ? Math.sin(f * 20 + a.id) : 0.3;
+      ctx.fillStyle = "rgba(0,0,0,0.16)";
+      ctx.beginPath();
+      ctx.ellipse(-4.8, -1.2 + flap * 2.1, 3.1, 1.15,
+                  -0.55 + flap * 0.55, 0, 6.3); ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(4.8, -1.2 - flap * 2.1, 3.1, 1.15,
+                  0.55 - flap * 0.55, 0, 6.3); ctx.fill();
       ctx.fillStyle = body;
       ctx.beginPath(); ctx.ellipse(0, 0, 4.6, 5.6, 0, 0, 6.3); ctx.fill();
       ctx.fillStyle = "rgba(255,255,255,0.85)";
@@ -581,6 +613,15 @@ function drawAnimal(a, f, tsec, idx) {
       }
       break;
     case "robin":
+      // small wings, busy in flight
+      const rf = f < 1 ? Math.sin(f * 24 + a.id) : 0.4;
+      ctx.fillStyle = "rgba(0,0,0,0.15)";
+      ctx.beginPath();
+      ctx.ellipse(-3.3, -0.5 + rf * 1.4, 1.9, 0.85,
+                  -0.45 + rf * 0.5, 0, 6.3); ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(3.3, -0.5 - rf * 1.4, 1.9, 0.85,
+                  0.45 - rf * 0.5, 0, 6.3); ctx.fill();
       ctx.fillStyle = body;
       ctx.beginPath(); ctx.ellipse(0, 0, 3.6, 3, 0, 0, 6.3); ctx.fill();
       ctx.fillStyle = "#b25c3e";
@@ -600,9 +641,11 @@ function drawAnimal(a, f, tsec, idx) {
       ctx.fillStyle = body;
       ctx.beginPath(); ctx.ellipse(0, 1.5, 6.4, 4.2, 0, 0, 6.3); ctx.fill();
       ctx.strokeStyle = "#4a3b35"; ctx.lineWidth = 1;
+      // a trot, too, when the boar moves
+      const bt = stride * Math.sin(f * 14 + a.id) * 1.2;
       ctx.beginPath();
-      ctx.moveTo(-4, 5); ctx.lineTo(-4, 7);
-      ctx.moveTo(3, 5); ctx.lineTo(3, 7);
+      ctx.moveTo(-4 + bt, 5); ctx.lineTo(-4 + bt, 7);
+      ctx.moveTo(3 - bt, 5); ctx.lineTo(3 - bt, 7);
       ctx.stroke();
       ctx.fillStyle = "#3a2f2b";
       ctx.beginPath(); ctx.arc(6.2, 0.5, 2.4, 0, 6.3); ctx.fill();

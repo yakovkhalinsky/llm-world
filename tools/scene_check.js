@@ -256,6 +256,29 @@ const driver = `
   ok("the owl's strokes move with the glide", o1 !== o2,
      \`\${o1} vs \${o2}\`);
 
+  // a rabbit squashes on the landing and stands square at rest
+  const hopper = { id: 1, x: 3, y: 3, px: 3, py: 3, sp: "rabbit", ag: 12 };
+  function scales(a2, f, t2) {
+    const found = [];
+    TRACE.length = 0; reset(); drawAnimal(a2, f, t2, 0);
+    for (const s of TRACE) {
+      const mm = s.match(/^scale\\((-?[\\d.]+),(-?[\\d.]+)\\)$/);
+      if (mm) found.push([parseFloat(mm[1]), parseFloat(mm[2])]);
+    }
+    TRACE.length = 0; reset();
+    return found;
+  }
+  const sqL = scales(hopper, (Math.PI - 1) / 12, tsec);   // hop touches ground
+  const sqR = scales(hopper, 1, tsec);                    // stood still
+  ok("the rabbit squashes on the landing",
+     sqL.length && sqL[0][1] < sqL[0][0],
+     sqL.length ? ("scale " + sqL[0][0] + "," + sqL[0][1]) :
+                  "no scale found");
+  ok("the rabbit at rest stands square",
+     sqR.length && sqR[0][0] === sqR[0][1],
+     sqR.length ? ("scale " + sqR[0][0] + "," + sqR[0][1]) :
+                  "no scale found");
+
   // follow-cam: opening a biography then pressing follow keeps the soul
   let followErr = null, followed = null;
   try {
