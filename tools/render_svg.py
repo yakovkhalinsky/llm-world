@@ -5,6 +5,7 @@ dashboard's canvas scene, for the README).
 """
 
 import json
+import math
 import sys
 import pathlib
 
@@ -15,6 +16,13 @@ from grove import world as W           # noqa: E402
 
 TW, TH, SIDE = 40, 20, 17
 PADX, PADY = 30, 78
+
+
+def jit(seed, salt):
+    """A deterministic per-object nudge — the same recipe the page's
+    scene uses: the forest is not stamped on a grid."""
+    x = math.sin(seed * 12.9898 + salt * 78.233) * 43758.5453
+    return x - math.floor(x)
 
 PALETTES = {
     "spring": {"grass": "#6fa053", "soil": "#4a3a29", "water": "#27496b",
@@ -51,20 +59,26 @@ def diamond(cx, cy, fill, **kw):
 def tree(world, p, pal):
     parts = []
     cx, cy = iso(p["x"], p["y"])
+    cx += (jit(p["id"], 1) - 0.5) * 6      # a breath off-centre,
+    cy += (jit(p["id"], 2) - 0.5) * 4      # each at its own size
     scale = (1.0 if p["stage"] == "mature" else
              1.1 if p["stage"] == "old" else 0.55)
     if p["id"] in world["elder_ids"]:
         scale *= 1.12
+    scale *= (0.92 + jit(p["id"], 3) * 0.16)
     # ground shadow
     parts.append(f'<ellipse cx="{cx:.1f}" cy="{cy+2:.1f}" '
                  f'rx="{9*scale:.1f}" ry="{3.4*scale:.1f}" '
                  f'fill="rgba(8,14,11,0.18)"/>')
+    parts.append(f'<polygon points="{cx-TW/2:.1f},{cy:.1f} {cx:.1f},'
+                 f'{cy-TH/2:.1f} {cx+TW/2:.1f},{cy:.1f} {cx:.1f},{cy+TH/2:.1f}"'
+                 f' fill="rgba(8,14,11,0.08)"/>')   # the weight's shade
     trunk = {"birch": "#d9d4c9", "willow": "#8a7663"}.get(p["sp"], "#5b422f")
     trunkH = 7 if p["sp"] == "pine" else 10
     tw = 3
-    parts.append(f'<rect x="{cx - tw/2:.1f}" y="{cy - trunkH*scale:.1f}" '
-                 f'width="{tw}" height="{trunkH*scale:.1f}" '
-                 f'fill="{trunk}"/>')
+    parts.append(poly([(cx - tw*0.8, cy), (cx - tw*0.3, cy - trunkH*scale),
+                       (cx + tw*0.3, cy - trunkH*scale),
+                       (cx + tw*0.8, cy)], trunk))
     col = pal["pine"] if p["sp"] == "pine" else pal["leaf"]
     if p["sp"] == "pine":
         for k in range(3):
@@ -73,6 +87,9 @@ def tree(world, p, pal):
             parts.append(poly([(cx, cy - oy - h), (cx + wd, cy - oy),
                                (cx - wd, cy - oy)],
                               col))
+            parts.append(poly([(cx, cy - oy - h), (cx + wd, cy - oy),
+                               (cx + wd*0.12, cy - oy - h*0.3)],
+                              "rgba(8,18,14,0.14)"))   # the tier's shade
         if W.season_name(world["tick"]) == "winter":
             parts.append(poly([(cx, cy - 22*scale), (cx + 3.5*scale,
                                                     cy - 17*scale),
@@ -86,6 +103,12 @@ def tree(world, p, pal):
             parts.append(f'<ellipse cx="{cx + ex*r:.1f}" '
                          f'cy="{cyy + ey*r:.1f}" rx="{r*er:.1f}" '
                          f'ry="{r*er*0.72:.1f}" fill="{col}"/>')
+        parts.append(f'<ellipse cx="{cx - r*0.42:.1f}" '
+                     f'cy="{cyy - r*0.34:.1f}" rx="{r*0.5:.1f}" '
+                     f'ry="{r*0.36:.1f}" fill="rgba(255,244,200,0.13)"/>')
+        parts.append(f'<ellipse cx="{cx + r*0.3:.1f}" '
+                     f'cy="{cyy + r*0.42:.1f}" rx="{r*0.72:.1f}" '
+                     f'ry="{r*0.4:.1f}" fill="rgba(10,20,14,0.16)"/>')
         if p["sp"] == "willow":
             for k in range(-2, 3):
                 x0, y0 = cx + k * 3, cyy + r * 0.3
@@ -104,11 +127,14 @@ def tree(world, p, pal):
 
 def creature(world, a, pal):
     cx, cy = iso(a["x"] + 0.0, a["y"] + 0.0)
+    cx += (jit(a["id"], 5) - 0.5) * 4      # the flock, too, breathes
+    cy += (jit(a["id"], 6) - 0.5) * 3
+    js = 0.9 + jit(a["id"], 7) * 0.14
     fill = ANIMAL_FILL.get(a["sp"], "#999")
-    body = (f'<ellipse cx="{cx:.1f}" cy="{cy:.1f}" rx="6.4" ry="4.2" '
-            f'fill="{fill}"/>')
-    sh = (f'<ellipse cx="{cx:.1f}" cy="{cy+2:.1f}" rx="6" ry="2.3" '
-          f'fill="rgba(8,14,11,0.2)"/>')
+    body = (f'<ellipse cx="{cx:.1f}" cy="{cy:.1f}" rx="{6.4*js:.1f}" '
+            f'ry="{4.2*js:.1f}" fill="{fill}"/>')
+    sh = (f'<ellipse cx="{cx:.1f}" cy="{cy+2:.1f}" rx="{6*js:.1f}" '
+          f'ry="{2.3*js:.1f}" fill="rgba(8,14,11,0.2)"/>')
     return [sh, body]
 
 

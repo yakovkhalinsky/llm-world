@@ -47,6 +47,14 @@ window.addEventListener("resize", () => {
 /* cell (x, y) → screen position of the diamond's center */
 function iso(x, y) { return [OX + (x - y) * TW / 2, OY + (x + y) * TH / 2]; }
 
+/* a deterministic per-object nudge: the forest is not stamped on a
+   grid — every thing stands a breath off-centre, at its own size,
+   stable to its id so it never wobbles between frames */
+function jit(seed, salt) {                    // [0, 1), stable for a seed
+  const x = Math.sin(seed * 12.9898 + salt * 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
 const SEASONS = {
   spring: { grass: "#6fa053", soil: "#4a3a29", water: "#2a4d66",
             rock: "#5d6266", pine: "#2f6038", leaf: "#6f9f4a",
@@ -320,7 +328,14 @@ function drawSlab(s) {
 
 function drawPlant(t, tsec) {
   const p = pal(), sway = Math.sin(tsec * 1.1) * 0.05;
-  const [sx, sy] = iso(t.x, t.y);
+  const js = 0.92 + jit(t.id, 3) * 0.16;      // each thing's own size
+  let [sx, sy] = iso(t.x, t.y);
+  sx += (jit(t.id, 1) - 0.5) * 6 * K;
+  sy += (jit(t.id, 2) - 0.5) * 4 * K;
+  if (t.st !== "log") {          // the ground remembers the weight
+    ctx.fillStyle = "rgba(8,14,11,0.08)";
+    diamondPath(ctx, sx, sy); ctx.fill();
+  }
   const shape = SHAPES[t.sp] || "deciduous";
   const isPine = shape === "pine";
 
@@ -341,8 +356,9 @@ function drawPlant(t, tsec) {
     for (let k = -2; k <= 2; k++) {
       ctx.beginPath();
       ctx.moveTo(sx, sy + 2 * K);
-      ctx.quadraticCurveTo(sx + k * 4 * K, sy - 6 * K,
-                           sx + k * 6 * K, sy - 11 * K + sway * 26 * K);
+      ctx.quadraticCurveTo(sx + k * 4 * K * js, sy - 6 * K,
+                           sx + k * 6 * K * js, sy - 11 * K * js +
+                           sway * 26 * K);
       ctx.stroke();
     }
     return;
@@ -351,7 +367,8 @@ function drawPlant(t, tsec) {
     shadow(sx, sy, 6);
     ctx.fillStyle = p.bush || "#4a7a3a";
     ctx.beginPath();
-    ctx.ellipse(sx, sy - 3 * K, 7.5 * K, 5.2 * K, 0, 0, 6.3); ctx.fill();
+    ctx.ellipse(sx, sy - 3 * K, 7.5 * K * js, 5.2 * K * js, 0, 0, 6.3);
+    ctx.fill();
     if (t.b) {
       ctx.fillStyle = p.fruit || "#b03a48";
       for (const [bx, byy] of [[-3.5, -4], [1, -6.5], [4, -3.5]]) {
@@ -366,7 +383,8 @@ function drawPlant(t, tsec) {
     ctx.translate(sx, sy);          // the body was written translated —
     shadow(0, 0, 7);                // but nothing ever moved it there
     ctx.fillStyle = p.pine;
-    const h = (t.st === "old" ? 26 : t.st === "mature" ? 21 : 8);
+    const h = (t.st === "old" ? 26 : t.st === "mature" ? 21 : 8) *
+              (0.94 + jit(t.id, 4) * 0.12);
     ctx.fillRect(-2.5 * K, -h * K, 5 * K, h * K);
     ctx.beginPath();                                  // the rounded top
     ctx.ellipse(0, -h * K, 2.5 * K, 2 * K, 0, 0, 6.3); ctx.fill();
@@ -382,7 +400,7 @@ function drawPlant(t, tsec) {
   // trees
   let scale = t.st === "mature" ? 1 : t.st === "old" ? 1.1 : 0.55;
   if (t.el) scale *= 1.12;
-  scale *= K;                                      // art grows with tiles
+  scale *= js * K;                                 // art grows with tiles
   shadow(sx, sy, 9 * scale);
   ctx.save();
   ctx.translate(sx, sy);
@@ -391,10 +409,15 @@ function drawPlant(t, tsec) {
       : t.sp === "willow" ? "#8a7663" : "#5b422f";
   const trunkH = isPine ? 7 : 10, tw = (t.st === "sapling" ? 2 : 3) * K;
   ctx.fillStyle = trunkCol;
-  ctx.fillRect(-tw / 2, -trunkH * scale, tw, trunkH * scale);
+  ctx.beginPath();              // the trunk tapers, the root spreads
+  ctx.moveTo(-tw * 0.8, 0);
+  ctx.lineTo(-tw * 0.3, -trunkH * scale);
+  ctx.lineTo(tw * 0.3, -trunkH * scale);
+  ctx.lineTo(tw * 0.8, 0);
+  ctx.closePath(); ctx.fill();
   if (t.sp === "birch" && t.st !== "sapling") {
     ctx.fillStyle = "rgba(70,70,70,0.7)";
-    ctx.fillRect(-1.6 * K, -trunkH * scale + 2, 1.5 * K, K);
+    ctx.fillRect(-1.1 * K, -trunkH * scale + 2, 1.2 * K, K);
   }
   const leafCol = isPine ? p.pine : p.leaf;
   if (isPine) {
@@ -407,6 +430,13 @@ function drawPlant(t, tsec) {
       ctx.lineTo(w, oy);
       ctx.lineTo(-w, oy);
       ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "rgba(8,18,14,0.14)";   // each tier's shaded side
+      ctx.beginPath();
+      ctx.moveTo(0, oy - h);
+      ctx.lineTo(w, oy);
+      ctx.lineTo(w * 0.12, oy - h * 0.3);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = leafCol;
     }
     if (ST.s && ST.s.season === "winter") {
       ctx.fillStyle = "rgba(240,246,250,0.55)";
@@ -429,6 +459,14 @@ function drawPlant(t, tsec) {
     ctx.ellipse(-r * 0.55, cy + r * 0.15, r * 0.6, r * 0.45, 0, 0, 6.3);
     ctx.fill();
     ctx.globalAlpha = 1;
+    ctx.fillStyle = "rgba(255,244,200,0.13)";     // the sun's NW side
+    ctx.beginPath();
+    ctx.ellipse(-r * 0.42, cy - r * 0.34, r * 0.5, r * 0.36, 0, 0, 6.3);
+    ctx.fill();
+    ctx.fillStyle = "rgba(10,20,14,0.16)";        // the canopy's own shade
+    ctx.beginPath();
+    ctx.ellipse(r * 0.3, cy + r * 0.42, r * 0.72, r * 0.4, 0, 0, 6.3);
+    ctx.fill();
     if (t.sp === "willow") {                       // drooping fronds
       ctx.strokeStyle = leafCol; ctx.lineWidth = 1.3;
       for (let k = -2; k <= 2; k++) {
@@ -463,6 +501,11 @@ function drawAnimal(a, f, tsec, idx) {
   const cx1 = ((a.x - a.y) * TW / 2), cy1 = ((a.x + a.y) * TH / 2);
   const gx = cx0 + (cx1 - cx0) * e, gy = cy0 + (cy1 - cy0) * e;
   const body = ANIMAL_BODY[a.sp] || "#999";
+  // the flock, too, is not stamped on a grid: a breath off-centre and
+  // a size of its own, stable to its id — it never wobbles in flight
+  const jx = (jit(a.id, 5) - 0.5) * 4 * K,
+        jy = (jit(a.id, 6) - 0.5) * 3 * K,
+        js = 0.95 + jit(a.id, 7) * 0.10;
   // face the direction of glide; keep the facing when the glide is done
   // or when a creature briefly stands still (index-sticky across polls)
   const dx = cx1 - cx0;
@@ -476,12 +519,12 @@ function drawAnimal(a, f, tsec, idx) {
       : (a.sp === "rabbit" && f < 1
          ? -Math.abs(Math.sin(tsec * 9 + a.id)) * 5   // rabbits hop
          : Math.sin(tsec * 5 + a.x) * 0.8) * sz;
-  const cy = OY + gy + lift * K;
-  if (flyer) shadow(OX + gx, OY + gy + 2, 3 * sz);   // small, distant
-  else shadow(OX + gx, OY + gy, 6 * sz);
+  const cy = OY + gy + lift * K + jy;
+  if (flyer) shadow(OX + gx + jx, OY + gy + 2, 3 * sz);   // small, distant
+  else shadow(OX + gx + jx, OY + gy, 6 * sz);
   ctx.save();
-  ctx.translate(OX + gx, cy);
-  ctx.scale(flip * K * sz, K * sz);
+  ctx.translate(OX + gx + jx, cy);
+  ctx.scale(flip * K * sz * js, K * sz * js);
   const winter = ST.s && ST.s.season === "winter";
   switch (A_SHAPES[a.sp] || a.sp) {
     case "rabbit":

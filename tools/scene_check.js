@@ -79,6 +79,7 @@ const ctx2d = new Proxy({}, {
         const [xp, yp] = map(a[R[0]], a[R[1]]);
         a[R[0]] = xp; a[R[1]] = yp;
       }
+      TRACE.push(k + "(" + a.map(fmt).join(",") + ")");
     };
   },
   set(_t, k, v) { TRACE.push(k + "=" + fmt(v)); return true; },
@@ -97,7 +98,9 @@ const sandbox = {
   setTimeout, clearTimeout,
   setInterval: () => 0, clearInterval() {},
   requestAnimationFrame: () => 0,
-  performance, TRACE,
+  performance: { now: () => 2000 },   // a frozen clock: the world is
+                                      // hermetic, frame for frame
+  TRACE,
   URLSearchParams, AbortSignal,
 };
 vm.createContext(sandbox);
@@ -197,10 +200,16 @@ const driver = `
      \`\${full.length} strokes over the whole frame\`);
 
   // the frame draws the same twice — the scene is deterministic
-  const full1 = hash(traceOf(() => drawScene(tnow)));
-  const full2 = hash(traceOf(() => drawScene(tnow)));
+  const tr1 = traceOf(() => drawScene(tnow));
+  const full1 = hash(tr1);
+  const tr2 = traceOf(() => drawScene(tnow));
+  const full2 = hash(tr2);
+  let firstDiff = null;
+  for (let i = 0; i < Math.max(tr1.length, tr2.length) && !firstDiff; i++)
+    if (tr1[i] !== tr2[i]) firstDiff = "#" + i + ": [" + tr1[i] + "] vs [" +
+        tr2[i] + "]";
   ok("the frame draws the same twice", full1 === full2,
-     \`\${full1} vs \${full2}\`);
+     firstDiff || "identical");
 
   // a tree draws the same twice, and a different tree draws differently
   const tw = (id) => ({ id, x: 5, y: 6, sp: "willow", st: "mature" });
