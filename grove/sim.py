@@ -873,7 +873,7 @@ def tick(world):
             bank[sp] = int(bank[sp] * 0.995)
     _check_destinies(world, evs)
     _recolonize(world, evs)
-    world["name_budget"] = 1  # LLM voice may name one creature per week
+    world["name_budget"] = 3  # the voice may name up to 3 creatures a week
     return evs
 
 

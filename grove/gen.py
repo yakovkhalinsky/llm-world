@@ -180,5 +180,17 @@ def generate(seed: int, size: int = W.SIZE_DEFAULT) -> dict:
                 st["next_id"], sp, x, y, rng.uniform(2, 8))
             st["next_id"] += 1
     st["animals"] = animals
+
+    # the founding souls: the grove starts already known to its voice
+    from . import voice as V
+    named = 0
+    for aid, a in sorted(animals.items(), key=lambda kv: int(kv[0])):
+        if named >= 6:
+            break
+        rng2 = W.rng_for(seed, 0, f"founder:{aid}")
+        if rng2.random() < 0.22 and named < 6:
+            st["names"][aid] = V.fallback_name(list(st["names"].values()),
+                                               seed, int(aid))
+            named += 1
     st["tick"] = 1          # the world is handed over at the close of week 1
     return st
