@@ -51,18 +51,22 @@ const SEASONS = {
   spring: { grass: "#6fa053", soil: "#4a3a29", water: "#2a4d66",
             rock: "#5d6266", pine: "#2f6038", leaf: "#6f9f4a",
             canopyDim: 1.0, wash: null,
+            under: "#3f6d38", bush: "#4a7a3a", fruit: "#b03a48",
             nightT: "#141a22", nightB: "#1c2419" },
   summer: { grass: "#5d8f45", soil: "#45362a", water: "#27496b",
             rock: "#5a6062", pine: "#2a5630", leaf: "#5f9440",
             canopyDim: 1.0, wash: null,
+            under: "#3f6d38", bush: "#4a7a3a", fruit: "#b03a48",
             nightT: "#101820", nightB: "#18251a" },
   autumn: { grass: "#9a8a4a", soil: "#4d3a28", water: "#284a5e",
             rock: "#5d6266", pine: "#2d5035", leaf: "#b0762f",
             canopyDim: 1.0, wash: null,
+            under: "#4a5c33", bush: "#50762f", fruit: "#a3472e",
             nightT: "#161418", nightB: "#241f16" },
   winter: { grass: "#a8b3ad", soil: "#5a5148", water: "#31536e",
             rock: "#68707a", pine: "#2c4a42", leaf: "#86775d",
             canopyDim: 0.85, wash: "rgba(190,215,225,0.10)",
+            under: "#54724e", bush: "#506a48", fruit: "#46514a",
             nightT: "#0d1218", nightB: "#1a2226" },
 };
 function hexToRgb(h) {
@@ -73,7 +77,8 @@ function hexToRgb(h) {
    spring arrive in the air of winter */
 function mixPal(a, b, m) {
   const out = { wash: b.wash, mix: m };
-  for (const k of ["grass", "soil", "water", "rock", "pine", "leaf"]) {
+  for (const k of ["grass", "soil", "water", "rock", "pine", "leaf",
+        "under", "bush", "fruit"]) {
     const A = hexToRgb(a[k]), B = hexToRgb(b[k]);
     out[k] = "rgb(" + Math.round(A[0] + (B[0] - A[0]) * m) + "," +
         Math.round(A[1] + (B[1] - A[1]) * m) + "," +
@@ -97,6 +102,10 @@ function pal() {
   return mixPal(prev, cur, weekIn / 3);
 }
 
+/* species -> drawn shape; the pack may set its own map */
+let SHAPES = { pine: "pine", birch: "deciduous", willow: "deciduous",
+               fern: "fronds", berry: "bush" };
+let A_SHAPES = {};                    // guests' shapes, by species
 const ANIMAL_BODY = {
   rabbit: "#9b8d90", deer: "#a8834f", fox: "#c26a35", owl: "#8d7358",
   robin: "#7d8ba0", boar: "#5c4a42", stag: "#9a7546", wolf: "#8a8f94",
@@ -312,7 +321,8 @@ function drawSlab(s) {
 function drawPlant(t, tsec) {
   const p = pal(), sway = Math.sin(tsec * 1.1) * 0.05;
   const [sx, sy] = iso(t.x, t.y);
-  const isPine = t.sp === "pine";
+  const shape = SHAPES[t.sp] || "deciduous";
+  const isPine = shape === "pine";
 
   if (t.st === "log") {                            // flat lying trunk
     ctx.save();
@@ -325,8 +335,9 @@ function drawPlant(t, tsec) {
     ctx.restore();
     return;
   }
-  if (t.sp === "fern") {
-    ctx.strokeStyle = "#3f6d38"; ctx.lineWidth = 1.4 * K;
+  if (shape === "fronds") {
+    const stem = p.under || "#3f6d38";
+    ctx.strokeStyle = stem; ctx.lineWidth = 1.4 * K;
     for (let k = -2; k <= 2; k++) {
       ctx.beginPath();
       ctx.moveTo(sx, sy + 2 * K);
@@ -336,17 +347,32 @@ function drawPlant(t, tsec) {
     }
     return;
   }
-  if (t.sp === "berry") {
+  if (shape === "bush") {
     shadow(sx, sy, 6);
-    ctx.fillStyle = "#4a7a3a";
+    ctx.fillStyle = p.bush || "#4a7a3a";
     ctx.beginPath();
     ctx.ellipse(sx, sy - 3 * K, 7.5 * K, 5.2 * K, 0, 0, 6.3); ctx.fill();
     if (t.b) {
-      ctx.fillStyle = "#b03a48";
+      ctx.fillStyle = p.fruit || "#b03a48";
       for (const [bx, byy] of [[-3.5, -4], [1, -6.5], [4, -3.5]]) {
         ctx.beginPath();
         ctx.arc(sx + bx * K, sy + byy * K, 1.5 * K, 0, 6.3); ctx.fill();
       }
+    }
+    return;
+  }
+  if (shape === "cactus") {
+    shadow(sx, sy, 7);
+    ctx.fillStyle = p.pine;
+    const h = (t.st === "old" ? 26 : t.st === "mature" ? 21 : 8);
+    ctx.fillRect(-2.5 * K, -h * K, 5 * K, h * K);
+    ctx.beginPath();                                  // the rounded top
+    ctx.ellipse(0, -h * K, 2.5 * K, 2 * K, 0, 0, 6.3); ctx.fill();
+    if (t.st !== "sapling") {                         // the two arms
+      ctx.fillRect(-8 * K, -h * K + 7 * K, 3.2 * K, 6 * K);
+      ctx.fillRect(-8 * K, -h * K + 4.4 * K, 8 * K, 2.2 * K);
+      ctx.fillRect(4.8 * K, -h * K + 11 * K, 3.2 * K, 5 * K);
+      ctx.fillRect(0, -h * K + 9 * K, 8 * K, 2.2 * K);
     }
     return;
   }
@@ -454,7 +480,7 @@ function drawAnimal(a, f, tsec, idx) {
   ctx.translate(OX + gx, cy);
   ctx.scale(flip * K * sz, K * sz);
   const winter = ST.s && ST.s.season === "winter";
-  switch (a.sp) {
+  switch (A_SHAPES[a.sp] || a.sp) {
     case "rabbit":
       ctx.fillStyle = body;
       ctx.beginPath(); ctx.ellipse(0, 2, 5, 4, 0, 0, 6.3); ctx.fill();
@@ -515,6 +541,14 @@ function drawAnimal(a, f, tsec, idx) {
       ctx.beginPath(); ctx.ellipse(1.2, 0.8, 1.6, 1.2, 0, 0, 6.3); ctx.fill();
       ctx.fillStyle = "#494f5c";
       ctx.beginPath(); ctx.arc(-2.6, -1.6, 1.5, 0, 6.3); ctx.fill();
+      break;
+    case "tortoise":
+      ctx.fillStyle = "#7d8a5a";
+      ctx.beginPath(); ctx.ellipse(0, 2, 5.5, 3.6, 0, 0, 6.3); ctx.fill();
+      ctx.fillStyle = "#5d6b42";
+      ctx.beginPath(); ctx.ellipse(0, 0.5, 4, 2.6, 0, 0, 6.3); ctx.fill();
+      ctx.fillStyle = "#7d8a5a";
+      ctx.beginPath(); ctx.arc(5.4, 2.6, 1.6, 0, 6.3); ctx.fill();
       break;
     case "boar":
       ctx.fillStyle = body;

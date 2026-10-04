@@ -216,7 +216,7 @@ class Grove:
         recents = [r[2] for r in self.db.chronicle_lines(5)]
         self.jobs["chron"] += 1
         self.worker.submit({
-            "kind": "chron", "system": chronicler.SYSTEM,
+            "kind": "chron", "system": chronicler.system(),
             "user": chronicler.build_prompt(item, recents),
             "schema": CHRON_SCHEMA, "max_tokens": 60, "temperature": 0.9,
             "extra": {"base": item["template"], "key": item["key"],

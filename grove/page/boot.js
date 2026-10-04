@@ -19,9 +19,10 @@ async function poll() {
     if (s.error) { $("status").textContent = s.error; return; }
     ST.s = s;
     if (s.biome) {
-      // the pack's own colours, over the built-in fallbacks
+      // the pack's own colours and shapes, over the built-in fallbacks
       if (s.biome.seasons) Object.assign(SEASONS, s.biome.seasons);
       if (s.biome.bodies) Object.assign(ANIMAL_BODY, s.biome.bodies);
+      if (s.biome.shapes) Object.assign(SHAPES, s.biome.shapes);
     }
     if (s.tick !== ST.seenTick) {          // a NEW sim week: new flight
       ST.seenTick = s.tick;

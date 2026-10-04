@@ -144,7 +144,7 @@ def cmd_step(args):
                 item["eid"] = "e0"
                 recents = [r[2] for r in g.db.chronicle_lines(5)]
                 raw = g.llm.chat_json(
-                    chronicler.SYSTEM,
+                    chronicler.system(),
                     chronicler.build_prompt(item, recents),
                     CHRON_SCHEMA, max_tokens=60, temperature=0.9, retries=2)
                 text = chronicler.parse_single(raw, "e0", item["template"],
@@ -256,7 +256,9 @@ def build_parser():
     p.add_argument("--rules", default=None,
                    help="a JSON rules override (see docs/TUNING.md)")
     p.add_argument("--biome", default="grove",
-                   help="the world's nature pack (grove; a desert is coming)")
+                   choices=("grove", "desert"),
+                   help="the world's nature pack: the grove, or the desert "
+                        "flats")
     sub = p.add_subparsers(dest="cmd", required=True)
     sp = sub.add_parser("new", help="create a new world")
     sp.add_argument("--seed", type=int, default=None)

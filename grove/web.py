@@ -142,7 +142,8 @@ def snapshot(grove, runner, lock):
                for h in w.get("op_history", [])]
         pres = rules.R["presentation"]
         biome = {"seasons": pres.get("seasons_palette"),
-                 "bodies": pres.get("animal_body")}
+                 "bodies": pres.get("animal_body"),
+                 "shapes": pres.get("shapes")}
         llm_bits = {
             "status": llmm.status_line(g.llm),
             "ok": bool(g.llm and g.llm.enabled),
