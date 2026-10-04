@@ -85,7 +85,6 @@ class Grove:
         self.soul_line = None
         self.soul_tick = -1
         self.pending_chron = {}     # eid -> chronicler batch item
-        self.pending_since = -1
         self.eid = 0
         # live counters, exposed on the dashboard for diagnosis
         self.jobs = {"op": 0, "chron": 0, "voice": 0,
@@ -143,8 +142,6 @@ class Grove:
             for it in llm_items:
                 self.eid += 1
                 it["eid"] = f"e{self.eid}"
-                if not self.pending_chron:
-                    self.pending_since = w["tick"]
                 self.pending_chron[it["eid"]] = it
         # the biographies' ledger: every soul touched by this week's
         # story gets a row pointing at the chronicle's final line
