@@ -330,7 +330,7 @@ during a slow embed).
   (bounds table has them) but `apply_amendment` demands exactly 3
   segments — an accepted proposal silently never applies. Walk
   `parts[:-1]`, refuse `*` anywhere, refuse a non-dict target.
-- [ ] **b13** `grove/db.py:186` — the duplicate-rendering check only
+- [x] **b13** `grove/db.py:186` — the duplicate-rendering check only
   runs at capacity 3, so the same line can occupy two slots and
   round-robin serve twice in a row. Check `dup` before the `have >= 3`
   branch instead of inside it.

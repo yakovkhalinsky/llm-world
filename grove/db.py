@@ -181,20 +181,27 @@ class DB:
         return line
 
     def cache_set(self, narr, text):
-        """Store up to three distinct renderings per story-signature."""
+        """Store up to three distinct renderings per story-signature.
+        The duplicate check runs at every level (an identical line never
+        occupies a second slot, so a read never serves it twice in one
+        round-robin sweep); at capacity the evicted slot is reused."""
+        dup = self.con.execute(
+            "SELECT 1 FROM cache WHERE narr = ? AND line = ?",
+            (narr, text)).fetchone()
+        if dup:
+            return
         have = self.con.execute(
             "SELECT COUNT(*) FROM cache WHERE narr = ?", (narr,)).fetchone()[0]
         if have >= 3:
-            dup = self.con.execute(
-                "SELECT 1 FROM cache WHERE narr = ? AND line = ?",
-                (narr, text)).fetchone()
-            if dup:
-                return
-            self.con.execute(
-                "DELETE FROM cache WHERE narr = ? AND slot = ("
-                "SELECT slot FROM cache WHERE narr = ? ORDER BY used ASC "
-                "LIMIT 1)", (narr, narr))
+            slot = self.con.execute(
+                "SELECT slot FROM cache WHERE narr = ? "
+                "ORDER BY used ASC, slot ASC LIMIT 1",
+                (narr,)).fetchone()[0]
+            self.con.execute("DELETE FROM cache WHERE narr = ? AND slot = ?",
+                             (narr, slot))
+        else:
+            slot = have
         self.con.execute(
             "INSERT INTO cache (narr, line, slot, used) VALUES (?, ?, ?, 0)",
-            (narr, text, have))
+            (narr, text, slot))
         self.con.commit()
