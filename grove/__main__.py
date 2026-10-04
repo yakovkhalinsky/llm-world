@@ -223,7 +223,7 @@ def cmd_new(args):
     db = dbm.DB(os.path.join(args.data, "grove.db"))
     db.save_world(w)
     db.close()
-    print(f"new grove: seed {args.seed}, {args.size}×{args.size}, "
+    print(f"new grove: seed {args.seed}, {w['size']}×{w['size']}, "
           f"{len(w['plants'])} plants, {len(w['animals'])} animals")
     print("watch it: grove run   · headless: grove step 100")
 
