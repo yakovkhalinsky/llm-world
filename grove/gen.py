@@ -55,11 +55,14 @@ def _octaves(size: int, rng: random.Random, base_jitter: float) -> list:
     return total
 
 
-def generate(seed: int, size: int = None) -> dict:
+def generate(seed: int, size: int = None, biome: str = None) -> dict:
     rng = W.rng_for(seed, 0, "gen")
     size = size or rules.R["world"]["size"]
     gr = rules.R["gen"]
     st = W.new_state(seed, size)
+    if biome:
+        rules.select_biome(biome)
+    st["biome"] = rules.active_biome()
 
     elev = _octaves(size, rng, gr["elev_sigma"])
     fert = _octaves(size, rng, gr["fert_sigma"])

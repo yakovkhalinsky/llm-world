@@ -219,7 +219,7 @@ def cmd_new(args):
         archive = os.path.join(args.data, f"archive-{stamp}-wk{old_tick}.db")
         os.rename(path, archive)
         print(f"previous grove archived at {archive}")
-    w = gen.generate(args.seed, args.size)
+    w = gen.generate(args.seed, args.size, biome=args.biome)
     db = dbm.DB(os.path.join(args.data, "grove.db"))
     db.save_world(w)
     db.close()
@@ -255,6 +255,8 @@ def build_parser():
     p.add_argument("--data", default="./grove_data")
     p.add_argument("--rules", default=None,
                    help="a JSON rules override (see docs/TUNING.md)")
+    p.add_argument("--biome", default="grove",
+                   help="the world's nature pack (grove; a desert is coming)")
     sub = p.add_subparsers(dest="cmd", required=True)
     sp = sub.add_parser("new", help="create a new world")
     sp.add_argument("--seed", type=int, default=None)

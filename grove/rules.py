@@ -38,88 +38,8 @@ R = {
         "understory_hp_floor": 1.0,      # frost stuns, never murders
     },
 
-    "plants": {
-        "pine":   {"kind": "tree", "mature_age": 20, "old_age": 96,
-                   "max_age": 240, "seed_season": 2, "seed_prob": 0.16,
-                   "seed_radius": 3, "light_need": 0.25,
-                   "shade_self": 0.55, "shade_adjacent": 0.30,
-                   "storm_fall_mature": 0.05, "storm_fall_old": 0.12,
-                   "frost_hp": 0.0, "emoji": "pine", "desc": "pine"},
-        "birch":  {"kind": "tree", "mature_age": 12, "old_age": 88,
-                   "max_age": 160, "seed_season": 2, "seed_prob": 0.28,
-                   "seed_radius": 6, "light_need": 0.45,
-                   "shade_self": 0.45, "shade_adjacent": 0.22,
-                   "storm_fall_mature": 0.09, "storm_fall_old": 0.22,
-                   "frost_hp": 0.15, "emoji": "leaf", "desc": "birch"},
-        "willow": {"kind": "tree", "mature_age": 9, "old_age": 72,
-                   "max_age": 140, "seed_season": 2, "seed_prob": 0.30,
-                   "seed_radius": 3, "near_water": 2, "light_need": 0.40,
-                   "shade_self": 0.40, "shade_adjacent": 0.20,
-                   "storm_fall_mature": 0.12, "storm_fall_old": 0.30,
-                   "frost_hp": 0.15, "emoji": "leaf", "desc": "willow"},
-        "fern":   {"kind": "understory", "mature_age": 2, "old_age": 30,
-                   "max_age": 58, "light_need": 0.65, "spread_prob": 0.16,
-                   "spread_radius": 1, "storm_fall_mature": 0.02,
-                   "storm_fall_old": 0.05, "frost_hp": 0.25,
-                   "emoji": "fern", "desc": "fern"},
-        "berry":  {"kind": "shrub", "mature_age": 3, "old_age": 22,
-                   "max_age": 40, "seed_season": (0, 2),
-                   "seed_prob": 0.22, "seed_radius": 3, "light_need": 0.50,
-                   "shade_self": 0.03, "shade_adjacent": 0.0,
-                   "storm_fall_mature": 0.06, "storm_fall_old": 0.15,
-                   "frost_hp": 0.20, "emoji": "berry",
-                   "desc": "berry bush"},
-    },
-
-    "animals": {
-        "rabbit": {"hunger_drain": 0.8, "lifespan": 60, "speed": 3,
-                   "scan": 4, "lit_size": 3, "lit_prob": 0.28,
-                   "breed_seasons": (0, 1), "energy_breed": 6.0,
-                   "diet": "graze", "flee_from": ("fox", "wolf"),
-                   "flee_range": 3, "flee_cells": 4,
-                   "graze_at": 0.12, "graze_take": 0.18, "seek_at": 0.15,
-                   "cap": 24, "winterslow": 0.4,
-                   "predators": ("fox", "owl", "wolf")},
-        "deer":   {"hunger_drain": 0.55, "lifespan": 200, "speed": 2,
-                   "scan": 5, "lit_size": 1, "lit_prob": 0.10,
-                   "breed_seasons": (0,), "energy_breed": 8.0,
-                   "diet": "browse", "browse_hunger": 6,
-                   "browse_chance": 0.5, "browse_hp": 1.5,
-                   "graze_at": 0.15, "graze_take": 0.12, "seek_at": 0.15,
-                   "cap": 10, "winterslow": 0.5},
-        "fox":    {"hunt": "rabbit", "hunt_prob": 0.5,
-                   "hunting_density_scale": 12.0,
-                   "hunt_prob_min": 0.35, "hunger_drain": 0.7,
-                   "lifespan": 130, "speed": 3, "scan": 6,
-                   "lit_size": 2, "lit_prob": 0.09, "breed_seasons": (0, 2),
-                   "energy_breed": 7.0, "cap": 6, "winterslow": 0.6},
-        "owl":    {"strike": ("rabbit",), "strike_prob": 0.18,
-                   "strike_range": 5, "hunger_drain": 0.5,
-                   "lifespan": 160, "speed": 2, "scan": 2,
-                   "lit_size": 1, "lit_prob": 0.10,
-                   "breed_seasons": (0, 1), "energy_breed": 6.0,
-                   "cap": 3, "winterslow": 1.0},
-        "robin":  {"hunger_drain": 0.5, "lifespan": 40, "speed": 4,
-                   "scan": 3, "lit_size": 3, "lit_prob": 0.30,
-                   "breed_seasons": (0, 1), "energy_breed": 5.0,
-                   "diet": "glean", "graze_at": 0.2, "graze_take": 0.04,
-                   "migration": {"leave_at": 3, "return_at": 0},
-                   "cap": 14, "winterslow": 0.75, "flyer": True},
-        "boar":   {"hunger_drain": 0.5, "lifespan": 140, "speed": 1,
-                   "scan": 3, "lit_size": 2, "lit_prob": 0.15,
-                   "breed_seasons": (1, 2), "energy_breed": 6.0,
-                   "diet": "scavenge",
-                   "graze_at": 0.2, "graze_take": 0.15,
-                   "cap": 5, "winterslow": 0.7},
-        "stag":   {"hunger_drain": 0.55, "lifespan": 200, "speed": 2,
-                   "scan": 5, "winterslow": 0.6, "visitor": True},
-        "wolf":   {"hunt": "rabbit", "hunt_prob": 0.6,
-                   "hunting_density_scale": 12.0, "hunt_prob_min": 0.35,
-                   "prey2": "deer", "prey2_prob": 0.3,
-                   "hunger_drain": 0.7, "lifespan": 180, "speed": 3,
-                   "scan": 7, "winterslow": 1.0, "visitor": True},
-    },
-
+    "plants": {},     # the pack folds its nature in at import
+    "animals": {},    # species tables live in grove/biomes/ now
     "pop": {
         "winter_drain": 1.4,
         "recolonize_after": 16,
@@ -131,27 +51,7 @@ R = {
         "shade_sprout_prob": 0.4,        # seeding under another tree
     },
 
-    "gen": {
-        "noise_octaves": 3, "coarse_grid": 6,
-        "tree_pool": {"pine": 2, "birch": 2},
-        "shore_species": "willow", "shrub_species": "berry",
-        "understory_species": "fern",
-        "elev_sigma": 0.35, "fert_sigma": 0.40, "wet_sigma": 0.30,
-        "fert_base": 0.35, "fert_spread": 0.9,
-        "moist_base": 0.25, "moist_spread": 0.6,
-        "water_quantile": 0.06, "rock_quantile": 0.93,
-        "near_water_moisture": 0.35,
-        "p_tree_base": 0.13, "p_tree_slope": 0.33,
-        "p_tree_moisture_min": 0.40, "p_tree_fert_min": 0.35,
-        "willow_near_water_prob": 0.45,
-        "initial_age_spread": (8, 60),
-        "p_berry": 0.07, "grass_base": 0.3, "grass_fert": 0.5,
-        "p_fern_shade": 0.5, "fern_scorch_light": 0.85,
-        "starting_seedbank": {"pine": 8, "birch": 8, "willow": 4,
-                              "berry": 6, "fern": 8},
-        "founder_names": 6, "founder_prob": 0.22,
-    },
-
+    "gen": {},        # the planting recipe rides the pack too
     "pacing": {
         "tick_seconds": {"run": 12.0, "web": 12.0},
         "soul_gap_local": (60, 120),          # wall s between invitations
@@ -215,3 +115,31 @@ def int_keys_fix(section):
 
 def seasons_floats(section):
     return {int(k): v for k, v in section.items()}
+
+# -- the biome packs ------------------------------------------------------
+# the pack is the world's nature: its species tables and planting recipe.
+# Folding happens IN PLACE so the engine's aliases never rebind; the
+# reviewer's JSON overrides always stack above the pack.
+
+from .biomes import load_spec
+
+_ACTIVE = "grove"
+
+
+def select_biome(name):
+    """Fold a biome pack into the live ruleset in place, and remember
+    which nature now holds."""
+    global _ACTIVE
+    spec = load_spec(name)
+    for section in ("plants", "animals", "gen"):
+        if section in spec:
+            R[section].clear()
+            R[section].update(spec[section])
+    _ACTIVE = name
+
+
+def active_biome():
+    return _ACTIVE
+
+
+select_biome("grove")     # the grove's nature arrives with the import

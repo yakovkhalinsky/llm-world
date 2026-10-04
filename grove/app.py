@@ -96,6 +96,10 @@ class Grove:
         self.world = self.db.load_world()
         if self.world is None:
             sys.exit(f"no world in '{self.args.data}'; run first: grove new")
+        # the world's nature rides its save: re-fold its pack so a
+        # restart speaks the same biome the ground was born with
+        if self.world.get("biome"):
+            rules.select_biome(self.world["biome"])
         # a restart never opens an overdue steward review: the year
         # always starts from the moment of loading
         evw = rules.R["review"]["every_weeks"]
