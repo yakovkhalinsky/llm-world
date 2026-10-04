@@ -403,11 +403,16 @@ during a slow embed).
   (`base_residents`/`plants`/`starting_animals`/`gate.plants_min`); the
   spans now cover every species (the earlier gate prints differ by this
   richer report, not by the censuses).
-- [x] **b21** the known-risk note on `tools/render_svg.py`: it carries a
-  third copy of the scene's palettes (hand-copied). It renders the
-  grove correctly; for another pack it would draw grove colours. A
-  future tweak: read `presentation.seasons_palette` with today's
-  literal as the fallback.
+- [x] **b21** — the known-risk note on `tools/render_svg.py` is closed:
+  it carried a third hand-copied copy of the scene's palettes and
+  species colours, and would have painted a desert in grove colours.
+  Now the twin reads the world's own tables
+  (`presentation.seasons_palette`, `presentation.animal_body`) — the
+  very same seasons and bodies the page draws with — and today's
+  literals remain only as the fallback. Check: under the desert pack
+  the twin resolves winter grass to the desert's own `#9c9a88`
+  (nothing hand-copied matches it); on the grove the render is
+  byte-stable and the ground counts hold.
 
 ## Found while reading the worklist itself
 

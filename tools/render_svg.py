@@ -12,6 +12,7 @@ import pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from grove import db as dbm            # noqa: E402
+from grove import rules                # noqa: E402
 from grove import world as W           # noqa: E402
 
 TW, TH, SIDE = 40, 20, 17
@@ -24,20 +25,48 @@ def jit(seed, salt):
     x = math.sin(seed * 12.9898 + salt * 78.233) * 43758.5453
     return x - math.floor(x)
 
+# the fallback: what the scene drew before the twin learned to read the
+# pack. The real palettes come from the world's own tables — the same
+# seasons the page draws with — so a desert renders as a desert.
 PALETTES = {
     "spring": {"grass": "#6fa053", "soil": "#4a3a29", "water": "#27496b",
-               "rock": "#5d6266", "pine": "#2f6038", "leaf": "#6f9f4a"},
+               "rock": "#5d6266", "pine": "#2f6038", "leaf": "#6f9f4a",
+               "under": "#3f6d38", "canopyDim": 1.0},
     "summer": {"grass": "#5d8f45", "soil": "#45362a", "water": "#2a4d66",
-               "rock": "#5a6062", "pine": "#2a5630", "leaf": "#5f9440"},
+               "rock": "#5a6062", "pine": "#2a5630", "leaf": "#5f9440",
+               "under": "#3f6d38", "canopyDim": 1.0},
     "autumn": {"grass": "#9a8a4a", "soil": "#4d3a28", "water": "#284a5e",
-               "rock": "#5d6266", "pine": "#2d5035", "leaf": "#b0762f"},
+               "rock": "#5d6266", "pine": "#2d5035", "leaf": "#b0762f",
+               "under": "#4a5c33", "canopyDim": 1.0},
     "winter": {"grass": "#a8b3ad", "soil": "#5a5148", "water": "#31536e",
-               "rock": "#68707a", "pine": "#2c4a42", "leaf": "#86775d"},
+               "rock": "#68707a", "pine": "#2c4a42", "leaf": "#86775d",
+               "under": "#54724e", "canopyDim": 0.85},
 }
 
 ANIMAL_FILL = {"rabbit": "#9b8d90", "deer": "#a8834f", "fox": "#c26a35",
                "owl": "#8d7358", "robin": "#7d8ba0", "boar": "#5c4a42",
                "stag": "#9a7546", "wolf": "#8a8f94"}
+
+PALETTE_KEYS = ("grass", "soil", "water", "rock", "pine", "leaf",
+                "under", "canopyDim")
+
+
+def palettes():
+    """The pack's seasons, over the fallback; the twin draws with the
+    same table the page draws with."""
+    src = rules.R["presentation"].get("seasons_palette") or {}
+    out = {}
+    for season, literal in PALETTES.items():
+        got = src.get(season) or {}
+        out[season] = {k: got.get(k, literal[k]) for k in PALETTE_KEYS}
+    return out
+
+
+def animal_body():
+    got = rules.R["presentation"].get("animal_body") or {}
+    out = dict(ANIMAL_FILL)
+    out.update(got)
+    return out
 
 
 def iso(x, y):
@@ -49,6 +78,23 @@ def poly(pts, fill, opacity=None, stroke=None):
     op = f' opacity="{opacity}"' if opacity is not None else ""
     st = f' stroke="{stroke}" stroke-width="1"' if stroke else ""
     return f'<polygon points="{p}" fill="{fill}"{op}{st}/>'
+
+
+def path(d, stroke, width=1):
+    return (f'<path d="{d}" fill="none" stroke="{stroke}" '
+            f'stroke-width="{width}"/>')
+
+
+def blob(cx, cy, rx, ry, fill, opacity=None):
+    op = f' opacity="{opacity}"' if opacity is not None else ""
+    return (f'<ellipse cx="{cx:.1f}" cy="{cy:.1f}" rx="{rx:.1f}" '
+            f'ry="{ry:.1f}" fill="{fill}"{op}/>')
+
+
+def quad(ux, uy, h, stroke):
+    """A blade, a reed: a quadratic stem standing in the ground."""
+    return path(f"M {ux:.1f},{uy + 3:.1f} Q {ux + 2:.1f},{uy - 1:.1f} "
+                f"{ux + 1.4:.1f},{uy - h:.1f}", stroke)
 
 
 def diamond(cx, cy, fill, **kw):
@@ -146,24 +192,61 @@ def main(out):
     span_w = (size - 1) * TW + TW + PADX * 2
     span_h = (size - 1) * TH + TH + PADY * 2
     OX, OY = span_w / 2, PADY
-    pal = PALETTES[W.season_name(world["tick"])]
+    global ANIMAL_FILL
+    ANIMAL_FILL = animal_body()
+    pal = palettes()[W.season_name(world["tick"])]
 
     parts = [f'<rect width="{span_w}" height="{span_h}" fill="#0c1210"/>']
 
-    # terrain
+    # terrain — the living ground: tufts, pebbles, wet rims, reeds
     for y, row in enumerate(world["cells"]):
         for x, c in enumerate(row):
+            i = y * size + x
             cx, cy = iso(x, y)
             if c["terrain"] == "water":
                 parts.append(diamond(cx, cy, pal["water"]))
             elif c["terrain"] == "rock":
                 parts.append(diamond(cx, cy, pal["rock"]))
+                for u in range(3):              # pebbles, and a crack
+                    parts.append(blob(cx + ((i * 23 + u * 41) % 17 - 8) * 0.9,
+                                      cy + ((i * 37 + u * 19) % 11 - 5) * 0.6,
+                                      1.6, 1.1, "rgba(255,255,255,0.10)"))
+                parts.append(path(f"M {cx-6:.1f},{cy+1:.1f} "
+                                  f"L {cx+3-(i%5):.1f},{cy-2-(i%3):.1f}",
+                                  "rgba(0,0,0,0.14)"))
             else:
                 parts.append(diamond(cx, cy, pal["soil"]))
                 g = c["grass"]
                 if g > 0.06:
                     parts.append(diamond(cx, cy, pal["grass"],
                                          opacity=min(1, g * 0.9)))
+                if g > 0.45:                    # tufts of tall grass
+                    for u in range(2 + i * 7 % 3):
+                        parts.append(quad(cx + ((i * 31 + u * 13) % 21 - 10)
+                                          * 0.8,
+                                          cy + ((i * 17 + u * 29) % 13 - 6)
+                                          * 0.5,
+                                          5 + u * 1.6, pal["grass"]))
+                nbrs = [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
+                wet = any(0 <= nx < size and 0 <= ny < size and
+                          world["cells"][ny][nx]["terrain"] == "water"
+                          for nx, ny in nbrs)
+                if wet:
+                    parts.append(diamond(cx, cy, "rgba(24,20,12,0.16)"))
+                    if g < 0.5 and i * 13 % 3 != 2:
+                        for u in range(3):      # reeds at the shore
+                            ux = cx + ((i * 23 + u * 41) % 17 - 8) * 0.75
+                            h2 = 5 + (i * 11 + u * 7) % 4
+                            parts.append(quad(ux, cy, h2,
+                                              pal.get("under",
+                                                      "#3f6d38")))
+                            parts.append(f'<rect x="{ux + 0.7:.1f}" '
+                                         f'y="{cy - h2 - 2.4:.1f}" width="1.2" '
+                                         f'height="2.4" fill="#6b4a33"/>')
+                    else:                       # or holds a stone
+                        parts.append(blob(cx + (i * 19 % 9 - 4),
+                                          cy + (i * 7 % 5 - 2) * 0.6,
+                                          2.4, 1.5, "rgba(94,98,102,0.6)"))
 
     # entities, depth-sorted
     ents = [(p["x"] + p["y"], 0, ("plant", p)) for p in world["plants"].values()]
