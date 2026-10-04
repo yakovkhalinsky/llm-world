@@ -64,6 +64,11 @@ class LLM:
             model, chain = self._resolve(job)
             self.job_models[job] = model
             self.job_chains[job] = list(chain)
+        # the voice (soul) and the prose speak with ONE model, always:
+        # the same resolution and the same chain, advancing together
+        for job in ("chron", "voice"):
+            self.job_models.setdefault(job, self.job_models["soul"])
+            self.job_chains.setdefault(job, list(self.job_chains["soul"]))
 
     # -- model resolution ------------------------------------------------
     def _available(self, name):
@@ -90,16 +95,16 @@ class LLM:
             (LOCAL_JOBS[job], LOCAL_ALT[LOCAL_JOBS[job]])
 
     def _swap_job_model(self, job):
-        """Move this job along its own chain (cloud → local at the end)."""
-        chain = [m for m in self.job_chains.get(job, [])
-                 if m != self.job_models.get(job)]
-        if not chain:
-            return False
-        if self._available(chain[0]):
-            self.job_models[job] = chain[0]
-            self.notes.append(f"{job} moved to {chain[0]}")
-            return True
-        return False
+        """Move this job along its chain, and the whole voice tier with
+        it: soul, chron and voice share the model and move as one."""
+        for step_job in ("soul", "chron", "voice"):
+            chain = [m for m in self.job_chains.get(step_job, [])
+                     if m != self.job_models.get(step_job)]
+            if chain and self._available(chain[0]):
+                self.job_models[step_job] = chain[0]
+        self.notes.append("the grove's voice moved to "
+                          + self.job_models["soul"])
+        return True
 
     # -- ollama i/o --------------------------------------------------------
     def _fetch_tags(self):
