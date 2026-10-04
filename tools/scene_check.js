@@ -289,6 +289,27 @@ const driver = `
   ok("winter thins the canopy",
      pineTrace.includes("globalAlpha=0.85"));
 
+  // the landform, gentled: the drawn field makes neighbours agree —
+  // its mean jump must be far below the raw field's
+  const rawField = [];
+  for (const c2 of world.cells) rawField.push(c2[5] || 0);
+  const smoothField = elevField(world);
+  const meanJump = f2 => {
+    let tot = 0, n2 = 0;
+    for (let y2 = 0; y2 < size; y2++)
+      for (let x2 = 0; x2 < size; x2++) {
+        if (x2 < size - 1) { tot += Math.abs(f2[y2 * size + x2] -
+            f2[y2 * size + x2 + 1]); n2++; }
+        if (y2 < size - 1) { tot += Math.abs(f2[y2 * size + x2] -
+            f2[(y2 + 1) * size + x2]); n2++; }
+      }
+    return tot / n2 * elevPx();           // neighbour jump in px
+  };
+  const rj = meanJump(rawField), sj = meanJump(smoothField);
+  ok("the drawn land rolls, blocks agree", sj < rj / 2 && sj < 2.0,
+     "neighbour jump " + rj.toFixed(2) + "px raw -> " +
+     sj.toFixed(2) + "px drawn");
+
   // the land rises: the world's own elev drawn — the hill tile's top
   // corner sits 0.9 * elev_px above its flat position, the pack's own
   // relief scale
@@ -303,6 +324,8 @@ const driver = `
   const shaded = frame.filter(s2 => s2 === "fillStyle=#3a2d20").length;
   ok("the cliffs draw their walls", sunlit >= 4 && shaded >= 4,
      sunlit + " sunlit, " + shaded + " shaded");
+  ok("walls stand only at true ledges", sunlit + shaded <= 24,
+     (sunlit + shaded) + " walls for a land of gentle steps");
 
   // creatures ride the land: same species and glide phase, different
   // cells — the whole difference is the ground itself

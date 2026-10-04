@@ -70,16 +70,39 @@ def animal_body():
 
 
 EPX = 26                       # the pack's relief scale, read in main()
+SMOOTHED = None                # the landform, gentled; built in main()
 
 
 def elev_px_of():
     return rules.R["presentation"].get("elev_px", 26)
 
 
+def smooth_elev(world):
+    """The world's elev field, gentled for the eye: the data keeps its
+    own noise; three diffusion passes make neighbours agree before it
+    is drawn. The page's scene.js carries the same recipe."""
+    size = world["size"]
+    f = [row[x].get("elev", 0) or 0 for row in world["cells"]
+         for x in range(size)]
+    for _ in range(3):
+        g = [0.0] * (size * size)
+        for i in range(size * size):
+            x, y = i % size, i // size
+            tot, cnt = f[i] * 3, 3
+            if x > 0:        tot += f[i - 1]; cnt += 1
+            if x < size - 1: tot += f[i + 1]; cnt += 1
+            if y > 0:        tot += f[i - size]; cnt += 1
+            if y < size - 1: tot += f[i + size]; cnt += 1
+            g[i] = tot / cnt
+        f = g
+    return f
+
+
 def iso_e(world, x, y):
-    """iso with the land raised: the world's own elev, drawn."""
+    """iso with the land raised: the gentled elev, drawn."""
     cx, cy = iso(x, y)
-    e = max(0, (world["cells"][y][x].get("elev", 0) or 0))
+    e = max(0, SMOOTHED[y * world["size"] + x] if SMOOTHED is not None
+            else (world["cells"][y][x].get("elev", 0) or 0))
     return cx, cy - e * EPX
 
 
@@ -270,8 +293,9 @@ def main(out):
     span_w = (size - 1) * TW + TW + PADX * 2
     span_h = (size - 1) * TH + TH + PADY * 2
     OX, OY = span_w / 2, PADY
-    global EPX
+    global EPX, SMOOTHED
     EPX = elev_px_of()
+    SMOOTHED = smooth_elev(world)
     global ANIMAL_FILL
     ANIMAL_FILL = animal_body()
     pal = palettes()[W.season_name(world["tick"])]
@@ -284,7 +308,8 @@ def main(out):
         for x, c in enumerate(row):
             i = y * size + x
             cx, cy = iso_e(world, x, y)
-            eMe = max(0, (c.get("elev", 0) or 0))
+            eMe = max(0, SMOOTHED[i] if SMOOTHED is not None
+                      else (c.get("elev", 0) or 0))
             if c["terrain"] == "water":
                 parts.append(diamond(cx, cy, pal["water"]))
             elif c["terrain"] == "rock":
@@ -310,16 +335,16 @@ def main(out):
                                           * 0.5,
                                           5 + u * 1.6, pal["grass"]))
             walls = []                          # SE in sun, SW in shade
-            dX = (eMe - (max(0, world["cells"][y][x + 1].get("elev", 0) or 0)
-                         if x < size - 1 else 0)) * EPX
-            if dX > 1:
+            nbX = max(0, SMOOTHED[i + 1]) if x < size - 1 else 0
+            dX = (eMe - nbX) * EPX              # a wall only at
+            if dX > (4 if x < size - 1 else 1):          # a true ledge
                 walls.append(poly(
                     [(cx + TW / 2, cy), (cx, cy + TH / 2),
                      (cx, cy + TH / 2 + dX), (cx + TW / 2, cy + dX)],
                     "#4a392a"))
-            dY = (eMe - (max(0, world["cells"][y + 1][x].get("elev", 0) or 0)
-                         if y < size - 1 else 0)) * EPX
-            if dY > 1:
+            nbY = max(0, SMOOTHED[i + size]) if y < size - 1 else 0
+            dY = (eMe - nbY) * EPX
+            if dY > (4 if y < size - 1 else 1):
                 walls.append(poly(
                     [(cx, cy + TH / 2), (cx - TW / 2, cy),
                      (cx - TW / 2, cy + dY), (cx, cy + TH / 2 + dY)],

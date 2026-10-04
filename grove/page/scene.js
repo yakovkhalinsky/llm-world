@@ -53,12 +53,38 @@ function elevPx() {
   const b = ST.s && ST.s.biome;
   return (b && b.elev_px) || 26;
 }
-/* a cell's drawn elevation in pixels — the land rises, water stays low */
+/* the world's landform, gentled for the eye: the elev field keeps its
+   own noise as data, but three diffusion passes make neighbours agree
+   before it is drawn, so the ground rolls where once it stepped.
+   Cached per tick; the world's own data is never rewritten. */
+const ELEV_CACHE = { tick: -1, field: null };
+function elevField(s) {
+  if (ELEV_CACHE.tick === s.tick && ELEV_CACHE.field)
+    return ELEV_CACHE.field;
+  const size = s.size, n = s.cells.length;
+  let f = new Float32Array(n);
+  for (let i = 0; i < n; i++) f[i] = s.cells[i][5] || 0;
+  for (let pass = 0; pass < 3; pass++) {
+    const g = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = i % size, y = (i / size) | 0;
+      let tot = f[i] * 3, cnt = 3;       // the cell keeps most its own
+      if (x > 0)        { tot += f[i - 1]; cnt++; }
+      if (x < size - 1) { tot += f[i + 1]; cnt++; }
+      if (y > 0)        { tot += f[i - size]; cnt++; }
+      if (y < size - 1) { tot += f[i + size]; cnt++; }
+      g[i] = tot / cnt;
+    }
+    f = g;
+  }
+  ELEV_CACHE.tick = s.tick;
+  ELEV_CACHE.field = f;
+  return f;
+}
 function elevAt(x, y) {
   const s = ST.s;
   if (!s || !s.cells) return 0;
-  const c = s.cells[y * s.size + x];
-  return Math.max(0, (c && c[5]) || 0) * elevPx();
+  return Math.max(0, elevField(s)[y * s.size + x]) * elevPx();
 }
 
 /* a deterministic per-object nudge: the forest is not stamped on a
@@ -223,10 +249,11 @@ function drawVignette() {
 
 function drawTerrain(s, tsec) {
   const p = pal(), size = s.size, px = elevPx();
+  const elevF = elevField(s);            // the gentled landform, once
   for (let i = 0; i < s.cells.length; i++) {
     const c = s.cells[i];
     const x = i % size, y = Math.floor(i / size);
-    const eMe = Math.max(0, c[5] || 0);
+    const eMe = Math.max(0, elevF[i]);   // the tile and its walls agree
     const [sx, sy0] = iso(x, y);
     const sy = sy0 - eMe * px;           // the land rises here
 
@@ -336,12 +363,14 @@ function drawTerrain(s, tsec) {
       ctx.stroke();
     }
 
-    /* the walls: where the ground beside this tile stands lower — or
-       the island's edge falls away — the earth shows its side, sunlit
-       to the SE, shaded to the SW */
+    /* the walls: where the ground beside this tile stands lower, the
+       earth shows its side, sunlit to the SE, shaded to the SW. A
+       gentle step only reads in the surface; a wall is drawn when the
+       break is a ledge. At the island's rim the face always falls to
+       the plinth below. */
     const dX = (eMe - (x < size - 1 ?
-                       Math.max(0, s.cells[i + 1][5] || 0) : 0)) * px;
-    if (dX > 1) {
+                       Math.max(0, elevF[i + 1]) : 0)) * px;
+    if (dX > (x === size - 1 ? 1 : 4)) {
       ctx.fillStyle = "#4a392a";
       ctx.beginPath();
       ctx.moveTo(sx + TW / 2, sy);
@@ -351,8 +380,8 @@ function drawTerrain(s, tsec) {
       ctx.closePath(); ctx.fill();
     }
     const dY = (eMe - (y < size - 1 ?
-                       Math.max(0, s.cells[i + size][5] || 0) : 0)) * px;
-    if (dY > 1) {
+                       Math.max(0, elevF[i + size]) : 0)) * px;
+    if (dY > (y === size - 1 ? 1 : 4)) {
       ctx.fillStyle = "#3a2d20";
       ctx.beginPath();
       ctx.moveTo(sx, sy + TH / 2);

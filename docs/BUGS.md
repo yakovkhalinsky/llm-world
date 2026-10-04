@@ -454,3 +454,20 @@ during a slow embed).
   reads that. Check: the harness opens a biography and presses follow —
   the cam's target is the soul it was shown (7, animal); no globals
   conjured.
+
+- [x] **b25** the drawn terrain read as inconsistent blocks — the page
+  drew the world's raw `elev` field, whose neighbours jump a mean 0.28
+  elev units (p95 0.645 — a 7px average, 17px worst-case step between
+  adjacent tiles at the grove's 26px relief), so every diamond stood
+  like its own block, and 553 wall quads slabbed every noisy step.
+  Fix, drawn only — the world's saved data keeps its own noise: three
+  diffusion passes over the field before it is drawn (self-weight 3
+  of 7, cached per tick in the page, the same recipe in the twin's
+  `smooth_elev`), and walls only where the true ledge is (≥4px
+  interior steps; at the island's rim the face always falls to the
+  plinth). Check: `tools/scene_check.js` asserts the drawn field's
+  neighbour jump falls below half the raw's and under 2px; walls stand
+  only at true ledges (18 walls on the synthetic land; the real
+  render's wall count fell 553 → 93, byte-stable across runs, ground
+  counts untouched). Numbers measured: raw mean |Δ| 5.14px drawn
+  0.73px on the check's own field.
