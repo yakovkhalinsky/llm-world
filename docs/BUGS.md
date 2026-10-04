@@ -319,13 +319,13 @@ during a slow embed).
 
 ## Minors — fold in when convenient
 
-- [ ] **b10** `grove/operator.py:143-146` — unreachable tail of
+- [x] **b10** `grove/operator.py:143-146` — unreachable tail of
   `known_unnamed` (references a `lines` that doesn't exist there);
   delete it.
-- [ ] **b11** `grove/voice.py:41` — a model `null` name becomes
+- [x] **b11** `grove/voice.py:41` — a model `null` name becomes
   `str(None)` → `"None"` passes `NAME_RE` → a creature genuinely named
   None. Guard: only treat a string name as a candidate.
-- [ ] **b12** `grove/reviewer.py:213` — 2-segment lawful paths
+- [x] **b12** `grove/reviewer.py:213` — 2-segment lawful paths
   (`pop.recolonize_after`, `pop.robins_return_prob`) pass `validate`
   (bounds table has them) but `apply_amendment` demands exactly 3
   segments — an accepted proposal silently never applies. Walk
