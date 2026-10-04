@@ -228,7 +228,7 @@ claims a move and `status_line` displays it). `notes` is never trimmed.
 
 ## P1 — operator, pacing, web
 
-### b7 · [ ] `validate` slices a dict — TypeError on an off-menu action
+### b7 · [x] `validate` slices a dict — TypeError on an off-menu action
 
 **Where** `grove/operator.py:155-156`:
 

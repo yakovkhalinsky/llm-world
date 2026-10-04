@@ -153,7 +153,7 @@ def validate(raw):
     action = raw.get("action")
     if action not in MENU:
         return _quiet(str(raw.get("intent") or
-                          "the soul kept its peace"))[:180]
+                          "the soul kept its peace")[:180])
     effect = {
         "action": action,
         "region": raw.get("region") if raw.get("region") in REGIONS else "all",
