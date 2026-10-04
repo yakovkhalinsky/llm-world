@@ -421,3 +421,28 @@ during a slow embed).
   correct. Fix: the drawing steps inside the row loop, one diamond per
   cell. Check: render and count — 35 water, 42 rock, 499 soil base
   diamonds, 472 grass overlays, cell for cell against the world.
+
+## Found on the page's own ground (the graphics review)
+
+- [x] **b23** `grove/page/scene.js:364-378` — the cactus branch wrote
+  its whole body as if translated (`fillRect(-2.5*K, -h*K, …)`) but
+  never called `translate`: every saguaro painted offscreen at the
+  canvas's top-left corner, all its strokes stacked on one point, since
+  the desert's shapes went in. The desert's live world has been showing
+  a corner-smeared saguaro instead of a forest of them. Fix:
+  `save`/`translate(sx, sy)`/`restore` around the branch. Check:
+  `tools/scene_check.js` — a new headless harness that loads the page's
+  own three scripts the way web.py serves them, records every stroke
+  the canvas receives through a transform-following recorder, walks a
+  synthetic world through the scene, and asserts each saguaro's marks
+  sit within a tile of its cell with nothing drawn offcanvas. The
+  harness failed on the unfixed code first — the saguaro stood at
+  (-3.3, -28) against its tile's (190, 172).
+
+- [ ] **b24** `grove/page/panels.js:24` — the follow button reads a
+  bare `bio` global that is never defined as data: `bio.oid` is always
+  undefined (in a browser `bio` quietly resolves to the `#bio` DOM
+  element — an HTMLElement has no `.oid` — so nothing follows; the
+  harness makes the same bug throw plainly). Opening a biography and
+  pressing ◎ follow marks the button "on" and follows nothing. Fix:
+  have `openBio` record the target it was given; the button reads that.

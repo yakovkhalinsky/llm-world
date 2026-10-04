@@ -362,7 +362,9 @@ function drawPlant(t, tsec) {
     return;
   }
   if (shape === "cactus") {
-    shadow(sx, sy, 7);
+    ctx.save();
+    ctx.translate(sx, sy);          // the body was written translated —
+    shadow(0, 0, 7);                // but nothing ever moved it there
     ctx.fillStyle = p.pine;
     const h = (t.st === "old" ? 26 : t.st === "mature" ? 21 : 8);
     ctx.fillRect(-2.5 * K, -h * K, 5 * K, h * K);
@@ -374,6 +376,7 @@ function drawPlant(t, tsec) {
       ctx.fillRect(4.8 * K, -h * K + 11 * K, 3.2 * K, 5 * K);
       ctx.fillRect(0, -h * K + 9 * K, 8 * K, 2.2 * K);
     }
+    ctx.restore();
     return;
   }
   // trees
