@@ -181,6 +181,7 @@ all species must persist).
 | `tools/check_page.py` | headless verification of the served page |
 | `tools/render_svg.py` | the README's scene, rendered from the live world |
 | `docs/ARCHITECTURE.md` | how it all works: tick order, contracts, threads |
+| `docs/ECOLOGY.md` | the field guide: how the biome's mechanics work |
 | `docs/TUNING.md` | the honest numbers: species knobs, tempo, the gate |
 
 ## Ideas on the shelf
