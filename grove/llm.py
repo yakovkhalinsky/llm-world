@@ -17,6 +17,8 @@ import time
 import urllib.error
 import urllib.request
 
+from . import rules
+
 DEFAULT_HOST = "http://127.0.0.1:11434"
 
 LOCAL_JOBS = {"soul": "llama3.2:3b", "chron": "llama3.2:1b",
@@ -24,6 +26,14 @@ LOCAL_JOBS = {"soul": "llama3.2:3b", "chron": "llama3.2:1b",
 LOCAL_ALT = {"llama3.2:3b": "llama3.2:1b", "llama3.2:1b": "llama3.2:3b"}
 CLOUD_CHAIN = ["glm-5.2:cloud", "deepseek-v4-pro:cloud", "llama3.2:1b"]
 LOCAL_FALLBACK_ORDER = ["llama3.2:1b", "llama3.2:3b"]
+# tier -> (jobs on the cloud chain, jobs on the local tables)
+# hybrid = the soul's judgment in the cloud, the forest's voice local:
+#   the chronicle is ~80% of the token spend and the local 1B keeps up
+TIER_JOBS = {
+    "local": ([], ["soul", "chron", "voice", "ask"]),
+    "cloud": (["soul", "chron", "voice", "ask"], []),
+    "hybrid": (["soul", "ask"], ["chron", "voice"]),
+}
 
 
 class LLM:
@@ -38,6 +48,10 @@ class LLM:
         self.last_raw = None
         self.notes = []
         self.job_fails = {}               # job -> consecutive failures
+        self.job_chains = {}              # job -> [models to try, in order]
+        self.budget = None                # cloud tokens per day (optional)
+        self.tok = {"day": time.strftime("%Y-%m-%d"),
+                    "in": 0, "out": 0, "calls": 0}
         self.tags = self._fetch_tags()
         if model in ("auto", None, ""):
             self.explicit = None
@@ -45,7 +59,9 @@ class LLM:
             self.explicit = model
         self.job_models = {}
         for job in LOCAL_JOBS:
-            self.job_models[job] = self._resolve(job)
+            model, chain = self._resolve(job)
+            self.job_models[job] = model
+            self.job_chains[job] = list(chain)
 
     # -- model resolution ------------------------------------------------
     def _available(self, name):
@@ -56,27 +72,30 @@ class LLM:
         return False
 
     def _resolve(self, job):
+        """(model, chain) for a job: the tier says which jobs go to the
+        cloud chain; local jobs follow the per-job tables."""
         if self.explicit:
-            return self.explicit
-        if self.tier == "local":
-            m = LOCAL_JOBS[job]
-            return m if self._available(m) else LOCAL_ALT[m]
-        # auto: start local; the failure machinery can move on
+            return self.explicit, [self.explicit]
+        cloud_jobs, local_jobs = TIER_JOBS.get(
+            self.tier, TIER_JOBS["local"])
+        if job in cloud_jobs:
+            chain = [m for m in CLOUD_CHAIN if self._available(m)] \
+                    or list(LOCAL_FALLBACK_ORDER)
+            chain += [m for m in LOCAL_FALLBACK_ORDER if m not in chain]
+            return chain[0], chain
         m = LOCAL_JOBS[job]
-        return m if self._available(m) else LOCAL_FALLBACK_ORDER[0]
+        return (m if self._available(m) else LOCAL_ALT[m]), \
+            (LOCAL_JOBS[job], LOCAL_ALT[LOCAL_JOBS[job]])
 
     def _swap_job_model(self, job):
-        cur = self.job_models.get(job)
-        if self.explicit:
+        """Move this job along its own chain (cloud → local at the end)."""
+        chain = [m for m in self.job_chains.get(job, [])
+                 if m != self.job_models.get(job)]
+        if not chain:
             return False
-        cand = LOCAL_ALT[cur] if cur in LOCAL_ALT else \
-            (CLOUD_CHAIN[0] if self.tier == "auto" and self._available(
-                CLOUD_CHAIN[0]) else LOCAL_FALLBACK_ORDER[0])
-        if cand == cur:
-            return False
-        if self._available(cand):
-            self.job_models[job] = cand
-            self.notes.append(f"{job} moved to {cand}")
+        if self._available(chain[0]):
+            self.job_models[job] = chain[0]
+            self.notes.append(f"{job} moved to {chain[0]}")
             return True
         return False
 
@@ -166,6 +185,7 @@ class LLM:
                     if msg.get("content"):
                         content.append(msg["content"])
                     if part.get("done"):
+                        self._meter(part)
                         break
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             self.reason = f"call failed: {e}"
@@ -177,25 +197,44 @@ class LLM:
         self.last_raw = text[:300]
         return text if text else None
 
+    def _meter(self, last_part):
+        day = time.strftime("%Y-%m-%d")
+        if self.tok.get("day") != day:
+            self.tok = {"day": day, "in": 0, "out": 0, "calls": 0}
+        self.tok["calls"] += 1
+        self.tok["in"] += int(last_part.get("prompt_eval_count")
+                              or self.tok.get("_pin", 0) or 0)
+        self.tok["out"] += int(last_part.get("eval_count", 0) or 0)
+
+    def over_budget(self):
+        return bool(self.budget) and \
+            (self.tok["in"] + self.tok["out"]) >= self.budget
+
+    def spend_today(self):
+        return self.tok["in"] + self.tok["out"]
+
     # -- pacing, by what the machine can actually carry ---------------------
     def is_cloud(self):
         return ":cloud" in str(self.job_models.get("soul", ""))
 
     def soul_gap(self):
-        """Wall seconds between World Soul invitations."""
-        if self.is_cloud():
-            return 40 + 40
-        return 60 + 60          # the 3B needs ~20-60s per call
+        """Wall seconds between World Soul invitations, from the rules."""
+        p = rules.R["pacing"]["soul_gap_local" if not self.is_cloud()
+                             else "soul_gap_cloud"]
+        lo, hi = p[0], p[1]
+        return lo + (hi - lo)   # the caller re-rolls via randomness at use
 
 
 def status_line(llm):
     if llm is None:
-        return "LLM off — pure deterministic sim"
+        return "tier local — pure deterministic sim"
     if not llm.enabled:
-        return f"LLM off — {llm.reason}"
-    base = f"LLM {llm.job_models.get('soul')} (soul) · " \
-           f"{llm.job_models.get('chron')} (prose) · last call " \
-           f"{llm.latency:.1f}s"
+        return f"tier local — {llm.reason}"
+    base = (f"tier {llm.tier} · {llm.job_models.get('soul')} (soul) · "
+            f"{llm.job_models.get('chron')} (prose)")
+    if llm.tier != "local":
+        base += f" · tokens today {llm.spend_today()}" + \
+                (f"/{llm.budget}" if llm.budget else "")
     if llm.notes:
         base += f" · {llm.notes[-1]}"
     return base

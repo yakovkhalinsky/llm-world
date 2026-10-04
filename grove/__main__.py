@@ -12,6 +12,7 @@ Everything lives in ./grove_data (override with --data PATH).
 """
 
 import argparse
+import json
 import os
 import random
 import sys
@@ -19,6 +20,7 @@ import time
 
 from . import chronicler
 from . import db as dbm
+from . import rules
 from . import events as evm
 from . import gen
 from . import llm as llmm
@@ -232,20 +234,29 @@ def _add_llm_flags(sp):
     sp.add_argument("--model", default="auto",
                     help='a model name, or "auto" (cloud-first with '
                          'local fallback)')
-    sp.add_argument("--tier", choices=("auto", "cloud", "local"),
+    sp.add_argument("--tier", choices=("local", "cloud", "hybrid"),
                     default="local",
-                    help='"local" = per-job local models, fully offline '
-                         '(default); "cloud" = fast cloud soul')
+                    help='"local" = fully offline (default); "cloud" = all '
+                         'jobs on a cloud model; "hybrid" = the soul in '
+                         'the cloud, the forest\'s own words local (the '
+                         'cheapest tokens)')
+    sp.add_argument("--token-budget", type=int, default=None,
+                    help="max cloud tokens per day; over it the grove "
+                         "thins to local narration and slows the soul")
     sp.add_argument("--host", default=None)
 
 
 def build_parser():
     p = argparse.ArgumentParser(prog="grove", description=__doc__)
     p.add_argument("--data", default="./grove_data")
+    p.add_argument("--rules", default=None,
+                   help="a JSON rules override (see docs/TUNING.md)")
     sub = p.add_subparsers(dest="cmd", required=True)
     sp = sub.add_parser("new", help="create a new world")
     sp.add_argument("--seed", type=int, default=None)
-    sp.add_argument("--size", type=int, default=W.SIZE_DEFAULT)
+    sp.add_argument("--size", type=int, default=None,
+                    help="map width/height (the ruleset's default when "
+                         "unset)")
     sp.add_argument("--force", action="store_true")
     sp.set_defaults(func=cmd_new, offline=True, model=None, host=None)
     sp = sub.add_parser("run", help="live watch mode")
@@ -273,6 +284,10 @@ def build_parser():
     sp.add_argument("--tail", type=int, default=50)
     sp.add_argument("--all", action="store_true")
     sp.set_defaults(func=cmd_chronicle, offline=True, model=None, host=None)
+    sp = sub.add_parser("rules", help="print the biome's ruleset")
+    sp.add_argument("--template", metavar="FILE",
+                    help="write the current ruleset as a JSON template")
+    sp.set_defaults(func=cmd_rules)
     sp = sub.add_parser("status", help="population history")
     sp.add_argument("--ticks", type=int, default=48)
     sp.add_argument("--width", type=int, default=24)
@@ -280,8 +295,19 @@ def build_parser():
     return p
 
 
+def cmd_rules(args):
+    if args.template:
+        path = rules.dump_template(args.template)
+        print("wrote", path)
+        return
+    print(json.dumps(rules.R, indent=1, sort_keys=True, default=str))
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    if args.rules:
+        rules.load_override(args.rules)
+        print(f"rules override: {args.rules}")
     if args.cmd == "new" and args.seed is None:
         args.seed = random.randint(1, 10_000)
     # subcommands that didn't set model/host inherit the defaults

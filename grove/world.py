@@ -7,119 +7,21 @@ the world is fully deterministic and the rng never needs serializing.
 
 import random
 
-SIZE_DEFAULT = 24
-WEEKS_PER_SEASON = 12
+from . import rules
+
+def size_default():
+    return rules.R["world"]["size"]
+
+def season_length():
+    return rules.R["world"]["weeks_per_season"]
+
 SEASONS = ("spring", "summer", "autumn", "winter")
 REGION_NAMES = ("NW", "NE", "SW", "SE")
 
 # ---------------------------------------------------------------- plants
 
-PLANT_SPECIES = {
-    "pine": {
-        "kind": "tree",
-        "mature_age": 20, "old_age": 96, "max_age": 240,
-        "seed_season": 2,          # autumn
-        "seed_prob": 0.16, "seed_radius": 2,
-        "light_need": 0.25,        # shade tolerant
-        "shade_self": 0.55, "shade_adjacent": 0.30,
-        "storm_fall_mature": 0.05, "storm_fall_old": 0.12,
-        "frost_hp": 0.0, "emoji": "pine",
-        "desc": "pine",
-    },
-    "birch": {
-        "kind": "tree",
-        "mature_age": 12, "old_age": 88, "max_age": 160,
-        "seed_season": 2, "seed_prob": 0.20, "seed_radius": 4,
-        "light_need": 0.45,
-        "shade_self": 0.45, "shade_adjacent": 0.22,
-        "storm_fall_mature": 0.09, "storm_fall_old": 0.22,
-        "frost_hp": 0.15, "emoji": "leaf",
-        "desc": "birch",
-    },
-    "willow": {
-        "kind": "tree",
-        "mature_age": 9, "old_age": 72, "max_age": 140,
-        "seed_season": 2, "seed_prob": 0.45, "seed_radius": 3,
-        "near_water": 2,           # must spawn within N cells of water
-        "light_need": 0.40,
-        "shade_self": 0.40, "shade_adjacent": 0.20,
-        "storm_fall_mature": 0.12, "storm_fall_old": 0.30,
-        "frost_hp": 0.15, "emoji": "leaf",
-        "desc": "willow",
-    },
-    "fern": {
-        "kind": "understory",
-        "mature_age": 2, "old_age": 30, "max_age": 58,
-        "light_need": 0.65,        # needs SHADE: grows when light BELOW this
-        "spread_prob": 0.16, "spread_radius": 1,
-        "storm_fall_mature": 0.02, "storm_fall_old": 0.05,
-        "frost_hp": 0.25, "emoji": "fern",
-        "desc": "fern",
-    },
-    "berry": {
-        "kind": "shrub",
-        "mature_age": 3, "old_age": 22, "max_age": 40,
-        "seed_season": (0, 2), "seed_prob": 0.22, "seed_radius": 3,
-        "light_need": 0.50,
-        "shade_self": 0.03, "shade_adjacent": 0.0,
-        "storm_fall_mature": 0.06, "storm_fall_old": 0.15,
-        "frost_hp": 0.20, "emoji": "berry",
-        "desc": "berry bush",
-    },
-}
-
-PLANT_STAGES = ("seed", "sapling", "mature", "old", "log")
-
-# ---------------------------------------------------------------- animals
-
-ANIMAL_SPECIES = {
-    "rabbit": {
-        "hunger_drain": 0.8, "lifespan": 60, "speed": 3, "scan": 4,
-        "lit_size": 3, "lit_prob": 0.28, "breed_seasons": (0, 1),
-        "energy_breed": 6.0, "cap": 24, "winterslow": 0.4,
-        "predators": ("fox", "owl", "wolf"),
-    },
-    "deer": {
-        "hunger_drain": 0.55, "lifespan": 200, "speed": 2, "scan": 5,
-        "lit_size": 1, "lit_prob": 0.10, "breed_seasons": (0,),
-        "energy_breed": 8.0, "cap": 10, "winterslow": 0.5,
-    },
-    "fox": {
-        "hunt": "rabbit", "hunt_prob": 0.5, "hunger_drain": 0.7,
-        "lifespan": 130, "speed": 3, "scan": 6,
-        "lit_size": 2, "lit_prob": 0.09, "breed_seasons": (0, 2),
-        "energy_breed": 7.0, "cap": 6, "winterslow": 0.6,
-    },
-    "owl": {
-        "strike": ("rabbit", "robin"), "strike_prob": 0.18, "strike_range": 5,
-        "hunger_drain": 0.5, "lifespan": 160, "speed": 2, "scan": 2,
-        "lit_size": 1, "lit_prob": 0.10, "breed_seasons": (0, 1),
-        "energy_breed": 6.0, "cap": 3, "winterslow": 1.0,
-    },
-    "robin": {
-        "hunger_drain": 0.5, "lifespan": 40, "speed": 4, "scan": 3,
-        "lit_size": 3, "lit_prob": 0.30, "breed_seasons": (0, 1),
-        "energy_breed": 5.0, "cap": 14, "winterslow": 0.75, "flyer": True,
-    },
-    "boar": {
-        "hunger_drain": 0.5, "lifespan": 140, "speed": 1, "scan": 3,
-        "lit_size": 2, "lit_prob": 0.15, "breed_seasons": (1, 2),
-        "energy_breed": 6.0, "cap": 5, "winterslow": 0.7,
-    },
-    # transient visitors (never recolonized, never permanent residents)
-    "stag": {  # lone wandering stag
-        "hunger_drain": 0.55, "lifespan": 200, "speed": 2, "scan": 5,
-        "winterslow": 0.6, "visitor": True,
-    },
-    "wolf": {  # passing wolf: hunts rabbits and deer
-        "hunt": "rabbit", "hunt_prob": 0.6, "prey2": "deer", "prey2_prob": 0.3,
-        "hunger_drain": 0.7, "lifespan": 180, "speed": 3, "scan": 7,
-        "winterslow": 1.0, "visitor": True,
-    },
-}
-
-ANIMAL_DEFAULT_CAPS = {sp: t.get("cap", 100) for sp, t in ANIMAL_SPECIES.items()}
-
+PLANT_SPECIES = rules.R["plants"]         # live aliases of the ruleset
+ANIMAL_SPECIES = rules.R["animals"]
 CREATURE_NAMES = [
     "Bracken", "Sorrel", "Thistle", "Rowan", "Bramble", "Clover", "Fable",
     "Juniper", "Hazel", "Wren", "Tarn", "Moss", "Pip", "Nettle", "Sallow",
@@ -132,7 +34,8 @@ CREATURE_NAMES = [
 
 def season_index(tick: int) -> int:
     """Which season (0..3) does this week belong to. Week 1 is spring."""
-    return ((tick - 1) // WEEKS_PER_SEASON) % len(SEASONS)
+    return ((tick - 1) // rules.R["world"]["weeks_per_season"]) \
+        % len(SEASONS)
 
 def season_name(tick: int) -> str:
     return SEASONS[season_index(tick)]
@@ -199,8 +102,9 @@ def new_animal(aid: int, sp: str, x: int, y: int, age: float = 2.0) -> dict:
             "hunger": 2.0, "energy": 4.0, "hp": 10.0, "preg": 0,
             "transient": None, "name": None}
 
-def new_state(seed: int, size: int = SIZE_DEFAULT) -> dict:
+def new_state(seed: int, size: int = None) -> dict:
     """An empty world shell; gen.py fills it."""
+    size = size or rules.R["world"]["size"]
     return {
         "seed": seed, "size": size, "tick": 0,
         "weather": "clear", "weather_left": 0,

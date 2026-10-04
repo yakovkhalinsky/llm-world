@@ -16,6 +16,7 @@ sys.path.insert(0, "grove/..")
 sys.path.insert(0, ".")
 
 from grove import gen, sim          # noqa: E402
+from grove import rules as RL       # noqa: E402
 from grove import world as W        # noqa: E402
 
 CHECKS = {

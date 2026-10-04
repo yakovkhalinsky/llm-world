@@ -6,22 +6,26 @@ weather-scapes like drought/blight); the engine applies and validates.
 """
 
 from . import world as W
+from . import rules
 
-# ------------------------------------------------------------- tuning knobs
 
-GRASS_REGROW = {0: 0.06, 1: 0.07, 2: 0.03, 3: 0.0}
-MOISTURE_DECAY = {0: 0.97, 1: 0.955, 2: 0.975, 3: 1.0}   # per season
-RAIN_GAIN = 0.22
-STORM_GAIN = 0.28
-WINTER_DRAIN = 1.4
+def _intkey(d):
+    """Season keys arrive as strings from JSON overrides."""
+    return {int(k): v for k, v in (d or {}).items()}
 
-NATURAL_STORM_PROB = {2: 0.05}                            # autumn only
-RAIN_PROB = {0: 0.22, 1: 0.10, 2: 0.28, 3: 0.0}
 
-LOG_TTL = 5          # weeks a fallen tree lingers
-CARCASS_TTL = 3
-RECOLONIZE_AFTER = 16
-BASE_RESIDENTS = ("rabbit", "deer", "fox", "owl", "robin", "boar")
+def _rules():
+    r = rules.R
+    return (
+        _intkey(r["cells"]["grass_regrow"]),
+        _intkey(r["cells"]["moisture_decay"]),
+        r["weather"]["rain_gain"], r["weather"]["storm_gain"],
+        r["pop"]["winter_drain"],
+        _intkey(r["weather"]["natural_storm_prob"]),
+        _intkey(r["weather"]["rain_prob"]),
+        r["weather"]["log_ttl"], r["weather"]["carcass_ttl"],
+        r["pop"]["recolonize_after"],
+    )
 
 
 # ------------------------------------------------------------------ weather
@@ -40,12 +44,12 @@ def _roll_weather(w, evs):
             w["weather"] = "frost"
         return
     r = rng.random()
-    storm_p = NATURAL_STORM_PROB.get(season, 0.0)
+    storm_p = _rules()[5].get(season, 0.0)
     if r < storm_p:
         w["weather"], w["weather_left"] = "storm", 2
         evs.append({"tick": t, "kind": "storm", "x": None, "y": None,
                     "note": "natural"})
-    elif r < storm_p + RAIN_PROB[season]:
+    elif r < storm_p + _rules()[6].get(season, 0.0):
         w["weather"], w["weather_left"] = "rain", 1
     else:
         w["weather"] = "clear"
@@ -101,17 +105,17 @@ def _update_cells(w, evs):
                 continue
             m = c["moisture"]
             if weather == "rain":
-                m += RAIN_GAIN
+                m += _rules()[2]
             elif weather == "storm":
-                m += STORM_GAIN
-            m *= MOISTURE_DECAY[season]
+                m += _rules()[3]
+            m *= _rules()[1][season]
             for e in droughts:
                 if (x, y) in _region_set(e["region"], size):
                     m -= 0.09
             c["moisture"] = _clamp01(m)
 
             # grass
-            regrow = GRASS_REGROW[season] * (1.0 + soak * 0.15)
+            regrow = _rules()[0][season] * (1.0 + soak * 0.15)
             if any((x, y) in _region_set(e["region"], size) for e in droughts):
                 regrow *= 0.2
             light = w["_light"][y][x]
@@ -154,7 +158,7 @@ def _update_plants(w, evs, light):
     size, t = w["size"], w["tick"]
     rng = W.rng_for(w["seed"], t, "plants")
     season = W.season_index(t)
-    week_in = (t - 1) % W.WEEKS_PER_SEASON + 1
+    week_in = (t - 1) % rules.R["world"]["weeks_per_season"] + 1
     winter = season == 3
     growing = not winter
     blights = [e for e in w["effects"] if e["kind"] == "blight"]
@@ -165,11 +169,11 @@ def _update_plants(w, evs, light):
         spec = W.PLANT_SPECIES[p["sp"]]
 
         if p["stage"] == "log":
-            p["log"] = p.get("log", LOG_TTL) - 1
+            p["log"] = p.get("log", _rules()[7]) - 1
             if p["log"] <= 0:
                 # the trunk is gone to humus; the soil remembers the tree
                 c2 = w["cells"][p["y"]][p["x"]]
-                c2["humus"] = min(1.0, c2.get("humus", 0) + 0.25)
+                c2["humus"] = min(1.0, c2.get("humus", 0) + rules.R["cells"]["humus_per_log"])
                 del w["plants"][pid]
             continue
 
@@ -197,8 +201,9 @@ def _update_plants(w, evs, light):
         if w["weather"] == "frost" and spec["frost_hp"]:
             p["hp"] -= spec["frost_hp"]
             damaged = True
-            if p["hp"] < 1.0 and spec["kind"] != "tree":
-                p["hp"] = 1.0      # the cold stuns; it does not murder
+            if p["hp"] < rules.R["cells"]["understory_hp_floor"] \
+                    and spec["kind"] != "tree":
+                p["hp"] = rules.R["cells"]["understory_hp_floor"]      # the cold stuns; it does not murder
         if w["weather"] == "storm":
             base = (spec["storm_fall_old"] if p["stage"] == "old"
                     else spec["storm_fall_mature"]
@@ -237,7 +242,7 @@ def _update_plants(w, evs, light):
 
         # recover or die — rot feeds the ground beneath a log
         if not damaged and growing and c["moisture"] > 0.10:
-            p["hp"] = min(10.0, p["hp"] + 0.4 + c.get("humus", 0) * 0.2)
+            p["hp"] = min(10.0, p["hp"] + rules.R["cells"]["regen_per_week"] + c.get("humus", 0) * rules.R["cells"]["regen_humus_bonus"])
         if p["hp"] <= 0:
             cause = "blight" if any(blights) else \
                 ("drought" if any(droughts) else "withered")
@@ -267,7 +272,7 @@ def _update_plants(w, evs, light):
 
 def _fell(w, p, evs, cause):
     p["stage"] = "log"
-    p["log"] = LOG_TTL
+    p["log"] = _rules()[7]
     evs.append({"tick": w["tick"], "kind": "fell", "plant": p["id"],
                 "sp": p["sp"], "x": p["x"], "y": p["y"], "cause": cause,
                 "age": p["age"], "name": p["name"]})
@@ -291,7 +296,19 @@ def _seed(w, p, spec, light, rng):
         if light[sy][sx] < spec["light_need"] * tol:
             continue
         if _trees_in_cell(w, sx, sy) >= 1:
-            _bank(w, p["sp"])          # crowded: the seed waits in soil
+            # a shade-tolerant seed may still try under the canopy: its
+            # niche is the light another tree's shade already softened —
+            # but most seeds under a canopy do not take
+            if spec["light_need"] > 0.3 or \
+                    light[sy][sx] < spec["light_need"] * 1.6 or \
+                    _trees_in_cell(w, sx, sy) >= 2:
+                _bank(w, p["sp"])      # crowded: the seed waits in soil
+                return
+            if rng.random() >= rules.R["pop"]["shade_sprout_prob"]:
+                _bank(w, p["sp"])
+                return
+        if _understory_in_cell(w, sx, sy) >= 2:
+            _bank(w, p["sp"])
             return
         w["plants"][str(w["next_id"])] = W.new_plant(
             w["next_id"], p["sp"], sx, sy, "sapling", 0)
@@ -301,7 +318,14 @@ def _seed(w, p, spec, light, rng):
 
 
 def _seasons(v):
-    return tuple(v) if isinstance(v, tuple) else (v,)
+    if isinstance(v, (list, tuple)):
+        return tuple(v)
+    return (v,)
+
+
+# breed_seasons from a rules override arrives as a list: same carry
+def _breed_seasons(spec):
+    return _seasons(spec.get("breed_seasons", ()))
 
 
 def _bank(w, sp):
@@ -320,11 +344,13 @@ def _germinate(w, evs):
     for sp in list(bank):
         alive = sum(1 for p in w["plants"].values()
                     if p["sp"] == sp and p["stage"] != "log")
-        if alive >= 3:                      # a thriving stand needs no rescue
+        if alive >= rules.R["pop"]["germinate_min_alive"]:
             continue
         # the bank is the soil's memory, not a consumable ledger: the
         # rescue draws on it without emptying it; decay is the only loss
-        n = min(8, max(3, bank.get(sp, 0) // 10)) if bank.get(sp) else 0
+        n = min(rules.R["pop"]["germinate_cap"],
+                max(rules.R["pop"]["germinate_min"],
+                    bank.get(sp, 0) // 10)) if bank.get(sp) else 0
         if n <= 0 or (alive and t % 48 < 24):
             continue                        # don't smother a surviving handful
         size = w["size"]
@@ -347,12 +373,18 @@ def _germinate(w, evs):
                         continue
                 elif li < spec["light_need"] * 0.8:
                     continue
-                understory = sp in ("fern", "berry")
-                if understory:
+                if sp in ("fern", "berry"):
                     if _understory_in_cell(w, x, y) >= 1:
                         continue
                 elif _trees_in_cell(w, x, y) >= 1:
-                    continue
+                    tolerant = spec["light_need"] <= 0.3
+                    if not tolerant:
+                        continue
+                    if light[y][x] >= spec["light_need"] * 1.6 or \
+                            _trees_in_cell(w, x, y) >= 2:
+                        continue
+                    if rng.random() >= rules.R["pop"]["shade_sprout_prob"]:
+                        continue
                 spots.append((x, y))
         if not spots:
             bank[sp] = min(90, bank.get(sp, 0) + 1)   # keep waiting in soil
@@ -450,12 +482,12 @@ def _update_animals(w, evs):
                 del w["animals"][aid]
                 continue
 
-        drain = spec["hunger_drain"] * (WINTER_DRAIN if winter else 1.0)
+        drain = spec["hunger_drain"] * (_rules()[4] if winter else 1.0)
         a["hunger"] += drain
         if a["hunger"] > 9:
             a["hp"] -= 0.5
         if a["hp"] <= 0:
-            w["cells"][a["y"]][a["x"]]["carcass"] = CARCASS_TTL
+            w["cells"][a["y"]][a["x"]]["carcass"] = _rules()[8]
             evs.append({"tick": t, "kind": "starve", "sp": a["sp"],
                         "who": a["id"], "x": a["x"], "y": a["y"]})
             del w["animals"][aid]
@@ -468,7 +500,7 @@ def _update_animals(w, evs):
         pop = _pop(w, a["sp"])
         if not winter and a["preg"] == 0 \
                 and a["energy"] >= spec.get("energy_breed", 99) \
-                and season in spec.get("breed_seasons", ()) \
+                and season in _breed_seasons(spec) \
                 and spec.get("lit_prob") and pop < cap \
                 and rng.random() < spec["lit_prob"]:
             a["preg"] = 2
@@ -481,7 +513,7 @@ def _update_animals(w, evs):
         # aging
         a["age"] += 1
         if a["age"] >= spec["lifespan"]:
-            w["cells"][a["y"]][a["x"]]["carcass"] = CARCASS_TTL
+            w["cells"][a["y"]][a["x"]]["carcass"] = _rules()[8]
             evs.append({"tick": t, "kind": "oldage", "sp": a["sp"],
                         "who": a["id"], "x": a["x"], "y": a["y"]})
             del w["animals"][aid]
@@ -504,7 +536,7 @@ def _behave(w, a, spec, evs, rng, winter):
         # density-dependent hunting: when the warren is thin, predators
         # miss more — the classic loop that keeps boom-bust from collapsing
         hp_scaled = spec.get("hunt_prob", 0.5) * \
-            _clamp(_pop(w, hunt) / 12.0, 0.35, 1.0)
+            _clamp(_pop(w, hunt) / spec.get("hunting_density_scale", 12.0), spec.get("hunt_prob_min", 0.35), 1.0)
         if prey and rng.random() < hp_scaled:
             step_toward(w, a, prey["x"], prey["y"], speed, spec.get("flyer"))
             dist = abs(a["x"] - prey["x"]) + abs(a["y"] - prey["y"])
@@ -788,11 +820,11 @@ def _check_destinies(w, evs):
 def _recolonize(w, evs):
     t = w["tick"]
     size = w["size"]
-    for sp in BASE_RESIDENTS:
+    for sp in rules.R["pop"]["base_residents"]:
         n = _pop(w, sp)
         if n == 0:
             since = w["absent"].setdefault(sp, t)
-            if t - since >= RECOLONIZE_AFTER:
+            if t - since >= rules.R["pop"]["recolonize_after"]:
                 edges = [(x, y) for y in range(size) for x in range(size)
                          if w["cells"][y][x]["terrain"] == "soil"
                          and (x in (0, size - 1) or y in (0, size - 1))]
@@ -825,8 +857,9 @@ def _migration(w, evs, from_season, to_season):
     elif to_season == 0 and from_season == 3:   # back for spring
         rng = W.rng_for(w["seed"], w["tick"], "return")
         last = w.get("robin_last", 0)
-        if last > 0 and rng.random() < 0.75:
-            size, n_back = w["size"], max(4, last // 2)
+        if last > 0 and rng.random() < rules.R["pop"]["robins_return_prob"]:
+            size = w["size"]
+            n_back = max(rules.R["pop"]["robins_return_min"], last // 2)
             spots = [(x, y) for y in range(size) for x in range(size)
                      if w["cells"][y][x]["terrain"] == "soil"]
             for _ in range(min(n_back, 30)):
@@ -873,7 +906,7 @@ def tick(world):
             bank[sp] = int(bank[sp] * 0.995)
     _check_destinies(world, evs)
     _recolonize(world, evs)
-    world["name_budget"] = 3  # the voice may name up to 3 creatures a week
+    world["name_budget"] = rules.R["pacing"]["naming_budget_per_week"]
     return evs
 
 

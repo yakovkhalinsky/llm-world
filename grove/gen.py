@@ -7,6 +7,7 @@ rock outcrops, moisture gradient toward water, and initial populations.
 import random
 
 from . import world as W
+from . import rules
 
 _COARSE = 6          # coarse noise grid, upsampled to the world size
 _OCTAVES = 3
@@ -54,13 +55,15 @@ def _octaves(size: int, rng: random.Random, base_jitter: float) -> list:
     return total
 
 
-def generate(seed: int, size: int = W.SIZE_DEFAULT) -> dict:
+def generate(seed: int, size: int = None) -> dict:
     rng = W.rng_for(seed, 0, "gen")
+    size = size or rules.R["world"]["size"]
+    gr = rules.R["gen"]
     st = W.new_state(seed, size)
 
-    elev = _octaves(size, rng, 0.35)
-    fert = _octaves(size, rng, 0.4)
-    wet = _octaves(size, rng, 0.3)
+    elev = _octaves(size, rng, gr["elev_sigma"])
+    fert = _octaves(size, rng, gr["fert_sigma"])
+    wet = _octaves(size, rng, gr["wet_sigma"])
 
     # --- terrain ---------------------------------------------------------
     lo, hi = 8.4, 9.0  # elev quantiles (value noise lives roughly in 0.15..0.85)
@@ -72,8 +75,8 @@ def generate(seed: int, size: int = W.SIZE_DEFAULT) -> dict:
             e, f, m = elev[y][x], fert[y][x], wet[y][x]
             cell = {
                 "elev": round(e, 3),
-                "fert": round(max(0.05, min(1.0, 0.35 + f * 0.9)), 3),
-                "moisture": round(max(0.05, min(1.0, 0.25 + m * 0.6)), 3),
+                "fert": round(max(0.05, min(1.0, gr["fert_base"] + f * gr["fert_spread"])), 3),
+                "moisture": round(max(0.05, min(1.0, gr["moist_base"] + m * gr["moist_spread"])), 3),
                 "grass": 0.0,
                 "mushroom": 0,          # ticks of mushroom presence left
                 "carcass": 0,           # ticks of carcass presence left
@@ -84,7 +87,7 @@ def generate(seed: int, size: int = W.SIZE_DEFAULT) -> dict:
     # normalize elevation to 0..1 for thresholds
     vals = sorted(v for row in elev for v in row)
     q = lambda p: vals[int(p * (len(vals) - 1))]
-    e_lo, e_hi = q(0.06), q(0.93)
+    e_lo, e_hi = q(gr["water_quantile"]), q(gr["rock_quantile"])
     for y in range(size):
         for x in range(size):
             e = elev[y][x]
@@ -104,7 +107,7 @@ def generate(seed: int, size: int = W.SIZE_DEFAULT) -> dict:
         for y in range(size):
             for x in range(size):
                 if abs(x - wx) + abs(y - wy) <= 2:
-                    cells[y][x]["moisture"] = min(1.0, cells[y][x]["moisture"] + 0.35)
+                    cells[y][x]["moisture"] = min(1.0, cells[y][x]["moisture"] + gr["near_water_moisture"])
 
     st["cells"] = cells
 
@@ -119,8 +122,10 @@ def generate(seed: int, size: int = W.SIZE_DEFAULT) -> dict:
                 continue
             cluster = (elev[y][x] + wet[y][x]) / 2
             p_tree = 0.0
-            if c["moisture"] > 0.40 and c["fert"] > 0.35:
-                p_tree = 0.13 + 0.33 * (cluster - 0.1)
+            if c["moisture"] > gr["p_tree_moisture_min"] and \
+                    c["fert"] > gr["p_tree_fert_min"]:
+                p_tree = gr["p_tree_base"] + gr["p_tree_slope"] * \
+                    (cluster - 0.1)
             if rng.random() < p_tree:
                 n_here = rng.choice((1, 1, 2))
                 for _ in range(n_here):
@@ -133,9 +138,9 @@ def generate(seed: int, size: int = W.SIZE_DEFAULT) -> dict:
                                      for wy, wx in
                                      [(yy, xx) for yy in range(size) for xx in range(size)
                                       if cells[yy][xx]["terrain"] == "water"])
-                    if near_water and rng.random() < 0.45:
+                    if near_water and rng.random() < gr["willow_near_water_prob"]:
                         sp = "willow"
-                    age = rng.randint(8, 60)
+                    age = rng.randint(*gr["initial_age_spread"])
                     stage = "mature"
                     if age < W.PLANT_SPECIES[sp]["mature_age"]:
                         stage = "sapling"
@@ -143,16 +148,16 @@ def generate(seed: int, size: int = W.SIZE_DEFAULT) -> dict:
                         stage = "old"
                     plants[str(pid)] = W.new_plant(pid, sp, x, y, stage, age)
                     pid += 1
-            elif rng.random() < 0.07 * c["fert"]:
+            elif rng.random() < gr["p_berry"] * c["fert"]:
                 plants[str(pid)] = W.new_plant(pid, "berry", x, y,
                                                "mature" if rng.random() < 0.6
                                                else "sapling", rng.randint(1, 6))
                 pid += 1
-            c["grass"] = round(min(1.0, 0.3 + c["fert"] * 0.5 + rng.uniform(-0.2, 0.3)), 3)
+            c["grass"] = round(min(1.0, gr["grass_base"] + c["fert"] * gr["grass_fert"]
+                                  + rng.uniform(-0.2, 0.3)), 3)
     st["plants"] = plants
     st["next_id"] = pid
-    st["seedbank"] = {"pine": 8, "birch": 8, "willow": 4,
-                      "berry": 6, "fern": 8}
+    st["seedbank"] = dict(gr["starting_seedbank"])
 
     # ferns take root wherever the young canopy already shades
     from . import sim as S   # local import to reuse shade field
@@ -161,7 +166,7 @@ def generate(seed: int, size: int = W.SIZE_DEFAULT) -> dict:
         for x in range(size):
             c = cells[y][x]
             if c["terrain"] == "soil" and light[y][x] < 0.55 \
-                    and rng.random() < 0.5:
+                    and rng.random() < gr["p_fern_shade"]:
                 plants[str(pid)] = W.new_plant(pid, "fern", x, y, "mature",
                                                rng.randint(2, 10))
                 pid += 1

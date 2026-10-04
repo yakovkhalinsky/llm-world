@@ -61,15 +61,10 @@ _STOP = {"the", "an", "at", "and", "was", "a", "of", "in", "on", "for",
          "near", "then", "young", "base", "this", "that", "were", "are"}
 
 SYSTEM = (
-    "You are the Chronicler of a living forest. ONE event is given: its "
-    "data slot and a plain base sentence. Write ONE improved line (no "
-    "more than 88 characters) about the SAME animal or plant in the SAME "
-    "place the base sentence names — keep the subject words (species, "
-    "creature, pond), reshape the rhythm and verbs. A complete little "
-    "sentence; never an ellipsis; never another scene; never coordinates. "
-    "If recent lines are listed at the end, do not repeat their wording "
-    "or openings. "
-    'Reply ONLY: {"text":"..."}'
+    "You are the Chronicler of a forest. One event: its data and a plain "
+    "base sentence. Rewrite as ONE line (<=88 chars), same subject and "
+    "place, new rhythm. Never another scene; never coordinates; do not "
+    "echo listed recent lines. Only JSON: {\"text\":\"...\"}"
 )
 
 
@@ -144,7 +139,12 @@ def _line(world, e):
 
 
 def batch(events, world):
-    """Prepare chronicle items: {key, tick, template, slot}."""
+    """Prepare chronicle items: {key, tick, template, slot, narr_key}.
+
+    `key`  — the db's storage signature (unique per event/week)
+    `narr_key` — the NARRATION signature: the same story in the same
+             place is served from cache; no second model call pays for it
+    """
     out, seen = [], set()
     for e in events:
         key = E.event_key(e)
@@ -157,7 +157,9 @@ def batch(events, world):
         slot["place"] = W.place(world, e.get("x"), e.get("y"))
         if e["kind"] == "op":   # regions become spoken places
             slot["place"] = W.PLACE_WORDS.get(e.get("region"), "the grove")
-        out.append({"key": key, "tick": e["tick"],
+        narr = ("|".join(str(slot.get(k, "")) for k in
+                ("kind", "sp", "hunter", "cause", "n", "place")))
+        out.append({"key": key, "narr_key": narr, "tick": e["tick"],
                     "template": _line(world, e), "slot": slot})
     return out
 
@@ -169,8 +171,8 @@ def build_prompt(item, recents=()):
               f"{json.dumps(item['slot'], separators=(',', ':'))}"
               f" | base: {item['template']}")
     if recents:
-        prompt += "\n\nRecent chronicle lines (avoid their wording):\n" + \
-                  "\n".join(f" - {r}" for r in recents[-4:])
+        prompt += "\n\nDo not echo:\n" + \
+                  "\n".join(f" - {r}" for r in recents[-2:])
     return prompt
 
 

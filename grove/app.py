@@ -13,6 +13,7 @@ import time
 
 from . import chronicler
 from . import db as dbm
+from . import rules
 from . import events as evm
 from . import operator
 from . import llm as llmm
@@ -179,7 +180,7 @@ class Grove:
             for eid in list(self.pending_chron)[:len(self.pending_chron) - 8]:
                 del self.pending_chron[eid]
         chron_ready = bool(self.pending_chron)
-        need = 4               # a big enough backlog outweighs naming
+        need = rules.R["pacing"]["chron_flush_need"]
         self.slot_rot = (getattr(self, "slot_rot", 0) + 1) % 3
         if chron_ready and len(self.pending_chron) >= need \
                 and self.slot_rot == 0:
@@ -220,7 +221,7 @@ class Grove:
     def _maybe_name(self, notable):
         w = self.world
         budget = w.get("name_budget", 0)
-        if budget <= 0 or w.get("fawns_named", 0) >= 14 or self.worker.busy:
+        if budget <= 0 or w.get("fawns_named", 0) >= rules.R["pacing"]["naming_cap_per_season"] or self.worker.busy:
             return False
         pool = [kid for kid in w.get("name_pool", [])
                 if str(kid) in w["animals"]]        # only the living

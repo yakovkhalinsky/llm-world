@@ -68,7 +68,8 @@ def digest(world, recent_lines):
     size, t = world["size"], world["tick"]
     season = W.season_name(t)
     pops = {sp: n for sp, n in
-            {k: _pop(world, k) for k in W.ANIMAL_DEFAULT_CAPS}.items()
+            {k: _pop(world, k) for k in W.ANIMAL_SPECIES
+             if not W.ANIMAL_SPECIES[k].get("visitor")}.items()
             if n}
     pc = plant_counts(world)
 
