@@ -71,15 +71,19 @@ def ensure_index(db, llm, limit=BATCH):
     return inserted
 
 
-def recall(db, llm, question, top=5):
-    """The most relevant chronicle lines for a question: [{tick, text}]."""
+def recall(db, llm, question, top=5, rows=None):
+    """The most relevant chronicle lines for a question: [{tick, text}].
+    rows: pre-fetched (key, tick, text, vec) tuples — a locked caller
+    hands them over so the slow embed runs with no lock held."""
+    if rows is None:
+        rows = db.con.execute(
+            "SELECT key, tick, text, vec FROM vec").fetchall()
     qv = embed(llm, [question])
     if not qv or not qv[0]:
         return []
     q = qv[0]
     out = []
-    for key, tick, text, blob in db.con.execute(
-            "SELECT key, tick, text, vec FROM vec").fetchall():
+    for key, tick, text, blob in rows:
         try:
             v = json.loads(blob)
         except json.JSONDecodeError:

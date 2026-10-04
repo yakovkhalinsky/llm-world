@@ -1399,8 +1399,10 @@ def cmd_web(args):
                                        "(LLM off)", "excerpts": []}),
                             "application/json")
                         return
-                    excerpts = memory.recall(g.db, g.llm, q)
+                    rows = g.db.con.execute(
+                        "SELECT key, tick, text, vec FROM vec").fetchall()
                     digest_text = operator.digest(g.world, [])
+                excerpts = memory.recall(g.db, g.llm, q, rows=rows)
                 prompt = ("question: " + q
                           + "\n\ndigest of the world now:\n" + digest_text
                           + "\n\nchronicle excerpts:\n"

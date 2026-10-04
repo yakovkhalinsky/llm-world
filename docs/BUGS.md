@@ -281,7 +281,7 @@ imported in `app.py`):
     self.next_op_wall = time.time() + random.uniform(lo, hi)
 ```
 
-### b9 · [ ] `/api/ask` holds the world lock across the embed call
+### b9 · [x] `/api/ask` holds the world lock across the embed call
 
 **Where** `grove/web.py:1402` — inside `with lock:`, `memory.recall`
 calls `embed` → `urlopen(timeout=150)` plus a `200` retry while
