@@ -25,7 +25,8 @@ LOCAL_JOBS = {"soul": "llama3.2:3b", "chron": "llama3.2:1b",
               "voice": "llama3.2:3b", "ask": "llama3.2:1b",
               "review": "llama3.2:3b"}
 LOCAL_ALT = {"llama3.2:3b": "llama3.2:1b", "llama3.2:1b": "llama3.2:3b"}
-CLOUD_CHAIN = ["glm-5.2:cloud", "deepseek-v4-pro:cloud", "llama3.2:1b"]
+CLOUD_CHAIN = ["glm-5.3-flash:cloud", "glm-5.2:cloud",
+              "deepseek-v4-pro:cloud", "llama3.2:1b"]
 LOCAL_FALLBACK_ORDER = ["llama3.2:1b", "llama3.2:3b"]
 # tier -> (jobs on the cloud chain, jobs on the local tables)
 # hybrid = the soul's judgment in the cloud, the forest's voice local:
