@@ -69,6 +69,20 @@ def animal_body():
     return out
 
 
+EPX = 26                       # the pack's relief scale, read in main()
+
+
+def elev_px_of():
+    return rules.R["presentation"].get("elev_px", 26)
+
+
+def iso_e(world, x, y):
+    """iso with the land raised: the world's own elev, drawn."""
+    cx, cy = iso(x, y)
+    e = max(0, (world["cells"][y][x].get("elev", 0) or 0))
+    return cx, cy - e * EPX
+
+
 def iso(x, y):
     return (OX + (x - y) * TW / 2, OY + (x + y) * TH / 2)
 
@@ -104,7 +118,7 @@ def diamond(cx, cy, fill, **kw):
 
 def tree(world, p, pal):
     parts = []
-    cx, cy = iso(p["x"], p["y"])
+    cx, cy = iso_e(world, p["x"], p["y"])
     cx += (jit(p["id"], 1) - 0.5) * 6      # a breath off-centre,
     cy += (jit(p["id"], 2) - 0.5) * 4      # each at its own size
     scale = (1.0 if p["stage"] == "mature" else
@@ -176,7 +190,7 @@ def tree(world, p, pal):
 
 
 def creature(world, a, pal):
-    cx, cy = iso(a["x"] + 0.0, a["y"] + 0.0)
+    cx, cy = iso_e(world, a["x"], a["y"])
     cx += (jit(a["id"], 5) - 0.5) * 4      # the flock, too, breathes
     cy += (jit(a["id"], 6) - 0.5) * 3
     js = 0.9 + jit(a["id"], 7) * 0.14
@@ -202,7 +216,7 @@ def reflections(world, pal):
                 t = at.get((nx, ny))
                 if not t or t["stage"] == "log":
                     continue
-                cx, cy = iso(x, y)
+                cx, cy = iso_e(world, x, y)
                 tx, ty = cx + (nx - x) * TW / 4, cy - TH * 0.1
                 col = pal["pine"] if t["sp"] == "pine" else pal["leaf"]
                 cid = f"w{x}-{y}-{nx}-{ny}"
@@ -256,17 +270,21 @@ def main(out):
     span_w = (size - 1) * TW + TW + PADX * 2
     span_h = (size - 1) * TH + TH + PADY * 2
     OX, OY = span_w / 2, PADY
+    global EPX
+    EPX = elev_px_of()
     global ANIMAL_FILL
     ANIMAL_FILL = animal_body()
     pal = palettes()[W.season_name(world["tick"])]
 
     parts = [f'<rect width="{span_w}" height="{span_h}" fill="#0c1210"/>']
 
-    # terrain — the living ground: tufts, pebbles, wet rims, reeds
+    # terrain — the living ground on its own landform: tufts, pebbles,
+    # wet rims, reeds, and the walls where the land steps down
     for y, row in enumerate(world["cells"]):
         for x, c in enumerate(row):
             i = y * size + x
-            cx, cy = iso(x, y)
+            cx, cy = iso_e(world, x, y)
+            eMe = max(0, (c.get("elev", 0) or 0))
             if c["terrain"] == "water":
                 parts.append(diamond(cx, cy, pal["water"]))
             elif c["terrain"] == "rock":
@@ -291,13 +309,30 @@ def main(out):
                                           cy + ((i * 17 + u * 29) % 13 - 6)
                                           * 0.5,
                                           5 + u * 1.6, pal["grass"]))
+            walls = []                          # SE in sun, SW in shade
+            dX = (eMe - (max(0, world["cells"][y][x + 1].get("elev", 0) or 0)
+                         if x < size - 1 else 0)) * EPX
+            if dX > 1:
+                walls.append(poly(
+                    [(cx + TW / 2, cy), (cx, cy + TH / 2),
+                     (cx, cy + TH / 2 + dX), (cx + TW / 2, cy + dX)],
+                    "#4a392a"))
+            dY = (eMe - (max(0, world["cells"][y + 1][x].get("elev", 0) or 0)
+                         if y < size - 1 else 0)) * EPX
+            if dY > 1:
+                walls.append(poly(
+                    [(cx, cy + TH / 2), (cx - TW / 2, cy),
+                     (cx - TW / 2, cy + dY), (cx, cy + TH / 2 + dY)],
+                    "#3a2d20"))
+            parts += walls
+            if c["terrain"] != "water":
                 nbrs = [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
                 wet = any(0 <= nx < size and 0 <= ny < size and
                           world["cells"][ny][nx]["terrain"] == "water"
                           for nx, ny in nbrs)
                 if wet:
                     parts.append(diamond(cx, cy, "rgba(24,20,12,0.16)"))
-                    if g < 0.5 and i * 13 % 3 != 2:
+                    if c["grass"] < 0.5 and i * 13 % 3 != 2:
                         for u in range(3):      # reeds at the shore
                             ux = cx + ((i * 23 + u * 41) % 17 - 8) * 0.75
                             h2 = 5 + (i * 11 + u * 7) % 4
