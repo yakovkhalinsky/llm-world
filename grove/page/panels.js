@@ -1,5 +1,7 @@
 /* the biography panel: any soul's ledger */
+let bioTarget = null;               // the soul the follow-cam would keep
 function openBio(oid, kind, sp, name) {
+  bioTarget = { oid, kind };
   $("bio").classList.add("on");
   $("bioName").textContent = (name || "a wild " + sp) + " · " + sp;
   $("bioState").textContent = "consulting the ledger…";
@@ -21,7 +23,7 @@ $("bioClose").onclick = () => {
   setFollow(null);
 };
 $("followBtn").onclick = () =>
-  setFollow($("followBtn").classList.contains("on") ? null : { oid: bio.oid, kind: bio.kind });
+  setFollow($("followBtn").classList.contains("on") ? null : bioTarget);
 
 /* follow-cam: the camera eases toward a soul each frame */
 function setFollow(b) {

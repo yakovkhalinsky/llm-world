@@ -439,10 +439,13 @@ during a slow embed).
   harness failed on the unfixed code first — the saguaro stood at
   (-3.3, -28) against its tile's (190, 172).
 
-- [ ] **b24** `grove/page/panels.js:24` — the follow button reads a
-  bare `bio` global that is never defined as data: `bio.oid` is always
-  undefined (in a browser `bio` quietly resolves to the `#bio` DOM
-  element — an HTMLElement has no `.oid` — so nothing follows; the
+- [x] **b24** `grove/page/panels.js:24` — the follow button read a
+  bare `bio` global that was never defined as data: `bio.oid` was
+  always undefined (in a browser `bio` quietly resolves to the `#bio`
+  DOM element — an HTMLElement has no `.oid` — so nothing followed; the
   harness makes the same bug throw plainly). Opening a biography and
-  pressing ◎ follow marks the button "on" and follows nothing. Fix:
-  have `openBio` record the target it was given; the button reads that.
+  pressing ◎ follow marked the button "on" and followed nothing. Fix:
+  `openBio` records the target it was given (`bioTarget`); the button
+  reads that. Check: the harness opens a biography and presses follow —
+  the cam's target is the soul it was shown (7, animal); no globals
+  conjured.
