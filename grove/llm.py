@@ -1,16 +1,14 @@
-"""Ollama client for the grove's LLM jobs, with tiered models.
+"""Ollama client for the grove's LLM jobs, with one model, moving as one.
 
-Local hardware reality (measured on the grove's own CPU): llama-3.2-3b
-writes the best prose, names and judgments (~20-60 s warm per call);
-llama-3.2-1b keeps up with the chronicler (~5-8 s per line). The soul's
-voice — the operator, the chronicle, the naming and the diaries — speaks
-with ONE model, always: one resolution and one chain, advancing together
-(an automatic swap after repeated failures). ask and review keep the
-models that suit their cadence. The cloud tier runs that one model on a
-single fast chain with local fallback.
+Every job the grove speaks — the operator's fates, the chronicle, the
+naming and diaries, the asks, the steward's review — rides ONE model and
+ONE chain (the soul's): the same resolution, advancing together, with an
+automatic swap down the chain after two failed calls in a row. The
+default tier is cloud-first (glm-5.3-flash:cloud first, falling back to
+the local llama when no cloud model is reachable); --tier local forces
+the whole forest onto llama-3.2-3b — the slow silicon's truth.
 
-Local chains also keep ~everything resident: keep_alive 30m both models
-(~3.3 GB), so warm calls stay warm. chat_json NEVER raises.
+Chains keep the model resident: keep_alive 30m. chat_json NEVER raises.
 """
 
 import json
@@ -23,30 +21,23 @@ from . import rules
 
 DEFAULT_HOST = "http://127.0.0.1:11434"
 
-LOCAL_JOBS = {"soul": "llama3.2:3b", "chron": "llama3.2:1b",
-              "voice": "llama3.2:3b", "ask": "llama3.2:1b",
-              "review": "llama3.2:3b"}
-LOCAL_ALT = {"llama3.2:3b": "llama3.2:1b", "llama3.2:1b": "llama3.2:3b"}
+LOCAL_JOBS = {"soul": "llama3.2:3b"}     # tier local's one model...
+LOCAL_ALT = {"llama3.2:3b": "llama3.2:1b"}   # ...and its fallback seat
 CLOUD_CHAIN = ["glm-5.3-flash:cloud", "glm-5.2:cloud",
-              "deepseek-v4-pro:cloud", "llama3.2:1b"]
-LOCAL_FALLBACK_ORDER = ["llama3.2:1b", "llama3.2:3b"]
-# tier -> (jobs on the cloud chain, jobs on the local tables).
-# op/chron/voice sit in no list: the soul's voice is tied to the soul's
-# resolution and chain in __init__, in every tier — the lists here
-# decide only ask and review.
-TIER_JOBS = {
-    "local": ([], ["soul", "ask", "review"]),
-    "cloud": (["soul", "ask", "review"], []),
-    "hybrid": (["soul", "ask", "review"], []),
-}
+               "deepseek-v4-pro:cloud", "llama3.2:3b"]
+LOCAL_FALLBACK_ORDER = ["llama3.2:3b", "llama3.2:1b"]
+
+# every job in TIE_JOB_ORDER shares one resolution and one chain (the
+# soul's), in every tier; they speak as one and they move as one
+TIE_JOB_ORDER = ("soul", "chron", "voice", "op", "ask", "review")
 
 
 class LLM:
-    def __init__(self, model="auto", tier="local", host=DEFAULT_HOST,
+    def __init__(self, model="auto", tier="cloud", host=DEFAULT_HOST,
                  timeout=240.0):
         self.host = host
         self.timeout = timeout
-        self.tier = tier                  # auto | cloud | local
+        self.tier = tier                  # cloud | local
         self.enabled = True
         self.reason = ""
         self.latency = 0.0
@@ -64,17 +55,10 @@ class LLM:
             self.explicit = model
         self.job_models = {}
         self.job_chains = {}
-        for job in LOCAL_JOBS:
-            if job in ("chron", "voice", "op"):
-                continue          # the soul's voice speaks for these too
-            model, chain = self._resolve(job)
+        model, chain = self._resolve("soul")
+        for job in TIE_JOB_ORDER:
             self.job_models[job] = model
             self.job_chains[job] = list(chain)
-        # the voice (soul) and the prose speak with ONE model, always:
-        # the same resolution and the same chain, advancing together
-        for job in ("chron", "voice", "op"):
-            self.job_models[job] = self.job_models["soul"]
-            self.job_chains[job] = list(self.job_chains["soul"])
 
     # -- model resolution ------------------------------------------------
     def _available(self, name):
@@ -85,26 +69,25 @@ class LLM:
         return False
 
     def _resolve(self, job):
-        """(model, chain) for a job: the tier says which jobs go to the
-        cloud chain; local jobs follow the per-job tables."""
+        """(model, chain) for the grove's one voice: --model NAME pins
+        exactly one model; --tier local keeps the forest on the llama;
+        anything else is cloud-first with local fallback."""
         if self.explicit:
             return self.explicit, [self.explicit]
-        cloud_jobs, local_jobs = TIER_JOBS.get(
-            self.tier, TIER_JOBS["local"])
-        if job in cloud_jobs:
-            chain = [m for m in CLOUD_CHAIN if self._available(m)] \
-                    or list(LOCAL_FALLBACK_ORDER)
-            chain += [m for m in LOCAL_FALLBACK_ORDER if m not in chain]
-            return chain[0], chain
-        m = LOCAL_JOBS[job]
-        return (m if self._available(m) else LOCAL_ALT[m]), \
-            (LOCAL_JOBS[job], LOCAL_ALT[LOCAL_JOBS[job]])
+        if self.tier == "local":
+            m = LOCAL_JOBS["soul"]
+            preferred = m if self._available(m) else LOCAL_ALT[m]
+            return preferred, [m, LOCAL_ALT[m]]
+        chain = [m for m in CLOUD_CHAIN if self._available(m)] \
+            or list(LOCAL_FALLBACK_ORDER)
+        chain += [m for m in LOCAL_FALLBACK_ORDER if m not in chain]
+        return chain[0], chain
 
     def _swap_job_model(self, job):
         """Move this job along its chain, and the whole voice tier with
         it: soul, chron, voice and op share the model and move as one."""
         before = dict(self.job_models)
-        for step_job in ("soul", "chron", "voice", "op"):
+        for step_job in TIE_JOB_ORDER:
             chain = [m for m in self.job_chains.get(step_job, [])
                      if m != self.job_models.get(step_job)]
             if chain and self._available(chain[0]):
@@ -141,16 +124,21 @@ class LLM:
         if not self.enabled:
             return None
         attempts = retries + 1
-        model = self.job_models.get(job, "llama3.2:1b")
+        model = self.job_models.get(job, "llama3.2:3b")
+        # the flash-class clouds reason in a hidden channel: no `think`
+        # key (with think:false the proxy streams the reasoning INTO the
+        # answer's channel and the JSON never parses), and reasoning
+        # headroom so the JSON survives the reasoning's budget — the
+        # answer costs only its own tokens; the ceiling merely truncates
+        headroom = 500 if ":cloud" in model else 0
         payload = {
             "model": model,
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}],
             "stream": True,
             "format": schema,
-            "think": False,
-            "options": {"num_predict": max_tokens, "num_ctx": 4096,
-                        "temperature": temperature},
+            "options": {"num_predict": max_tokens + headroom,
+                        "num_ctx": 4096, "temperature": temperature},
             "keep_alive": "30m",
         }
         deadline = time.time() + self.timeout
