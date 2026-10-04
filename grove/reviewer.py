@@ -207,16 +207,20 @@ def record(db, world, proposals, verdict, auto):
 
 
 def apply_amendment(db, rules_mod, path, value):
-    """Set a rule by dotted path (species wildcards resolve to the
-    species actually named by law-abiding species)."""
+    """Set a rule by dotted path of any depth (2-seg law paths and
+    species paths both work). The walk refuses `*` anywhere and a
+    path that points outside the rules or at anything but a leaf."""
     parts = path.split(".")
-    if len(parts) != 3 or parts[1] == "*":
+    if len(parts) < 2 or "*" in parts:
         return False
-    section = rules_mod.R.setdefault(parts[0], {})
-    target = section.get(parts[1])
-    if target is None:
+    node = rules_mod.R
+    for step in parts[:-1]:
+        if not isinstance(node.get(step), dict):
+            return False
+        node = node[step]
+    if parts[-1] not in node:
         return False
-    target[parts[2]] = value
+    node[parts[-1]] = value
     db.con.execute(
         "UPDATE proposals SET status='applied', value=? "
         "WHERE rule=? AND status IN ('pending','offered')",
