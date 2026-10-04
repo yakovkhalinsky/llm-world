@@ -106,6 +106,8 @@ def snapshot(grove, runner, lock):
                   for p in w["plants"].values()]
         animals = [{"id": a["id"], "sp": a["sp"], "x": a["x"], "y": a["y"],
                     "px": a.get("px", a["x"]), "py": a.get("py", a["y"]),
+                    "ag": round(a.get("age", 0)),
+                    "h": 1 if a["hunger"] > 5 else 0,
                     "n": names.get(str(a["id"]))}
                    for a in w["animals"].values()]
 
@@ -911,13 +913,19 @@ function drawAnimal(a, f, tsec, idx) {
   if (Math.abs(dx) > 0.9) FACING[idx] = dx < 0 ? -1 : 1;
   const flip = FACING[idx] || 1;
   const flyer = a.sp === "owl" || a.sp === "robin";
-  const lift = (flyer ? -9 : Math.sin(tsec * 5 + a.x) * 0.8);
+  // children are children: little for their first six weeks
+  const sz = a.ag !== undefined && a.ag < 6 ? 0.62 : 1;
+  const lift =
+      flyer ? -9 + (f < 1 ? Math.sin(tsec * 14 + a.id) * 1.1 : 0)
+      : (a.sp === "rabbit" && f < 1
+         ? -Math.abs(Math.sin(tsec * 9 + a.id)) * 5   // rabbits hop
+         : Math.sin(tsec * 5 + a.x) * 0.8) * sz;
   const cy = OY + gy + lift * K;
-  if (flyer) shadow(OX + gx, OY + gy + 2, 3);      // small, distant
-  else shadow(OX + gx, OY + gy, 6);
+  if (flyer) shadow(OX + gx, OY + gy + 2, 3 * sz);   // small, distant
+  else shadow(OX + gx, OY + gy, 6 * sz);
   ctx.save();
   ctx.translate(OX + gx, cy);
-  ctx.scale(flip * K, K);
+  ctx.scale(flip * K * sz, K * sz);
   const winter = ST.s && ST.s.season === "winter";
   switch (a.sp) {
     case "rabbit":
@@ -946,11 +954,17 @@ function drawAnimal(a, f, tsec, idx) {
       ctx.beginPath(); ctx.ellipse(0, 2, 6, 3.2, 0, 0, 6.3); ctx.fill();
       ctx.beginPath(); ctx.arc(5.4, 0, 2.1, 0, 6.3); ctx.fill();
       ctx.fillStyle = "#e8dccb";
+      const tailSway = Math.sin(tsec * 3 + a.id) * 1.6;
       ctx.beginPath();
-      ctx.moveTo(-4, 1.5); ctx.quadraticCurveTo(-9, -1, -8, -6);
+      ctx.moveTo(-4, 1.5);
+      ctx.quadraticCurveTo(-9, -1 + tailSway, -8, -6 + tailSway * 1.4);
       ctx.lineTo(-6, -2); ctx.closePath(); ctx.fill();
       ctx.fillStyle = "#fff";
       ctx.beginPath(); ctx.arc(-5, 2.5, 1.7, 0, 6.3); ctx.fill();
+      if (a.h) {                       // the hungry eye glints
+        ctx.fillStyle = "#f2c96a";
+        ctx.beginPath(); ctx.arc(5.8, -0.5, 0.7, 0, 6.3); ctx.fill();
+      }
       break;
     case "owl":
       ctx.fillStyle = body;
@@ -961,6 +975,11 @@ function drawAnimal(a, f, tsec, idx) {
       ctx.fillStyle = "#222";
       ctx.beginPath(); ctx.arc(-1.6, -1.5, 0.6, 0, 6.3); ctx.fill();
       ctx.beginPath(); ctx.arc(1.6, -1.5, 0.6, 0, 6.3); ctx.fill();
+      if (a.h) {
+        ctx.fillStyle = "#f2c96a";
+        ctx.beginPath(); ctx.arc(-1.6, -1.5, 0.3, 0, 6.3); ctx.fill();
+        ctx.beginPath(); ctx.arc(1.6, -1.5, 0.3, 0, 6.3); ctx.fill();
+      }
       break;
     case "robin":
       ctx.fillStyle = body;
@@ -993,6 +1012,10 @@ function drawAnimal(a, f, tsec, idx) {
       ctx.strokeStyle = body; ctx.lineWidth = 1.4;
       ctx.beginPath();
       ctx.moveTo(-5, 0); ctx.quadraticCurveTo(-9, 2, -8, 7); ctx.stroke();
+      if (a.h) {                       // the wolf's hungry eye
+        ctx.fillStyle = "#f2c96a";
+        ctx.beginPath(); ctx.arc(6.4, -1.3, 0.6, 0, 6.3); ctx.fill();
+      }
       break;
   }
   ctx.restore();
