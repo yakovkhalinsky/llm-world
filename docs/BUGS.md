@@ -408,3 +408,16 @@ during a slow embed).
   grove correctly; for another pack it would draw grove colours. A
   future tweak: read `presentation.seasons_palette` with today's
   literal as the fallback.
+
+## Found while reading the worklist itself
+
+- [x] **b22** `tools/render_svg.py:128-140` — the terrain loop drew one
+  cell per row: the `if c["terrain"]` block sat *outside* the inner
+  `for x` loop, so `x` and `c` lingered on the row's last cell and one
+  diamond landed per row. The README scene's ground has been mostly
+  empty since the script was born (`b911e08`) — 34 of the world's 576
+  cells drawn (17 soil + 17 grass overlays), the pond and all 42 rock
+  cells missing; the trees covered the loss well enough that it read as
+  correct. Fix: the drawing steps inside the row loop, one diamond per
+  cell. Check: render and count — 35 water, 42 rock, 499 soil base
+  diamonds, 472 grass overlays, cell for cell against the world.

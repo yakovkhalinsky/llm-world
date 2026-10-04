@@ -128,16 +128,16 @@ def main(out):
     for y, row in enumerate(world["cells"]):
         for x, c in enumerate(row):
             cx, cy = iso(x, y)
-        if c["terrain"] == "water":
-            parts.append(diamond(cx, cy, pal["water"]))
-        elif c["terrain"] == "rock":
-            parts.append(diamond(cx, cy, pal["rock"]))
-        else:
-            parts.append(diamond(cx, cy, pal["soil"]))
-            g = c["grass"]
-            if g > 0.06:
-                parts.append(diamond(cx, cy, pal["grass"],
-                                     opacity=min(1, g * 0.9)))
+            if c["terrain"] == "water":
+                parts.append(diamond(cx, cy, pal["water"]))
+            elif c["terrain"] == "rock":
+                parts.append(diamond(cx, cy, pal["rock"]))
+            else:
+                parts.append(diamond(cx, cy, pal["soil"]))
+                g = c["grass"]
+                if g > 0.06:
+                    parts.append(diamond(cx, cy, pal["grass"],
+                                         opacity=min(1, g * 0.9)))
 
     # entities, depth-sorted
     ents = [(p["x"] + p["y"], 0, ("plant", p)) for p in world["plants"].values()]
