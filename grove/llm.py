@@ -130,9 +130,10 @@ class LLM:
         # answer's channel and the JSON never parses), and reasoning
         # headroom so the JSON survives the reasoning's budget — the
         # answer costs only its own tokens; the ceiling merely truncates.
-        # 1100: live op/chron prompts reasoned past the first ~500-slot;
-        # truncation mid-reasoning is the failure mode the swap then acts on
-        headroom = 1100 if ":cloud" in model else 0
+        # 3000: measured on a real 200-week op digest, the flash soul
+        # reasons ~8 kB (~2.2k tokens) before the JSON; smaller ceilings
+        # truncate mid-thought — the failure mode the swap then acts on
+        headroom = 3000 if ":cloud" in model else 0
         payload = {
             "model": model,
             "messages": [{"role": "system", "content": system},
@@ -152,6 +153,7 @@ class LLM:
                 try:
                     out = json.loads(content)
                     self.job_fails[job] = 0
+                    self.reason = ""
                     return out
                 except json.JSONDecodeError:
                     m = re.search(r"\{[\s\S]*\}", content)
@@ -159,6 +161,7 @@ class LLM:
                         try:
                             out = json.loads(m.group(0))
                             self.job_fails[job] = 0
+                            self.reason = ""
                             return out
                         except json.JSONDecodeError:
                             pass

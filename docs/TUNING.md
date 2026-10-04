@@ -69,7 +69,8 @@ Measured on this machine (4 weak CPU cores, no GPU):
 - Reasoning clouds (the flash class): their thinking runs in a hidden
   `thinking` channel — send NO `think` key (with `think:false` the proxy
   streams the reasoning into the answer's own field) and give
-  `num_predict` ~1100 tokens of headroom; the answer stops naturally.
+  `num_predict` ~3000 of headroom (measured: a live 200-week op digest
+  reasons ~2.2k tokens before the JSON); the answer stops naturally.
 - Structured outputs (`format` = the schema) make valid JSON ~certain;
   the acceptance filters catch the *content* failures instead.
 - One flat `{"text": …}` per call beats arrays: small models truncate

@@ -141,6 +141,8 @@ def snapshot(grove, runner, lock):
         llm_bits = {
             "status": llmm.status_line(g.llm),
             "ok": bool(g.llm and g.llm.enabled),
+            "reason": str(getattr(g.llm, "reason", "") or ""),
+            "fails": dict(getattr(g.llm, "job_fails", {})),
         }
         if g.worker is not None:
             llm_bits["jobs"] = dict(g.jobs)
@@ -451,7 +453,8 @@ function updateDom() {
                blocks[Math.min(7, Math.floor(x * 8 / peak))]).join("")
            }</span></div>`;
   }).join("");
-  $("status").textContent = (s.paused ? "paused · " : "") + s.llm.status;
+  $("status").textContent = (s.paused ? "paused · " : "") + s.llm.status +
+      (s.llm.reason ? " — last stumble: " + s.llm.reason : "");
   $("pauseBtn").textContent = s.paused ? "▶ resume" : "⏸ pause";
   for (const id of ["stepBtn", "soulBtn"]) $(id).disabled = !s.paused;
 }
