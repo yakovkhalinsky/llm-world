@@ -238,8 +238,13 @@ def status_line(llm):
         return "tier local — pure deterministic sim"
     if not llm.enabled:
         return f"tier local — {llm.reason}"
-    base = (f"tier {llm.tier} · {llm.job_models.get('soul')} (soul) · "
-            f"{llm.job_models.get('chron')} (prose)")
+    # one model, moving as one — name it once; if the tie ever slipped,
+    # the split reappears so the drift is seen, not hidden
+    voice = llm.job_models.get("soul", "?")
+    all_speaking_one = all(m == voice for m in llm.job_models.values())
+    base = f"tier {llm.tier} · {voice}" if all_speaking_one else \
+        (f"tier {llm.tier} · {voice} (soul) · "
+         f"{llm.job_models.get('chron')} (prose)")
     if llm.tier != "local":
         base += f" · tokens today {llm.spend_today()}" + \
                 (f"/{llm.budget}" if llm.budget else "")
