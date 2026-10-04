@@ -1,0 +1,130 @@
+/* the biography panel: any soul's ledger */
+function openBio(oid, kind, sp, name) {
+  $("bio").classList.add("on");
+  $("bioName").textContent = (name || "a wild " + sp) + " · " + sp;
+  $("bioState").textContent = "consulting the ledger…";
+  $("bioRows").innerHTML = "";
+  fetch("/api/bio?id=" + oid).then(r => r.json()).then(b => {
+    const state = b.gone ? "remembered in the chronicle"
+        : (b.alive ? "alive in the grove" : "…");
+    $("bioName").textContent = (b.name || name || "a wild " + b.sp)
+        + " · " + b.sp;
+    $("bioState").textContent = state;
+    const rows = b.events || [];
+    $("bioRows").innerHTML = rows.map(ev =>
+      `<li><span class="wk">wk${ev.tick}</span>${ev.text}</li>`).join("") ||
+      "<li><span class='wk'>—</span>no marked events yet; its story is still quiet.</li>";
+  }).catch(() => { $("bioState").textContent = "the ledger resisted"; });
+}
+$("bioClose").onclick = () => {
+  $("bio").classList.remove("on");
+  setFollow(null);
+};
+$("followBtn").onclick = () =>
+  setFollow($("followBtn").classList.contains("on") ? null : { oid: bio.oid, kind: bio.kind });
+
+/* follow-cam: the camera eases toward a soul each frame */
+function setFollow(b) {
+  ST.follow = b;
+  $("followBtn").classList.toggle("on", !!b);
+  const sc = document.querySelector(".map-scroll");
+  if (!b && sc)
+    sc.scrollTo({ left: 0, top: 0, behavior: "smooth" });
+}
+function trackFollow(glide) {
+  const s = ST.s, f = ST.follow;
+  if (!s || !f) return;
+  const list = f.kind === "animal" ? s.animals : s.plants;
+  let ent = null;
+  for (const q of list || []) if (q.id === f.oid && !q.log) { ent = q; break; }
+  if (!ent) return;
+  const sc = document.querySelector(".map-scroll");
+  if (!sc) return;
+  const scale = VIEW.dw / CW;
+  const px = iso(ent.x, ent.y)[0] * scale,
+        py = iso(ent.x, ent.y)[1] * scale;
+  sc.scrollLeft += (px - sc.clientWidth / 2 - sc.scrollLeft) * 0.14;
+  sc.scrollTop += (py - sc.clientHeight / 2 - sc.scrollTop) * 0.14;
+}
+
+/* ============ the HUD's life: waking, calm, fullscreen, tabs ============ */
+const WAKE_MS = 4200;
+let wakeAt = performance.now();
+function wakeHud() {
+  wakeAt = performance.now();
+  document.body.classList.add("hud-on");
+}
+for (const ev of ["mousemove", "mousedown", "wheel", "keydown",
+                  "touchstart"])
+  window.addEventListener(ev, wakeHud, { passive: true });
+document.body.classList.add("hud-on");
+
+$("tabChron").onclick = () => {
+  $("chron").hidden = false; $("sparks").hidden = true;
+  $("tabChron").classList.add("on"); $("tabCensus").classList.remove("on");
+};
+$("tabCensus").onclick = () => {
+  $("chron").hidden = true; $("sparks").hidden = false;
+  $("tune").hidden = true;
+  $("tabCensus").classList.add("on"); $("tabChron").classList.remove("on");
+  $("tabTune").classList.remove("on");
+};
+$("tabTune").onclick = async () => {
+  $("chron").hidden = true; $("sparks").hidden = true;
+  $("tune").hidden = false;
+  $("tabTune").classList.add("on"); $("tabChron").classList.remove("on");
+  $("tabCensus").classList.remove("on");
+  const r = await fetch("/api/tuning");
+  const s = await r.json();
+  const rows = (s.pending || []).map(p =>
+    `<li><b>${p.rule}</b> → ${p.value}` +
+    `<div class="when">wk${p.week} — ${p.why}</div>` +
+    `<div><button class="mini" data-a="accept" data-id="${p.id}">⚔ accept</button> ` +
+    `<button class="mini" data-a="dismiss" data-id="${p.id}">leave it</button></div></li>`);
+  $("tune").innerHTML = rows.join("") ||
+      "<div class='when'>the steward offers nothing at the moment.</div>";
+  const hrows = (s.history || []).slice(0, 8).map(h =>
+    `<li style="opacity:.75"><b>${h.rule}</b> → ${h.value}` +
+    ` <span class="when">${h.status} · wk${h.week}</span></li>`);
+  if (hrows.length)
+    $("tune").innerHTML += "<div style='margin-top:8px'><i style='color:var(--dim);font-size:12px'>the world's amendments</i></div>" +
+      "<ul class='chron' style='max-height:none'>" + hrows.join("") + "</ul>";
+  for (const b of document.querySelectorAll("button.mini"))
+    b.onclick = async () => {
+      await fetch("/api/tuning/" + b.dataset.a,
+                  {method: "POST", headers: {"Content-Type": "application/json"},
+                   body: JSON.stringify({ id: parseInt(b.dataset.id) })});
+      $("tabTune").onclick();
+    };
+};
+
+let calm = false;
+function setHudVisibility() {
+  const idle = performance.now() - wakeAt > WAKE_MS;
+  const reading = document.getElementById("bio") &&
+      document.getElementById("bio").classList.contains("on");
+  // panels always stay; the feed alone follows stillness or calm
+  document.body.classList.toggle("hud-on", !calm && !idle || !!reading);
+  document.body.classList.toggle("calm", calm && !reading);
+}
+setInterval(setHudVisibility, 400);
+window.addEventListener("keydown", e => {
+  if (e.target && e.target.tagName === "INPUT") return;
+  if (e.code === "Space") { e.preventDefault(); $("pauseBtn").onclick(); }
+  else if (e.key === "s") { if (!$("stepBtn").disabled) $("stepBtn").onclick(); }
+  else if (e.key === "n") $("soulBtn").onclick();
+  else if (e.key === "f") $("fsBtn").onclick();
+  else if (e.key === "c") { calm = !calm; setHudVisibility(); }
+});
+$("fsBtn").onclick = () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen().then(() =>
+    setTimeout(() => { if (ST.s && ST.s.size) fitCanvas(ST.s.size); }, 250));
+};
+
+poll(); setInterval(poll, 600);
+requestAnimationFrame(loop);
+// test/debug hook: lets a headless harness (or the console) reach the scene
+if (typeof globalThis !== "undefined" && !("groveDebug" in globalThis))
+  Object.defineProperty(globalThis, "groveDebug", {
+    value: { ST, drawScene, updateDom, poll }, configurable: true });

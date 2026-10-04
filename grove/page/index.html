@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grove</title>
+<style>{{STYLE}}</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="map-scroll" id="scroller">
+    <canvas id="scene"></canvas>
+    <pre class="map" id="map">…</pre>
+  </div>
+  <div class="hud" id="hud">
+    <div class="panel title">☁ ☾ grove</div>
+
+    <div class="panel idbox" id="idbox">
+      <div class="idrow">
+        <span id="when">…</span>
+        <span id="weather">…</span>
+      </div>
+      <div class="poplines" id="pops"></div>
+    </div>
+
+    <div class="panel souline">
+      <div class="soul" id="soul"></div>
+      <div class="llmstat" id="status">…</div>
+    </div>
+
+    <div class="panel feed">
+      <div class="tabs">
+        <button class="on" id="tabChron">chronicle</button>
+        <button id="tabCensus">census</button>
+        <button id="tabTune">⚖ tuning</button>
+      </div>
+      <ul class="chron" id="chron"></ul>
+      <div id="sparks" hidden></div>
+      <div id="tune" hidden style="max-height:38vh; overflow:auto"></div>
+      <div class="status" id="look"></div>
+    </div>
+
+    <div class="panel ctl">
+      <div class="row">
+        <button id="pauseBtn">⏸ pause</button>
+        <button id="stepBtn">+ week</button>
+        <button id="soulBtn">☾ soul</button>
+        <button id="fsBtn">⛶ full</button>
+      </div>
+      <div class="zoomrow">
+        <button id="zoomFit" class="on">fit</button>
+        <button id="zoom1x">1.5×</button>
+        <button id="zoom2x">2×</button>
+        <span class="hint">move to wake · c calm · f full</span>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <input id="qinput" placeholder="ask the grove…">
+        <button id="askBtn">ask ☾</button>
+      </div>
+      <div class="soul" id="askout"></div>
+    </div>
+  </div>
+
+  <div id="bio" class="card">
+    <div class="biohead">
+      <h3 id="bioName">…</h3>
+      <span><button id="followBtn">◎ follow</button>
+      <button class="x" id="bioClose">✕</button></span>
+    </div>
+    <div class="status" id="bioState"></div>
+    <ul class="timeline" id="bioRows"></ul>
+  </div>
+</div>
+<script>{{SCRIPT}}</script>
+</body>
+</html>
