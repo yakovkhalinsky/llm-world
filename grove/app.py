@@ -146,15 +146,6 @@ class Grove:
                 if not self.pending_chron:
                     self.pending_since = w["tick"]
                 self.pending_chron[it["eid"]] = it
-        return evs, notable
-        if llm_items and self.worker is not None:
-            for it in llm_items:
-                self.eid += 1
-                it["eid"] = f"e{self.eid}"
-                if not self.pending_chron:
-                    self.pending_since = w["tick"]
-                self.pending_chron[it["eid"]] = it
-
         # the biographies' ledger: every soul touched by this week's
         # story gets a row pointing at the chronicle's final line
         for e in notable:

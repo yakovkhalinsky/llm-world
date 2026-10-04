@@ -14,7 +14,7 @@ and it touches a path the gate never runs (operator actions).
 
 ## P0 — regressions, one-liners
 
-### b1 · [ ] the biography ledger is unreachable
+### b1 · [x] the biography ledger is unreachable
 
 **Where** `grove/app.py:149` — a mid-function `return evs, notable` was
 inserted by `8f8dffc`; everything below it is dead code, including a
