@@ -37,7 +37,8 @@ def parse(result, fallback, existing):
     """(name, diary) — name validated against the charset rules."""
     name, diary = fallback, ""
     if isinstance(result, dict):
-        parts = str(result.get("name", "")).strip().split()
+        raw = result.get("name")           # a model's null/None is no name
+        parts = raw.strip().split() if isinstance(raw, str) else []
         cand = re.sub(r"[^A-Za-z\-]", "", parts[0]) if parts else ""
         if cand and NAME_RE.match(cand) and cand not in existing:
             name = cand
