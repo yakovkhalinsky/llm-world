@@ -140,10 +140,6 @@ def known_unnamed(world):
             if a["sp"] not in ("stag", "wolf"):   # visitors aren't of us
                 out.append(a)
     return sorted(out, key=lambda a: -a["age"])
-    if lines:
-        out.append("last chronicle:")
-        out.extend(f"  - {ln}" for ln in lines)
-    return "\n".join(out)
 
 
 def validate(raw):
