@@ -126,11 +126,12 @@ const driver = `
   const cells = [];
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     let c;
-    if (y === 5 && (x === 2 || x === 3))      c = ["w", 0, 0, 0, 0];
-    else if (x === 7 && y === 7)              c = ["r", 0, 0, 0, 0];
-    else if (x === 1 && y === 6)              c = ["s", 0.9, 0.8, 1, 1];
-    else if (x === 6 && y === 1)              c = ["s", 0.9, 0, 0, 0];
-    else c = ["s", ((x + y) % 2) / 2, ((x + y) % 3) / 3 > 0.2 ? 0.9 : 0, 0, 0];
+    if (y === 5 && (x === 2 || x === 3))      c = ["w", 0, 0, 0, 0, 0];
+    else if (x === 7 && y === 7)              c = ["r", 0, 0, 0, 0, 1.0];
+    else if (x === 1 && y === 6)              c = ["s", 0.9, 0.8, 1, 1, 0.15];
+    else if (x === 6 && y === 1)              c = ["s", 0.9, 0, 0, 0, 0.9];
+    else c = ["s", ((x + y) % 2) / 2, ((x + y) % 3) / 3 > 0.2 ? 0.9 : 0,
+              0, 0, 0.3 + ((x + y) % 3) * 0.1];
     cells.push(c);
   }
   const plants = [
@@ -145,6 +146,7 @@ const driver = `
     { id: 9, x: 5, y: 5, sp: "saguaro", st: "mature" },
     { id: 10, x: 6, y: 5, sp: "saguaro", st: "sapling" },
     { id: 20, x: 2, y: 4, sp: "birch", st: "mature" },   // leans on the pond
+    { id: 21, x: 6, y: 1, sp: "pine", st: "mature" },    // on the hill
   ];
   const animals = [
     { id: 1, x: 3, y: 3, px: 3, py: 3, sp: "rabbit", ag: 12 },
@@ -159,6 +161,7 @@ const driver = `
   ];
   const world = {
     tick: 472, season: "winter", weather: "clear", size, paused: false,
+    biome: { elev_px: 30 },
     now: 0, step_at: 0, tick_seconds: 8,
     map: [], llm: { status: "at rest" }, chronicle: [], pop_chips: [],
     series: [],
@@ -170,6 +173,11 @@ const driver = `
   SHAPES["saguaro"] = "cactus";     // what the desert's pack injects
   const tnow = 12345678;
   const tsec = tnow / 1000;
+  // a tile's drawn position rides the land's own elevation
+  const tileAt = (x2, y2) => {
+    const t3 = iso(x2, y2);
+    return [t3[0], t3[1] - elevAt(x2, y2)];
+  };
 
   const reset = () => { FACING.length = 0; dots.length = 0; };
   function traceOf(fn) {
@@ -238,17 +246,17 @@ const driver = `
            Math.abs(xy[1] - y2 * sB) < tol * sB;
   };
   const frame = tr1;                        // the whole world's strokes
-  const tile6 = iso(6, 1);                  // grass 0.9: tall grass
+  const tile6 = tileAt(6, 1);  // grass 0.9, elev 0.9: the hill
   const tufts = frame.filter(s2 =>
       (s2.startsWith("quadraticCurveTo(") || s2.startsWith("moveTo(")) &&
       (near(s2, "quadraticCurveTo", tile6[0], tile6[1], 8) ||
        near(s2, "moveTo", tile6[0], tile6[1], 8))).length;
-  const rock7 = iso(7, 7);                  // the rock cell
+  const rock7 = tileAt(7, 7);               // the rock cell
   const pebble = frame.filter(s2 =>
       s2.startsWith("ellipse(") && near(s2, "ellipse",
       rock7[0], rock7[1], 7)).length;
   ok("the rock carries its pebbles", pebble >= 2, pebble + " pebbles");
-  const shore2 = iso(2, 4);                 // touches water at (2,5)
+  const shore2 = tileAt(2, 4);              // touches water at (2,5)
   const reed = frame.filter(s2 =>
       s2.startsWith("quadraticCurveTo(") &&
       near(s2, "quadraticCurveTo", shore2[0], shore2[1], 8)).length;
@@ -267,7 +275,7 @@ const driver = `
      foamA.length + " foam lines, alphas " +
        Math.min(...foamA).toFixed(2) + " to " +
        Math.max(...foamA).toFixed(2));
-  const pond2 = iso(2, 5);
+  const pond2 = tileAt(2, 5);
   const mirror = frame.filter(s2 =>
       (s2.startsWith("ellipse(") || s2.startsWith("fillRect(")) &&
       (near(s2, "ellipse", pond2[0], pond2[1], 10) ||
@@ -280,6 +288,51 @@ const driver = `
   const pineTrace = traceOf(() => drawPlant(plants[0], tsec));
   ok("winter thins the canopy",
      pineTrace.includes("globalAlpha=0.85"));
+
+  // the land rises: the world's own elev drawn — the hill tile's top
+  // corner sits 0.9 * elev_px above its flat position, the pack's own
+  // relief scale
+  const hill = tileAt(6, 1);
+  const rise = frame.filter(s2 =>
+      s2.startsWith("moveTo(") &&
+      near(s2, "moveTo", hill[0], hill[1] - 10, 1.5)).length;
+  ok("the hill rises with the land",
+     rise >= 2 && elevPx() === 30,
+     "elev_px " + elevPx() + ", " + rise + " corners at the height");
+  const sunlit = frame.filter(s2 => s2 === "fillStyle=#4a392a").length;
+  const shaded = frame.filter(s2 => s2 === "fillStyle=#3a2d20").length;
+  ok("the cliffs draw their walls", sunlit >= 4 && shaded >= 4,
+     sunlit + " sunlit, " + shaded + " shaded");
+
+  // creatures ride the land: same species and glide phase, different
+  // cells — the whole difference is the ground itself
+  const translatedY = tr => {
+    const q = tr.find(q2 => q2.startsWith("translate("));
+    return q ? parseFloat(q.split(",")[1]) : null;
+  };
+  const riderA = { id: 2, x: 6, y: 1, px: 6, py: 1, sp: "deer", ag: 12 };
+  const riderB = { id: 2, x: 6, y: 2, px: 6, py: 2, sp: "deer", ag: 12 };
+  const tyA = translatedY(traceOf(() => drawAnimal(riderA, 1, tsec, 0)));
+  const tyB = translatedY(traceOf(() => drawAnimal(riderB, 1, tsec, 0)));
+  const expD = tileAt(6, 1)[1] - tileAt(6, 2)[1];   // logical units
+  ok("creatures ride the land",
+     tyA !== null && tyB !== null && Math.abs((tyA - tyB) - expD) < 2,
+     (tyA - tyB).toFixed(1) + " vs " + expD.toFixed(1));
+
+  // a click on the raised hill still picks its tile
+  let pickedHill = null, pickedWater = null, pickErr = null;
+  try {
+    pickedHill = pickCell(world, hill[0], hill[1]);
+    pickedWater = pickCell(world, pond2[0], pond2[1]);
+  } catch (e) { pickErr = String(e && e.message || e); }
+  ok("a click on the hill picks its tile",
+     pickErr === null && pickedHill && pickedHill[0] === 6 &&
+       pickedHill[1] === 1,
+     pickErr ? ("throws: " + pickErr) :
+       pickedHill ? pickedHill.join(",") : "nothing picked");
+  ok("a click on the pond picks its water",
+     pickedWater && pickedWater[0] === 2 && pickedWater[1] === 5,
+     pickedWater ? pickedWater.join(",") : "nothing picked");
 
   // a tree draws the same twice, and a different tree draws differently
   const tw = (id) => ({ id, x: 5, y: 6, sp: "willow", st: "mature" });
@@ -295,7 +348,7 @@ const driver = `
   for (const c of [plants[8], plants[9]]) {
     let stray = null;
     TRACE.length = 0; drawPlant(c, tsec);
-    const [tx, ty] = iso(c.x, c.y);
+    const [tx, ty] = tileAt(c.x, c.y);
     for (const s of TRACE) {
       const m = s.match(/^fillRect\\((-?[\\d.]+),(-?[\\d.]+),/);
       if (!m) continue;

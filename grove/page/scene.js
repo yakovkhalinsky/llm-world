@@ -47,6 +47,20 @@ window.addEventListener("resize", () => {
 /* cell (x, y) → screen position of the diamond's center */
 function iso(x, y) { return [OX + (x - y) * TW / 2, OY + (x + y) * TH / 2]; }
 
+/* the earth's own scale: units of elevation to pixels, from the pack
+   (the desert makes taller dunes than the grove does) */
+function elevPx() {
+  const b = ST.s && ST.s.biome;
+  return (b && b.elev_px) || 26;
+}
+/* a cell's drawn elevation in pixels — the land rises, water stays low */
+function elevAt(x, y) {
+  const s = ST.s;
+  if (!s || !s.cells) return 0;
+  const c = s.cells[y * s.size + x];
+  return Math.max(0, (c && c[5]) || 0) * elevPx();
+}
+
 /* a deterministic per-object nudge: the forest is not stamped on a
    grid — every thing stands a breath off-centre, at its own size,
    stable to its id so it never wobbles between frames */
@@ -208,10 +222,13 @@ function drawVignette() {
 }
 
 function drawTerrain(s, tsec) {
-  const p = pal(), size = s.size;
+  const p = pal(), size = s.size, px = elevPx();
   for (let i = 0; i < s.cells.length; i++) {
     const c = s.cells[i];
-    const [sx, sy] = iso(i % size, Math.floor(i / size));
+    const x = i % size, y = Math.floor(i / size);
+    const eMe = Math.max(0, c[5] || 0);
+    const [sx, sy0] = iso(x, y);
+    const sy = sy0 - eMe * px;           // the land rises here
 
     if (c[0] === "w") {
       ctx.fillStyle = p.water;
@@ -317,6 +334,32 @@ function drawTerrain(s, tsec) {
       ctx.moveTo(sx - 6, sy + 1);
       ctx.lineTo(sx + 3 - (i % 5), sy - 2 - (i % 3));
       ctx.stroke();
+    }
+
+    /* the walls: where the ground beside this tile stands lower — or
+       the island's edge falls away — the earth shows its side, sunlit
+       to the SE, shaded to the SW */
+    const dX = (eMe - (x < size - 1 ?
+                       Math.max(0, s.cells[i + 1][5] || 0) : 0)) * px;
+    if (dX > 1) {
+      ctx.fillStyle = "#4a392a";
+      ctx.beginPath();
+      ctx.moveTo(sx + TW / 2, sy);
+      ctx.lineTo(sx, sy + TH / 2);
+      ctx.lineTo(sx, sy + TH / 2 + dX);
+      ctx.lineTo(sx + TW / 2, sy + dX);
+      ctx.closePath(); ctx.fill();
+    }
+    const dY = (eMe - (y < size - 1 ?
+                       Math.max(0, s.cells[i + size][5] || 0) : 0)) * px;
+    if (dY > 1) {
+      ctx.fillStyle = "#3a2d20";
+      ctx.beginPath();
+      ctx.moveTo(sx, sy + TH / 2);
+      ctx.lineTo(sx - TW / 2, sy);
+      ctx.lineTo(sx - TW / 2, sy + dY);
+      ctx.lineTo(sx, sy + TH / 2 + dY);
+      ctx.closePath(); ctx.fill();
     }
 
     /* the shore: ground that touches water wears a wet rim, and the
@@ -474,6 +517,7 @@ function drawPlant(t, tsec) {
   const p = pal(), sway = Math.sin(tsec * 1.1) * 0.05;
   const js = 0.92 + jit(t.id, 3) * 0.16;      // each thing's own size
   let [sx, sy] = iso(t.x, t.y);
+  sy -= elevAt(t.x, t.y);                      // plants stand on the land
   sx += (jit(t.id, 1) - 0.5) * 6 * K;
   sy += (jit(t.id, 2) - 0.5) * 4 * K;
   if (t.st !== "log") {          // the ground remembers the weight
@@ -676,7 +720,11 @@ function drawAnimal(a, f, tsec, idx) {
   /* every gait rides the glide too: while a creature covers its journey
      its legs swing through a stride or two; standing, they rest */
   const stride = f < 1 ? 1 : 0;
-  const cy = OY + gy + lift * K + jy;
+  // creatures stand on the land: their height rides between the start
+  // and end cells' elevations as they glide
+  const eL = elevAt(a.px ?? a.x, a.py ?? a.y) +
+      (elevAt(a.x, a.y) - elevAt(a.px ?? a.x, a.py ?? a.y)) * e;
+  const cy = OY + gy + lift * K + jy - eL;
   if (flyer) shadow(OX + gx + jx, OY + gy + 2, 3 * sz);   // small, distant
   else shadow(OX + gx + jx, OY + gy, 6 * sz);
   ctx.save();
@@ -1029,6 +1077,30 @@ function loop(tnow) {
   requestAnimationFrame(loop);
 }
 
+/* pick a cell from a click, honoring the land's relief: the flat map
+   is a first guess, and the raised diamonds around it correct it */
+function pickCell(s, u0, v0) {
+  const gx = Math.round((u0 - OX) / (TW / 2) / 2
+                        + (v0 - OY) / (TH / 2) / 2);
+  const gy = Math.round((v0 - OY) / (TH / 2) / 2
+                        - (u0 - OX) / (TW / 2) / 2);
+  let best = null, bestD = 1e9;
+  for (let dy = -1; dy <= 1; dy++)
+    for (let dx = -1; dx <= 1; dx++) {
+      const x = gx + dx, y = gy + dy;
+      if (x < 0 || y < 0 || x >= s.size || y >= s.size) continue;
+      const [cx, cy0] = iso(x, y);
+      const cy = cy0 - elevAt(x, y);
+      const du = Math.abs(u0 - cx) / (TW / 2) +
+                 Math.abs(v0 - cy) / (TH / 2);
+      if (du <= 1.001) {
+        const d = (u0 - cx) * (u0 - cx) + (v0 - cy) * (v0 - cy);
+        if (d < bestD) { best = [x, y]; bestD = d; }
+      }
+    }
+  return best;                    // null → the click fell on the sky
+}
+
 /* look at a tile (click) — inverse isometric mapping; a named (or lone)
    occupant opens its biography */
 cnv.addEventListener("click", e => {
@@ -1037,11 +1109,9 @@ cnv.addEventListener("click", e => {
   const r = cnv.getBoundingClientRect();
   const u0 = (e.clientX - r.left) / r.width * CW;
   const v0 = (e.clientY - r.top) / r.height * CH;
-  const x = Math.round((u0 - OX) / (TW / 2) / 2
-                       + (v0 - OY) / (TH / 2) / 2);
-  const y = Math.round((v0 - OY) / (TH / 2) / 2
-                       - (u0 - OX) / (TW / 2) / 2);
-  if (x < 0 || y < 0 || x >= s.size || y >= s.size) return;
+  const picked = pickCell(s, u0, v0);
+  if (!picked) return;
+  const [x, y] = picked;
   const c = s.cells[y * s.size + x];
   const here = [];
   for (const a of s.animals || [])
