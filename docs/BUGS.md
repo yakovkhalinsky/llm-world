@@ -134,7 +134,7 @@ no "runner error" line, and the species appears at the region's edge.
 
 ## P1 — the voice tier's model machinery (`grove/llm.py`)
 
-### b4 · [ ] "one model, moving as one" — the init block is a no-op, and the swap walks the wrong chains
+### b4 · [x] "one model, moving as one" — the init block is a no-op, and the swap walks the wrong chains
 
 **Where** `grove/llm.py:69-71`. The `setdefault` can never fire: the
 `LOCAL_JOBS` loop three lines above already assigned `job_models` and

@@ -1,11 +1,13 @@
-"""Ollama client for the grove's LLM jobs, with tiered/per-job models.
+"""Ollama client for the grove's LLM jobs, with tiered models.
 
 Local hardware reality (measured on the grove's own CPU): llama-3.2-3b
 writes the best prose, names and judgments (~20-60 s warm per call);
-llama-3.2-1b keeps up with the chronicler (~5-8 s per line). So in the
-local tier each job runs on the model that suits its cadence, with an
-automatic swap to the other after repeated failures. The cloud tier
-keeps a single fast chain with local fallback.
+llama-3.2-1b keeps up with the chronicler (~5-8 s per line). The soul's
+voice — the operator, the chronicle, the naming and the diaries — speaks
+with ONE model, always: one resolution and one chain, advancing together
+(an automatic swap after repeated failures). ask and review keep the
+models that suit their cadence. The cloud tier runs that one model on a
+single fast chain with local fallback.
 
 Local chains also keep ~everything resident: keep_alive 30m both models
 (~3.3 GB), so warm calls stay warm. chat_json NEVER raises.
@@ -28,13 +30,14 @@ LOCAL_ALT = {"llama3.2:3b": "llama3.2:1b", "llama3.2:1b": "llama3.2:3b"}
 CLOUD_CHAIN = ["glm-5.3-flash:cloud", "glm-5.2:cloud",
               "deepseek-v4-pro:cloud", "llama3.2:1b"]
 LOCAL_FALLBACK_ORDER = ["llama3.2:1b", "llama3.2:3b"]
-# tier -> (jobs on the cloud chain, jobs on the local tables)
-# hybrid = the soul's judgment in the cloud, the forest's voice local:
-#   the chronicle is ~80% of the token spend and the local 1B keeps up
+# tier -> (jobs on the cloud chain, jobs on the local tables).
+# op/chron/voice sit in no list: the soul's voice is tied to the soul's
+# resolution and chain in __init__, in every tier — the lists here
+# decide only ask and review.
 TIER_JOBS = {
-    "local": ([], ["soul", "chron", "voice", "ask", "review"]),
-    "cloud": (["soul", "chron", "voice", "ask", "review"], []),
-    "hybrid": (["soul", "ask", "review"], ["chron", "voice"]),
+    "local": ([], ["soul", "ask", "review"]),
+    "cloud": (["soul", "ask", "review"], []),
+    "hybrid": (["soul", "ask", "review"], []),
 }
 
 
@@ -60,15 +63,18 @@ class LLM:
         else:
             self.explicit = model
         self.job_models = {}
+        self.job_chains = {}
         for job in LOCAL_JOBS:
+            if job in ("chron", "voice", "op"):
+                continue          # the soul's voice speaks for these too
             model, chain = self._resolve(job)
             self.job_models[job] = model
             self.job_chains[job] = list(chain)
         # the voice (soul) and the prose speak with ONE model, always:
         # the same resolution and the same chain, advancing together
-        for job in ("chron", "voice"):
-            self.job_models.setdefault(job, self.job_models["soul"])
-            self.job_chains.setdefault(job, list(self.job_chains["soul"]))
+        for job in ("chron", "voice", "op"):
+            self.job_models[job] = self.job_models["soul"]
+            self.job_chains[job] = list(self.job_chains["soul"])
 
     # -- model resolution ------------------------------------------------
     def _available(self, name):
