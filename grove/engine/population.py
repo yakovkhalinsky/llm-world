@@ -42,7 +42,8 @@ def _recolonize(w, evs):
                          and (x in (0, size - 1) or y in (0, size - 1))]
                 if edges:
                     rng = W.rng_for(w["seed"], t, f"recol:{sp}")
-                    n_new = 4 if sp in ("rabbit", "robin") else 2
+                    n_new = 4 if sp in rules.R["pop"].get(
+                        "flock_species", ("rabbit", "robin")) else 2
                     for _ in range(n_new):
                         x, y = rng.choice(edges)
                         w["animals"][str(w["next_id"])] = W.new_animal(

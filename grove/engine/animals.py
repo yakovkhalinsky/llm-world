@@ -193,7 +193,7 @@ def _diet_browse(w, a, spec, evs, t, speed, rng):
 def _diet_glean(w, a, spec, evs, t, speed, rng):
     """Gleaning, the light hand: fruit, then mushrooms, then a nibble."""
     c0 = w["cells"][a["y"]][a["x"]]
-    bush = _berry_here(w, a["x"], a["y"])
+    bush = _fruit_here(w, a["x"], a["y"])
     if bush:
         bush["berries"] = False
         bush["hp"] = max(0.5, bush["hp"] - 1.0)
@@ -334,9 +334,10 @@ def _nearest_sapling(w, x, y, radius):
             best, bd = p, d
     return best
 
-def _berry_here(w, x, y):
+def _fruit_here(w, x, y):
+    """A fruiting bush on this cell: any shrub the pack grows."""
     for p in w["plants"].values():
-        if p["x"] == x and p["y"] == y and p["sp"] == "berry" \
+        if p["x"] == x and p["y"] == y and W.PLANT_SPECIES[p["sp"]]["kind"] == "shrub" \
                 and p.get("berries") and p["stage"] != "log":
             return p
     return None
@@ -356,7 +357,8 @@ def _nearest_food(w, x, y, radius):
         bush = None
         bd = radius + 1
         for p in w["plants"].values():
-            if p["sp"] == "berry" and p.get("berries") and p["stage"] != "log":
+            if W.PLANT_SPECIES[p["sp"]]["kind"] == "shrub" \
+                and p.get("berries") and p["stage"] != "log":
                 d = abs(p["x"] - x) + abs(p["y"] - y)
                 if d <= radius and d < bd:
                     bush = (p["x"], p["y"])

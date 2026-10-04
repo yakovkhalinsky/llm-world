@@ -25,7 +25,6 @@ CHECKS = {
     "species_min": 6,           # every base resident alive in the end
     # every plant species must still be living at the end of the run —
     # the seed bank exists so no species goes permanently extinct
-    "plant_species": ("pine", "birch", "willow", "fern", "berry"),
 }
 
 
@@ -41,7 +40,7 @@ def run_world(seed, weeks):
         pops_hist.append(c)
         plant_hist.append(W.plant_counts(w))
         # extinction bookkeeping from the world's own ledger
-        for sp in ("rabbit", "deer", "fox", "owl", "robin", "boar"):
+        for sp in RL.R["pop"]["base_residents"]:
             absent = c.get(sp, 0) == 0
             was = sp in absent_before
             if not absent:
@@ -51,15 +50,14 @@ def run_world(seed, weeks):
             else:
                 absent_before.add(sp)
     extinctions = len([sp for c in [pops_hist[-1]]
-                       for sp in ("rabbit", "deer", "fox", "owl", "robin",
-                                  "boar") if c.get(sp, 0) == 0]) or 0
+                       for sp in RL.R["pop"]["base_residents"]
+                       if c.get(sp, 0) == 0]) or 0
     # a species that ENDED absent counts once
-    ended_absent = [sp for sp in ("rabbit", "deer", "fox", "owl",
-                                  "robin", "boar")
+    ended_absent = [sp for sp in RL.R["pop"]["base_residents"]
                     if pops_hist[-1].get(sp, 0) == 0]
     spans = {}
-    for sp in ("rabbit", "deer", "fox", "owl", "robin", "boar", "pine",
-               "birch"):
+    for sp in (list(RL.R["pop"]["base_residents"])
+               + list(RL.R["plants"])):
         ser = [c.get(sp, 0) for c in (pops_hist + plant_hist)
                if sp in (c or {})]
         spans[sp] = (min(ser) if ser else 0, max(ser) if ser else 0)
@@ -75,18 +73,24 @@ def judge(report, weeks):
     fails = []
     end = report["end"]
     if sum(n for sp, n in end.items()
-           if sp in ("pine", "birch", "willow")) < CHECKS["plants_min"]:
+           if sp in RL.R["plants"]) < RL.R["gate"].get(
+        "plants_min", CHECKS["plants_min"]):
         fails.append("the forest lost its canopy")
-    rosters = [sp for sp in ("rabbit", "deer", "fox", "owl", "robin",
-                             "boar") if end.get(sp, 0) == 0]
-    # robins read as gone only if the run doesn't END in winter, when
-    # they are legitimately south
-    if report.get("end_season") == "winter":
-        rosters = [sp for sp in rosters if sp != "robin"]
+    rosters = [sp for sp in RL.R["pop"]["base_residents"]
+                if end.get(sp, 0) == 0]
+    # the migratory read as gone only if the run doesn't END in their
+    # away-season, when they are legitimately south
+    migrants = [sp for sp, spec in RL.R["animals"].items()
+                if spec.get("migration")]
+    away = (migrants and RL.R["animals"][migrants[0]]
+            .get("migration", {}).get("leave_at", 3))
+    if away is not None and report.get("end_season") == \
+            ["spring", "summer", "autumn", "winter"][away]:
+        rosters = [sp for sp in rosters if sp not in migrants]
     missing = rosters
     if missing:
         fails.append(f"species gone: {','.join(missing)}")
-    missing = [sp for sp in CHECKS["plant_species"] if end.get(sp, 0) == 0]
+    missing = [sp for sp in RL.R["plants"] if end.get(sp, 0) == 0]
     if missing:
         fails.append(f"plant species extinct: {','.join(missing)}")
     if all(n == 0 for n in end.values()):
@@ -108,8 +112,13 @@ def main():
     ap.add_argument("--weeks", type=int, default=900)
     ap.add_argument("--jobs", type=int, default=mp.cpu_count() or 2)
     ap.add_argument("--start-seed", type=int, default=1)
+    ap.add_argument("--biome", default=None,
+                    help="fold a biome pack in before the worlds run")
     a = ap.parse_args()
 
+    if a.biome:
+        from grove import rules as RL
+        RL.select_biome(a.biome)
     seeds = [(a.start_seed + i, a.weeks) for i in range(a.seeds)]
     print(f"balance: {a.seeds} worlds × {a.weeks} weeks ({a.weeks // 48:.0f} yrs) "
           f"({a.jobs} processes)")

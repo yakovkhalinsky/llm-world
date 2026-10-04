@@ -38,7 +38,9 @@ def tick(world):
     bank = world.setdefault("seedbank", {})
     if bank and world["tick"] % 4 == 0:
         for sp in bank:
-            bank[sp] = int(bank[sp] * 0.995)
+            # the bed decays slowly but never to nothing: its last seed
+            # remains — soil memory, not a consumable ledger
+            bank[sp] = max(1, int(bank[sp] * 0.995))
     _check_destinies(world, evs)
     _recolonize(world, evs)
     world["name_budget"] = rules.R["pacing"]["naming_budget_per_week"]

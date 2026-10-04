@@ -55,7 +55,9 @@ def _apply_effect(world, effect, evs):
                 break
             x, y = rng.choice(spots)
             world["plants"][str(world["next_id"])] = W.new_plant(
-                world["next_id"], "berry", x, y, "mature", 3)
+                world["next_id"],
+                rules.R["pop"].get("bloom_species", "berry"),
+                x, y, "mature", 3)
             world["next_id"] += 1
             planted += 1
         ev["n"] = planted

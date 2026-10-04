@@ -85,17 +85,17 @@ def _update_plants(w, evs, light):
                 p_dr = True
 
         # weather stress
-        if w["weather"] == "frost" and spec["frost_hp"]:
+        if w["weather"] == "frost" and spec.get("frost_hp", 0):
             p["hp"] -= spec["frost_hp"]
             damaged = True
             if p["hp"] < rules.R["cells"]["understory_hp_floor"] \
                     and spec["kind"] != "tree":
                 p["hp"] = rules.R["cells"]["understory_hp_floor"]      # the cold stuns; it does not murder
         if w["weather"] == "storm":
-            base = (spec["storm_fall_old"] if p["stage"] == "old"
-                    else spec["storm_fall_mature"]
+            base = (spec.get("storm_fall_old", 0) if p["stage"] == "old"
+                    else spec.get("storm_fall_mature", 0)
                     if p["stage"] == "mature"
-                    else spec["storm_fall_mature"] * 0.5)
+                    else spec.get("storm_fall_mature", 0) * 0.5)
             if rng.random() < base:
                 _fell(w, p, evs, "storm")
                 fallen.append(pid)
@@ -227,7 +227,7 @@ def _germinate(w, evs):
         # rescue draws on it without emptying it; decay is the only loss
         n = min(rules.R["pop"]["germinate_cap"],
                 max(rules.R["pop"]["germinate_min"],
-                    bank.get(sp, 0) // 10)) if bank.get(sp) else 0
+                    int(bank.get(sp, 0) // 10))) if bank.get(sp) else 0
         if n <= 0 or (alive and t % 48 < 24):
             continue                        # don't smother a surviving handful
         size = w["size"]
@@ -301,10 +301,10 @@ def _spread_understory(w, p, spec, light, rng):
     if c["terrain"] != "soil" or light[sy][sx] >= spec["light_need"] * 1.2:
         return
     if _understory_in_cell(w, sx, sy) >= 1:
-        _bank(w, "fern")               # spores sleep in the soil instead
+        _bank(w, p["sp"])              # spores sleep in the soil instead
         return
     w["plants"][str(w["next_id"])] = W.new_plant(
-        w["next_id"], "fern", sx, sy, "sapling", 0)
+        w["next_id"], p["sp"], sx, sy, "sapling", 0)
     w["next_id"] += 1
 
 def _understory_in_cell(w, x, y):

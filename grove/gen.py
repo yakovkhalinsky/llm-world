@@ -186,8 +186,9 @@ def generate(seed: int, size: int = None, biome: str = None) -> dict:
     # --- initial animals ---------------------------------------------------
     land = [(x, y) for y in range(size) for x in range(size)
             if cells[y][x]["terrain"] != "water"]
-    starts = {"rabbit": 26, "deer": 8, "fox": 4, "owl": 3,
-              "robin": 14, "boar": 5}
+    starts = dict(gr.get("starting_animals",
+                         {"rabbit": 26, "deer": 8, "fox": 4, "owl": 3,
+                          "robin": 14, "boar": 5}))
     animals = {}
     for sp, n in starts.items():
         for _ in range(n):
