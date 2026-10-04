@@ -116,72 +116,21 @@ def _behave(w, a, spec, evs, rng, winter):
                 ate = True
                 break
 
-    # -- herbivores / omnivores -----------------------------------------
-    if a["sp"] == "rabbit":
-        # something with teeth nearby? scatter.
-        threat = next((q for q in w["animals"].values()
-                       if q["sp"] in ("fox", "wolf")
-                       and abs(q["x"] - a["x"]) + abs(q["y"] - a["y"]) <= 3),
-                      None)
-        if threat:
-            px = max(-1, min(1, a["x"] - threat["x"]))
-            py = max(-1, min(1, a["y"] - threat["y"]))
-            saved = (a["x"], a["y"])
-            step_toward(w, a, a["x"] + px * 4, a["y"] + py * 4, speed,
-                        spec.get("flyer"))
-            if (a["x"], a["y"]) == saved:
-                _wander(w, a, speed, spec.get("flyer"), rng)
-            return False
-        if c0["grass"] >= 0.12:
-            c0["grass"] -= 0.18
-            ate = True
-        else:
-            tgt = _nearest_grass(w, a["x"], a["y"], 0.15, spec["scan"])
-            _move_to(w, a, tgt, speed, spec.get("flyer"))
-    elif a["sp"] == "deer":
-        sap = _nearest_sapling(w, a["x"], a["y"], spec["scan"])
-        if sap is not None and a["hunger"] > 6 and rng.random() < 0.5:
-            sap["hp"] -= 1.5
-            evs.append({"tick": t, "kind": "browsed", "plant": sap["id"],
-                        "sp": sap["sp"], "x": sap["x"], "y": sap["y"]})
-            ate = True
-        elif c0["grass"] >= 0.15:
-            c0["grass"] -= 0.12
-            ate = True
-        else:
-            tgt = _nearest_grass(w, a["x"], a["y"], 0.15, spec["scan"])
-            _move_to(w, a, tgt, speed, spec.get("flyer"))
-    elif a["sp"] == "robin":
-        bush = _berry_here(w, a["x"], a["y"])
-        if bush:
-            bush["berries"] = False
-            bush["hp"] = max(0.5, bush["hp"] - 1.0)
-            evs.append({"tick": t, "kind": "picked", "plant": bush["id"],
-                        "sp": bush["sp"], "x": bush["x"], "y": bush["y"]})
-            ate = True
-        elif c0["mushroom"]:
-            c0["mushroom"] = 0
-            ate = True
-        elif c0["grass"] >= 0.2:
-            c0["grass"] -= 0.04
-            ate = True
-        else:
-            tgt = _nearest_food(w, a["x"], a["y"], spec["scan"])
-            _move_to(w, a, tgt, speed, spec.get("flyer"))
-    elif a["sp"] == "boar":
-        if c0["mushroom"]:
-            c0["mushroom"] = 0
-            ate = True
-        elif c0["carcass"]:
-            c0["carcass"] = 0
-            ate = True
-        elif c0["grass"] >= 0.2:
-            c0["grass"] -= 0.15
-            ate = True
-        else:
-            tgt = _nearest_food(w, a["x"], a["y"], spec["scan"])
-            _move_to(w, a, tgt, speed, spec.get("flyer"))
-
+    # -- the feeding laws: the species table names its diet and carries
+    # each law's numbers; the engine runs the law it is given ----------
+    diet = spec.get("diet")
+    res = None
+    if diet == "graze":
+        res = _diet_graze(w, a, spec, evs, t, speed, rng)
+    elif diet == "browse":
+        res = _diet_browse(w, a, spec, evs, t, speed, rng)
+    elif diet == "glean":
+        res = _diet_glean(w, a, spec, evs, t, speed, rng)
+    elif diet == "scavenge":
+        res = _diet_scavenge(w, a, spec, evs, t, speed, rng)
+    if res == "moved":    # the scatter already moved; no second step
+        return False
+    ate = ate or bool(res)
     if ate:
         a["hunger"] = max(0.0, a["hunger"] - 7.0)
         a["energy"] = min(10.0, a["energy"] + 2.0)
@@ -189,6 +138,94 @@ def _behave(w, a, spec, evs, rng, winter):
     elif speed:
         _wander(w, a, speed, spec.get("flyer"), rng)
     return ate
+
+
+# --- the feeding laws -------------------------------------------------
+# every law's numbers live on the species table (with today's values as
+# defaults, so no table edit is needed to keep the world's behavior)
+
+def _diet_graze(w, a, spec, evs, t, speed, rng):
+    """Grazing: flee what hunts it when close; graze tall-enough grass;
+    else walk toward taller grass."""
+    c0 = w["cells"][a["y"]][a["x"]]
+    flee = next((q for q in w["animals"].values()
+                 if q["sp"] in spec.get("flee_from", ())
+                 and abs(q["x"] - a["x"]) + abs(q["y"] - a["y"])
+                 <= spec.get("flee_range", 3)), None)
+    if flee is not None:
+        px = max(-1, min(1, a["x"] - flee["x"]))
+        py = max(-1, min(1, a["y"] - flee["y"]))
+        saved = (a["x"], a["y"])
+        step_toward(w, a, a["x"] + px * spec.get("flee_cells", 4),
+                    a["y"] + py * spec.get("flee_cells", 4), speed,
+                    spec.get("flyer"))
+        if (a["x"], a["y"]) == saved:
+            _wander(w, a, speed, spec.get("flyer"), rng)
+        return "moved"     # already moved; the caller takes no second step
+    if c0["grass"] >= spec.get("graze_at", 0.12):
+        c0["grass"] -= spec.get("graze_take", 0.18)
+        return True
+    tgt = _nearest_grass(w, a["x"], a["y"], spec.get("seek_at", 0.15),
+                         spec["scan"])
+    _move_to(w, a, tgt, speed, spec.get("flyer"))
+    return False
+
+
+def _diet_browse(w, a, spec, evs, t, speed, rng):
+    """Browsing: prune saplings when grown hungry, else graze."""
+    c0 = w["cells"][a["y"]][a["x"]]
+    sap = _nearest_sapling(w, a["x"], a["y"], spec["scan"])
+    if sap is not None and a["hunger"] > spec.get("browse_hunger", 6) \
+            and rng.random() < spec.get("browse_chance", 0.5):
+        sap["hp"] -= spec.get("browse_hp", 1.5)
+        evs.append({"tick": t, "kind": "browsed", "plant": sap["id"],
+                    "sp": sap["sp"], "x": sap["x"], "y": sap["y"]})
+        return True
+    if c0["grass"] >= spec.get("graze_at", 0.15):
+        c0["grass"] -= spec.get("graze_take", 0.12)
+        return True
+    tgt = _nearest_grass(w, a["x"], a["y"], spec.get("seek_at", 0.15),
+                         spec["scan"])
+    _move_to(w, a, tgt, speed, spec.get("flyer"))
+    return False
+
+
+def _diet_glean(w, a, spec, evs, t, speed, rng):
+    """Gleaning, the light hand: fruit, then mushrooms, then a nibble."""
+    c0 = w["cells"][a["y"]][a["x"]]
+    bush = _berry_here(w, a["x"], a["y"])
+    if bush:
+        bush["berries"] = False
+        bush["hp"] = max(0.5, bush["hp"] - 1.0)
+        evs.append({"tick": t, "kind": "picked", "plant": bush["id"],
+                    "sp": bush["sp"], "x": bush["x"], "y": bush["y"]})
+        return True
+    if c0["mushroom"]:
+        c0["mushroom"] = 0
+        return True
+    if c0["grass"] >= spec.get("graze_at", 0.2):
+        c0["grass"] -= spec.get("graze_take", 0.04)
+        return True
+    tgt = _nearest_food(w, a["x"], a["y"], spec["scan"])
+    _move_to(w, a, tgt, speed, spec.get("flyer"))
+    return False
+
+
+def _diet_scavenge(w, a, spec, evs, t, speed, rng):
+    """Scavenging: mushrooms first, then carrion, then a heavier graze."""
+    c0 = w["cells"][a["y"]][a["x"]]
+    if c0["mushroom"]:
+        c0["mushroom"] = 0
+        return True
+    if c0["carcass"]:
+        c0["carcass"] = 0
+        return True
+    if c0["grass"] >= spec.get("graze_at", 0.2):
+        c0["grass"] -= spec.get("graze_take", 0.15)
+        return True
+    tgt = _nearest_food(w, a["x"], a["y"], spec["scan"])
+    _move_to(w, a, tgt, speed, spec.get("flyer"))
+    return False
 
 def _litter(w, mother, spec, evs, rng, cap):
     t = w["tick"]
