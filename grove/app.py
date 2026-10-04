@@ -179,7 +179,8 @@ class Grove:
         if w["tick"] >= w["next_op"] and \
                 time.time() >= getattr(self, "next_op_wall", 0):
             self._invite_operator()
-            self.next_op_wall = time.time() + self.llm.soul_gap()
+            lo, hi = self.llm.soul_gap()
+            self.next_op_wall = time.time() + random.uniform(lo, hi)
             return
         if len(self.pending_chron) > 8:      # cap: drop oldest, keep fresh
             for eid in list(self.pending_chron)[:len(self.pending_chron) - 8]:

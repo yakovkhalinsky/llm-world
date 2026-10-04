@@ -255,7 +255,7 @@ result-handler loop catches it (the op is silently lost,
 **Check** `operator.validate({"action": "earthquake", "intent":
 "x" * 300})` returns a quiet effect with a 180-char intent.
 
-### b8 · [ ] `soul_gap()` always returns the top of the range
+### b8 · [x] `soul_gap()` always returns the top of the range
 
 **Where** `grove/llm.py:232` — `return lo + (hi - lo)` is just `hi`, and
 the one caller (`grove/app.py:191`) adds no randomness despite the

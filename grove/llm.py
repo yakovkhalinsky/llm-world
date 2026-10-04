@@ -234,11 +234,11 @@ class LLM:
         return ":cloud" in str(self.job_models.get("soul", ""))
 
     def soul_gap(self):
-        """Wall seconds between World Soul invitations, from the rules."""
+        """(lo, hi) wall seconds between World Soul invitations, from
+        the rules; the caller rolls inside the range."""
         p = rules.R["pacing"]["soul_gap_local" if not self.is_cloud()
                              else "soul_gap_cloud"]
-        lo, hi = p[0], p[1]
-        return lo + (hi - lo)   # the caller re-rolls via randomness at use
+        return p[0], p[1]
 
 
 def status_line(llm):
