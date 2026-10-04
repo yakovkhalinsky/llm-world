@@ -90,11 +90,11 @@ Small-model reality: on a ~2 GHz 4-core CPU there is no GPU and inference
 is CPU-bound — ~1.9 tok/s generation on Llama-3.2-3B. The defaults are
 tuned for slow silicon:
 
-- **`--tier local` (default): fully offline.** The soul and the naming
-  voice run on `llama3.2:3b` (best judgment/prose, ~20–60 s warm per
-  turn), the chronicle on `llama3.2:1b` (~5–8 s per line) — two models
-  kept resident, swapping the slower one out automatically after two bad
-  calls.
+- **`--tier local` (default): fully offline.** The soul, the chronicle
+  and the naming voice all speak with ONE model — `llama3.2:3b` (best
+  judgment/prose, ~20–60 s warm per turn) — moving as one down its chain
+  when two calls in a row fail. The memory-keeper (`ask`) stays on
+  `llama3.2:1b` (~5–8 s per line) for the fast, cheap retrievals.
 - **`--tier cloud`**: a fast, richer soul (~1–2 s per decision) through
   the same Ollama, still gated by the same schema validation, and falling
   back to local on any failure.
@@ -167,7 +167,7 @@ all species must persist).
 | `grove/chronicler.py` | narration prompts + template fallbacks |
 | `grove/voice.py` | naming |
 | `grove/memory.py` | ask-the-grove: chronicle retrieval + answer |
-| `grove/llm.py` | Ollama client (schema chats, per-job model chains) |
+| `grove/llm.py` | Ollama client (schema chats, the one-voice model chain) |
 | `grove/render.py` | the emoji map + header + chronicle feed |
 | `grove/db.py` | SQLite: world, stats, events, chronicle, cache, biographies |
 | `grove/app.py` | shared runner (used by CLI and web) |

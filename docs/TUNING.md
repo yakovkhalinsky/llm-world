@@ -51,8 +51,9 @@ Animals:
 - `--tick-seconds` (CLI): wall seconds per week. ~12 s is observably
   human (a season ≈ 2.5 min, a year ≈ 10); creatures cover ~45% of a
   week's span in motion, then browse and rest.
-- `LLM.soul_gap()` (grove/llm.py): wall seconds between soul invitations,
-  by tier — the local soul speaks every 60–120 s, the cloud's every 40–80.
+- `LLM.soul_gap()` (grove/llm.py): the wall-seconds band between soul
+  invitations, by tier — the local soul speaks every 60–120 s rolled,
+  the cloud's every 40–80.
 - `maybe_schedule` (grove/app.py): the chronicle flushes when ≥ N events
   backlog (2 locally); the naming budget is 1/week, ≤ 8/season.
 
@@ -62,8 +63,8 @@ Measured on this machine (4 weak CPU cores, no GPU):
 
 - llama-3.2-3b: best judgment and names; ~20–60 s per warm call. The
   soul and the voice.
-- llama-3.2-1b: best throughput; ~5–8 s per line. The chronicler and
-  the memory-keeper.
+- llama-3.2-1b: best throughput; ~5–8 s per line. The memory-keeper
+  (ask), and the voice's fallback seat when 3b fails twice.
 - qwen3 (all sizes): no speed win here; dropped.
 - Reasoning models must be called with `think: false` — their thinking
   would otherwise consume the whole token budget in a hidden channel.

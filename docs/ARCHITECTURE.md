@@ -69,17 +69,18 @@ deleting it: chronicles and biographies outlive their worlds.
 | job | cadence | model (local tier) | contract | fallback |
 |---|---|---|---|---|
 | **operator** (World Soul) | every 60–120 s wall | llama-3.2-3b | one JSON fate from menu (storm/drought/blight/bloom/migration/visitor/**destiny**/quiet) + bounded params | `quiet` |
-| **chronicle** | when 2+ events backlogged | llama-3.2-1b | flat `{"text": …}` ≤ 88 chars | template |
-| **voice** (naming + diaries) | ~1/week, ≤8/season | llama-3.2-3b | `{"name": …, "diary": …}` | name list |
+| **chronicle** | when 2+ events backlogged | the soul's model, always | flat `{"text": …}` ≤ 88 chars | template |
+| **voice** (naming + diaries) | ~1/week, ≤8/season | the soul's model, always | `{"name": …, "diary": …}` | name list |
 | **ask** (memory-keeper) | on demand | llama-3.2-1b | `{"answer": …}` from retrieved excerpts | apology line |
 
 Model calls: Ollama `/api/chat`, **streaming with a hard wall-clock
 deadline** (non-streaming calls hang forever when the queue wedges),
 `think: false` (reasoning models must not spend the budget thinking),
 `format` = the JSON schema (grammar-constrained), `keep_alive` keeps both
-local models resident. Per-job model chains swap models after two bad
-calls (3b↔1b). `--tier cloud` runs the same contracts on a cloud model
-with automatic local fallback; `--tier local` is the offline default.
+local models resident. The soul's voice — operator, chronicle, naming —
+shares ONE model-resolution and ONE chain, and a repeat-failure swap
+moves it as one (ask and review keep their own chains). `--tier cloud`
+runs the same contracts on a cloud model with automatic local fallback.
 
 Acceptance filters (chronicle): subject anchors from the base line + a
 hallucination guard (the line must mention the event's actual subject),
