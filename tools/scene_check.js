@@ -144,6 +144,7 @@ const driver = `
     { id: 8, x: 4, y: 4, sp: "pine", st: "log" },
     { id: 9, x: 5, y: 5, sp: "saguaro", st: "mature" },
     { id: 10, x: 6, y: 5, sp: "saguaro", st: "sapling" },
+    { id: 20, x: 2, y: 4, sp: "birch", st: "mature" },   // leans on the pond
   ];
   const animals = [
     { id: 1, x: 3, y: 3, px: 3, py: 3, sp: "rabbit", ag: 12 },
@@ -254,6 +255,31 @@ const driver = `
   ok("the shore grows reeds", reed >= 3, reed + " reed strokes");
   ok("the wet rim rings the water",
      frame.includes("fillStyle=rgba(24,20,12,0.16)"));
+
+  // the water and the light: the foam breathes, the mirror holds the
+  // far shore, the moon leaves its glint, clouds cross the ground,
+  // and winter thins the canopy
+  const foamA = frame.filter(s2 =>
+      s2.startsWith("strokeStyle=rgba(205,228,238,"))
+    .map(s2 => parseFloat(s2.split(",")[3]));
+  ok("the foam breathes",
+     foamA.length >= 4 && foamA.some(a2 => a2 !== foamA[0]),
+     foamA.length + " foam lines, alphas " +
+       Math.min(...foamA).toFixed(2) + " to " +
+       Math.max(...foamA).toFixed(2));
+  const pond2 = iso(2, 5);
+  const mirror = frame.filter(s2 =>
+      (s2.startsWith("ellipse(") || s2.startsWith("fillRect(")) &&
+      (near(s2, "ellipse", pond2[0], pond2[1], 10) ||
+       near(s2, "fillRect", pond2[0], pond2[1], 10))).length;
+  ok("the mirror holds the far shore", mirror >= 2, mirror + " marks");
+  ok("the moon leaves its glint",
+     frame.some(s2 => s2.startsWith("strokeStyle=rgba(210,228,246,")));
+  ok("clouds drift over the ground",
+     frame.includes("fillStyle=rgba(10,16,13,0.05)"));
+  const pineTrace = traceOf(() => drawPlant(plants[0], tsec));
+  ok("winter thins the canopy",
+     pineTrace.includes("globalAlpha=0.85"));
 
   // a tree draws the same twice, and a different tree draws differently
   const tw = (id) => ({ id, x: 5, y: 6, sp: "willow", st: "mature" });

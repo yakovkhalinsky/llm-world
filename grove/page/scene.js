@@ -249,10 +249,21 @@ function drawTerrain(s, tsec) {
                       2: [sx - TW / 2, sy, sx, sy + TH / 2],   // +y: SW edge
                       3: [sx, sy - TH / 2, sx + TW / 2, sy] }; // -y: NE edge
         const pt = pts[e];
-        ctx.strokeStyle = "rgba(205,228,238,0.28)";
+        // the foam breathes with its own tide: brighter and dimmer,
+        // and a second, quieter line laps just inside the rim
+        const ph = Math.sin(tsec * 1.8 + i * 0.9);
+        ctx.strokeStyle = "rgba(205,228,238," +
+            (0.28 + ph * 0.10).toFixed(3) + ")";
         ctx.lineWidth = 1.6;
         ctx.beginPath();
         ctx.moveTo(pt[0], pt[1]); ctx.lineTo(pt[2], pt[3]);
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(205,228,238," +
+            Math.max(0, 0.10 - ph * 0.07).toFixed(3) + ")";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo((pt[0] + sx * 0.09) / 1.09, (pt[1] + sy * 0.09) / 1.09);
+        ctx.lineTo((pt[2] + sx * 0.09) / 1.09, (pt[3] + sy * 0.09) / 1.09);
         ctx.stroke();
       }
       continue;
@@ -392,6 +403,73 @@ function drawSlab(s) {
   ctx.fill();
 }
 
+/* the sky's weather drifts across the ground itself, faint — the world
+   sits under the same clouds its shadow sits under */
+function drawCloudShadows(s, tsec) {
+  for (let i = 0; i < 3; i++) {
+    const cx = ((tsec * 9 + i * 520) % (CW + 460)) - 230;
+    const cy = CH * (0.22 + i * 0.24);
+    ctx.fillStyle = "rgba(10,16,13,0.05)";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 120 + i * 36, 26, 0, 0, 6.3);
+    ctx.fill();
+  }
+}
+
+/* the mirrored world: a shore plant leans into the water below it,
+   upside down and quiet, clipped inside the tile it leans on */
+function drawReflections(s, tsec) {
+  const p = pal(), size = s.size;
+  const at = {};
+  for (const t of s.plants) at[t.x + "," + t.y] = t;
+  for (let i = 0; i < s.cells.length; i++) {
+    if (s.cells[i][0] !== "w") continue;
+    const x = i % size, y = Math.floor(i / size);
+    const [sx, sy] = iso(x, y);
+    for (const [nx, ny] of [[x - 1, y], [x, y - 1]]) {
+      const t = at[nx + "," + ny];
+      if (!t || t.st === "log") continue;
+      const shape = SHAPES[t.sp] || "deciduous";
+      ctx.save();
+      diamondPath(ctx, sx, sy); ctx.clip();
+      ctx.translate(sx + (nx - x) * TW / 4, sy - TH * 0.1);
+      ctx.scale(1, -0.5);                 // lean, squash, quiet
+      ctx.globalAlpha = 0.09 + 0.03 * Math.sin(tsec * 1.3 + i * 0.7);
+      ctx.fillStyle = p.leaf || "#6f9f4a";
+      if (shape === "pine") {
+        ctx.beginPath();
+        ctx.moveTo(0, -15); ctx.lineTo(7, 0); ctx.lineTo(-7, 0);
+        ctx.closePath(); ctx.fill();
+      } else {
+        ctx.beginPath(); ctx.ellipse(0, -7, 7.5, 5, 0, 0, 6.3); ctx.fill();
+        ctx.fillRect(-1, -1, 2, 5);
+      }
+      ctx.restore();
+    }
+  }
+}
+
+/* moonlight finds the water: a shimmer column over the pond's heart */
+function drawGlint(s, tsec) {
+  let xi = 0, yi = 0, n = 0;
+  for (let i = 0; i < s.cells.length; i++)
+    if (s.cells[i][0] === "w") {
+      xi += i % s.size; yi += Math.floor(i / s.size); n++;
+    }
+  if (!n) return;
+  const [gx, gy] = iso(xi / n, yi / n);
+  for (let k = 0; k < 4; k++) {
+    const ph = Math.sin(tsec * 1.1 + k * 1.9);
+    const lx = gx + (k - 1.5) * 9 + ph * 2.5,
+          ly = gy + (k - 1.5) * 5;
+    ctx.strokeStyle = "rgba(210,228,246," + (0.12 + 0.06 * ph).toFixed(3) + ")";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(lx - 5 - ph, ly); ctx.lineTo(lx + 5 + ph, ly);
+    ctx.stroke();
+  }
+}
+
 function drawPlant(t, tsec) {
   const p = pal(), sway = Math.sin(tsec * 1.1) * 0.05;
   const js = 0.92 + jit(t.id, 3) * 0.16;      // each thing's own size
@@ -486,7 +564,9 @@ function drawPlant(t, tsec) {
     ctx.fillRect(-1.1 * K, -trunkH * scale + 2, 1.2 * K, K);
   }
   const leafCol = isPine ? p.pine : p.leaf;
+  const dim = p.canopyDim === undefined ? 1 : p.canopyDim;
   if (isPine) {
+    ctx.globalAlpha = dim;              // winter thins the canopy
     ctx.fillStyle = leafCol;
     for (let k = 0; k < 3; k++) {
       const w = (11 - k * 3) * scale, h = (9 - k) * scale,
@@ -511,13 +591,15 @@ function drawPlant(t, tsec) {
       ctx.lineTo(-3.5 * scale, -17 * scale);
       ctx.closePath(); ctx.fill();
     }
+    ctx.globalAlpha = 1;
   } else {
     const r = 9.5 * scale;
     const cy = -trunkH * (t.st === "sapling" ? 1.15 : 1) - r * 0.55;
+    ctx.globalAlpha = dim;              // winter thins the canopy here too
     ctx.fillStyle = leafCol;
     ctx.beginPath();
     ctx.ellipse(0, cy, r, r * 0.72, 0, 0, 6.3); ctx.fill();
-    ctx.globalAlpha = 0.85;
+    ctx.globalAlpha = dim * 0.85;
     ctx.beginPath();
     ctx.ellipse(r * 0.5, cy + r * 0.3, r * 0.68, r * 0.5, 0, 0, 6.3);
     ctx.fill();
@@ -901,6 +983,9 @@ function drawScene(tnow) {
   drawBackdrop(tsec);
   drawSlab(s);
   drawTerrain(s, tsec);
+  drawCloudShadows(s, tsec);
+  drawReflections(s, tsec);
+  drawGlint(s, tsec);
 
   /* depth sorting: entities paint far-to-near (by x+y); within one
      diamond the ground cover comes first, creatures in front */
