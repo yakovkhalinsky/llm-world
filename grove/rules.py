@@ -103,6 +103,7 @@ R = {
                    "scan": 3, "lit_size": 3, "lit_prob": 0.30,
                    "breed_seasons": (0, 1), "energy_breed": 5.0,
                    "diet": "glean", "graze_at": 0.2, "graze_take": 0.04,
+                   "migration": {"leave_at": 3, "return_at": 0},
                    "cap": 14, "winterslow": 0.75, "flyer": True},
         "boar":   {"hunger_drain": 0.5, "lifespan": 140, "speed": 1,
                    "scan": 3, "lit_size": 2, "lit_prob": 0.15,

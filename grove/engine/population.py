@@ -55,32 +55,45 @@ def _recolonize(w, evs):
             w["absent"].pop(sp, None)
 
 def _migration(w, evs, from_season, to_season):
-    """Robins leave with the cold and return with the spring."""
-    if to_season == 3:                       # into winter
-        n = _pop(w, "robin")
-        if n == 0:
-            return
-        w["robin_last"] = n
-        for aid, a in list(w["animals"].items()):
-            if a["sp"] == "robin":
-                del w["animals"][aid]
-        evs.append({"tick": w["tick"], "kind": "robins_left", "n": n})
-    elif to_season == 0 and from_season == 3:   # back for spring
-        rng = W.rng_for(w["seed"], w["tick"], "return")
-        last = w.get("robin_last", 0)
-        if last > 0 and rng.random() < rules.R["pop"]["robins_return_prob"]:
-            size = w["size"]
-            n_back = max(rules.R["pop"]["robins_return_min"], last // 2)
-            spots = [(x, y) for y in range(size) for x in range(size)
-                     if w["cells"][y][x]["terrain"] == "soil"]
-            for _ in range(min(n_back, 30)):
-                x, y = rng.choice(spots)
-                w["animals"][str(w["next_id"])] = W.new_animal(
-                    w["next_id"], "robin", x, y, 1)
-                w["next_id"] += 1
-            evs.append({"tick": w["tick"], "kind": "robins_return",
-                        "n": n_back})
-            w["absent"].pop("robin", None)
+    """Species whose table says `migration` leave at their leave-season
+    and return at their return-season; the return's law (chance, floor,
+    share of the flock) stays in rules — lawful amendments still move it.
+    The robin's chronicle names keep their old kinds."""
+    for sp, spec in W.ANIMAL_SPECIES.items():
+        m = spec.get("migration")
+        if not m:
+            continue
+        leave_at, return_at = m.get("leave_at", 3), m.get("return_at", 0)
+        if to_season == leave_at:
+            n = _pop(w, sp)
+            if n == 0:
+                continue
+            w.setdefault("migrated", {})[sp] = n
+            for aid, a in list(w["animals"].items()):
+                if a["sp"] == sp:
+                    del w["animals"][aid]
+            evs.append({"tick": w["tick"],
+                        "kind": "robins_left" if sp == "robin"
+                        else "migration_out", "n": n})
+        elif to_season == return_at and from_season == leave_at:
+            rng = W.rng_for(w["seed"], w["tick"], "return")
+            last = w.get("migrated", {}).get(sp, w.get("robin_last", 0)
+                                             if sp == "robin" else 0)
+            if last > 0 and rng.random() < \
+                    rules.R["pop"]["robins_return_prob"]:
+                size = w["size"]
+                n_back = max(rules.R["pop"]["robins_return_min"], last // 2)
+                spots = [(x, y) for y in range(size) for x in range(size)
+                         if w["cells"][y][x]["terrain"] == "soil"]
+                for _ in range(min(n_back, 30)):
+                    x, y = rng.choice(spots)
+                    w["animals"][str(w["next_id"])] = W.new_animal(
+                        w["next_id"], sp, x, y, 1)
+                    w["next_id"] += 1
+                evs.append({"tick": w["tick"],
+                            "kind": "robins_return" if sp == "robin"
+                            else "migration_back", "n": n_back})
+                w["absent"].pop(sp, None)
 
 
 # --------------------------------------------------------------- entrypoint
