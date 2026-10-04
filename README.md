@@ -78,6 +78,7 @@ server: `nohup ./grove.sh web --public > grove-web.log 2>&1 &`; use
 
 ```sh
 ./grove.sh step 200 --offline   # simulate 8+ years headless, fast
+./grove.sh new --seed 42 --biome desert    # another nature entirely
 ./grove.sh map                  # render the current map
 ./grove.sh status               # population history with sparklines
 ./grove.sh chronicle --all      # the whole chronicle (☾ = LLM-written)
@@ -163,7 +164,10 @@ all species must persist).
 
 | path | role |
 |---|---|
-| `grove/world.py` | state containers, species tables, helpers |
+| `grove/engine/` | the tick's domains: weather/soil, plants, animals, the population's nets, the operator's fates |
+| `grove/biomes/` | a world's nature as packs: `grove.py`, `desert.py` (species, recipes, words, colours, shapes) |
+| `grove/page/` | the dashboard's hand-written files (style, boot, scene, panels), joined at import |
+| `grove/world.py` | state containers, species-table aliases, helpers |
 | `grove/gen.py` | seeded worldgen (no LLM) |
 | `grove/sim.py` | the tick engine + validated operator effects |
 | `grove/events.py` | which events are chronicle-worthy |

@@ -20,7 +20,16 @@ The workflow for any balance change: **edit → gate → look at the spans
 species pinned at its cap is fine; a world where the cap never binds is
 usually a world where the cap is wrong.
 
-## The species tables (grove/world.py)
+## The species tables (the biome packs, grove/biomes/)
+
+A pack is a world's whole nature. `grove/biomes/grove.py` and
+`grove/biomes/desert.py` carry: the species tables, the planting recipe
+(`gen`), the pop keys (residents, water-seekers, visitors), weather and
+cell overrides, the gate's law (`plants_min`), and the presentation
+(words, colours, emoji, shapes, names, the briefs). `grove new --biome
+desert` grows a world from another pack; `tools/balance.py --biome
+desert` gates it by its own law. The engine reads `rules.R`, which a
+pack folds into — whole sections replace, partial merge.
 
 Plants:
 
@@ -47,6 +56,8 @@ Animals:
 | `lit_size` / `lit_prob` / `breed_seasons` / `energy_breed` | reproduction: litter size/chance, the seasons it may breed, the energy to breed |
 | `cap` | soft population ceiling: no breeding above it |
 | `lifespan` | death by old age |
+| `diet` | which feeding law runs: `graze` (flee + grass), `browse` (saplings too), `glean` (fruit, then mushrooms, a light graze), `scavenge` (mushrooms, carrion, a heavier graze) — with each law's numbers beside it (`flee_*`, `browse_*`, `graze_at`/`graze_take`/`seek_at`, `sucker_prob`, `fruit_*`) |
+| `migration` | `{"leave_at", "return_at"}` — a species that leaves with the cold and returns; the return's law lives in `pop.robins_return_*` |
 
 ## The world's tempo
 

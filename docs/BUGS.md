@@ -3,7 +3,9 @@
 Findings from the 2026-10-04 review: a manual sweep of all modules plus
 a focused review of the latest commit (`ef3ad5a`). **All fixed the same
 day** — b1–b16 from the sweep, then b17 (the indexer hazard listed here
-as a known risk) and b18 (one model, cloud-first) after it. One fix per
+as a known risk) and b18 (one model, cloud-first) after it, and
+b19–b21 while the biome packs went in (the phases' refactor found two
+real bugs of its own). One fix per
 commit, messages in the grove's voice; each item was verified by its
 own prescribed check before it was committed and pushed. The balance
 gate ran clean over the engine-touching fixes (8 worlds × 900 weeks,
@@ -378,3 +380,31 @@ during a slow embed).
   now exposes the client's `reason` and per-job `fails` so the next
   stumble names itself. The embedder (nomic) is not a language
   model and is untouched.
+
+## Found while refactoring (the biomes' phases)
+
+- [x] **b19** the seed bank's decay truncated: `int(bank * 0.995)` every
+  fourth week bleeds ~13–20% of a small bed's mass at every step (4→3,
+  3→2…), while the intended rate is 0.5%. The grove's big, heavily
+  fed beds hid the bug; the desert's small ones died of it (the
+  prickly-pear went extinct in every seed). Fix: the bed keeps its
+  **last seed** — `max(1, int(bank * 0.995))`, byte-identical for every
+  bank above mass 2, so the grove's tuned equilibrium and gate
+  fingerprints hold. A full float-mass bank was tried and *rejected*:
+  it shifts the grove's tuned trajectories (one seed lost its foxes) —
+  reopening the grove's balance tuning is a deliberate work item of its
+  own, not a side-effect; if the bed's arithmetic ever gets retuned,
+  run the gate first.
+- [x] **b20** the balance gate lied about what it checked: its spans
+  covered only 8 of the 13 species (willow, fern and berry never had
+  spans), its extinct-plant check hardcoded the grove's five plants,
+  and gen's founding table hardcoded six grove species — a desert world
+  was seeded with rabbits and crashed. All now read the pack
+  (`base_residents`/`plants`/`starting_animals`/`gate.plants_min`); the
+  spans now cover every species (the earlier gate prints differ by this
+  richer report, not by the censuses).
+- [x] **b21** the known-risk note on `tools/render_svg.py`: it carries a
+  third copy of the scene's palettes (hand-copied). It renders the
+  grove correctly; for another pack it would draw grove colours. A
+  future tweak: read `presentation.seasons_palette` with today's
+  literal as the fallback.

@@ -2,10 +2,11 @@
 
 > A field guide to the living engine: what makes the forest grow, what
 > feeds the animals, and which four handshakes keep the web from
-> collapsing. All of it lives in `grove/sim.py` (the tick), `grove/gen.py`
-> (birth) and `grove/world.py` (the species tables); every number here is
-> a knob in `grove/rules.py` and gated by `tools/balance.py`.
-> Written 2026-10-04 against the ruleset as it stands.
+> collapsing. All of it lives in `grove/engine/` (the tick), `grove/gen.py`
+> (birth) and `grove/biomes/` (each world's species tables); every number
+> here is a knob in the biome's pack and gated by `tools/balance.py`.
+> Written 2026-10-04 against the grove pack as it stands — the desert
+> (the flats) runs the same laws with its own nature.
 
 ## Birth: worldgen
 
@@ -154,3 +155,15 @@ decoration.
 
 These are the places the World Soul could later act meaningfully: the
 governor, the ambush, the glade's spring, the boar's ceiling.
+
+## The same laws, other natures
+
+The desert (`grove/biomes/desert.py`) runs the identical engine: its
+seed bank, its pockets, its density governor, its covenant — a
+sandgrouse's instead of the robins'. The nurse-plant habit is the same
+mechanic as the grove's understory: sagebrush pockets shelter a young
+prickly-pear the way ferns shelter a pine's seedlings. The one bed's
+difference: a small bank keeps its **last seed** (the engine's beds
+never fall to nothing), which is how sparse desert species persist.
+A third pack is data and writing, not engine work: the diet laws, the
+hunts, the migrations and the shapes are all table rows already.

@@ -5,6 +5,17 @@
 > deterministic fallback, so the world cannot break when a model —
 > small or enormous — writes nonsense, times out, or is simply unplugged.
 
+## The modules
+
+| path | role |
+|---|---|
+| `grove/engine/` | the tick's domains: `weather.py` (sky + soil), `plants.py` (light, seed rain, the bank), `animals.py` (feeding laws, flight, hunts), `population.py` (destinies, recolonization, migration), `effects.py` (the operator's fates), `tick.py` (the conductor) |
+| `grove/sim.py` | the engine's face: the old import surface still answers |
+| `grove/biomes/` | a world's nature: `grove.py`, `desert.py` — species, recipes, words, colours |
+| `grove/page/` | the dashboard as real files: `index.html` + `style.css` + `boot/scene/panels.js`, joined to one string at import |
+| `grove/rules.py` | the engine's law + the active pack folded in (aliases never rebind) |
+| `grove/web.py`, `app.py`, `db.py`, `llm.py`, `chronicler.py`, `operator.py`, `memory.py`, `reviewer.py`, `gen.py`, `world.py`, `events.py` | the services around the engine |
+
 ## The world in one sentence
 
 A 24×24 (configurable) grid of diamonds. One tick = one week. Cells hold
@@ -110,4 +121,25 @@ every beat so no single exception can stop the world.
 
 All randomness derives from `(seed, tick, salt)` strings, stable across
 processes. `tools/balance.py` exploits it: many seeded worlds × years,
-all species must persist, or the gate fails.
+all species must persist, or the gate fails. `--biome` folds a pack in
+first and runs the same gate on that nature (the desert's gate law —
+plants_min, its residents — travels with the pack).
+
+## The biome packs
+
+A pack is a world's nature: the species tables (plants and animals,
+each carrying its own feeding law, migration and shape), the planting
+recipe (gen), the pack's pop keys (its residents, its water-seekers,
+its visitors), its weather and cell overrides, its gate law, and its
+**presentation** — the world's word, place words, the season's lines,
+the species' emoji, the canvas's palettes and shapes, the name pool,
+and the soul's and chronicler's briefs verbatim.
+
+`rules.select_biome(name)` folds a pack into the live ruleset in place
+(the engine's aliases never rebind; whole sections replace, partial
+sections merge). A world records its pack at birth (`w["biome"]`) and a
+restart re-folds its pack — an old grove save (no biome key) stays the
+grove. `grove new --biome desert` grows the flats. Two engines' worth
+of behaviour live in one engine: the diet laws (`graze`, `browse`,
+`glean`, `scavenge`), the hunts and ambushes, and the migrations are
+all species-table data with the engine just running them.
