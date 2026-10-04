@@ -106,7 +106,7 @@ model call (`jobs["chron"]` stays flat while `chron_ok` advances).
 
 ---
 
-### b3 · [ ] `BASE_RESIDENTS` is undefined — NameError on the migration op
+### b3 · [x] `BASE_RESIDENTS` is undefined — NameError on the migration op
 
 **Where** `grove/sim.py:964` — `_apply_effect` action `"migration"`
 checks `if sp in BASE_RESIDENTS:`. Nothing defines it; `_recolonize`

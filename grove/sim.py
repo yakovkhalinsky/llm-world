@@ -961,7 +961,7 @@ def _apply_effect(world, effect, evs):
 
     elif action == "migration":
         sp = effect.get("species") or "robin"
-        if sp in BASE_RESIDENTS:
+        if sp in rules.R["pop"]["base_residents"]:
             pop_now = _pop(world, sp)
             cap = W.ANIMAL_SPECIES[sp].get("cap", 100)
             if pop_now >= cap * 0.7:
