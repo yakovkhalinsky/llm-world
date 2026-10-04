@@ -166,13 +166,14 @@ def validate(proposal):
 
 def pending(db):
     return db.con.execute(
-        "SELECT id, week, rule, proposed, why, verdict FROM proposals "
-        "WHERE status = 'pending' ORDER BY id DESC LIMIT 10").fetchall()
+        "SELECT id, week, rule, value, why, status FROM proposals "
+        "WHERE status IN ('pending','offered') ORDER BY id DESC "
+        "LIMIT 10").fetchall()
 
 
 def history(db, n=20):
     return db.con.execute(
-        "SELECT id, week, rule, proposed, why, status FROM proposals "
+        "SELECT id, week, status, rule, value FROM proposals "
         "ORDER BY id DESC LIMIT ?", (n,)).fetchall()
 
 

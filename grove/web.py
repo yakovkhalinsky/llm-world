@@ -1301,6 +1301,41 @@ def cmd_web(args):
                         "x": ent["x"], "y": ent["y"],
                         "events": g.db.bio(oid),
                     }), "application/json")
+            elif path == "/api/tuning":
+                with lock:
+                    props = reviewer.pending(g.db)
+                    hist = reviewer.history(g.db, 12)
+                self._send(200, json.dumps({
+                    "pending": [{"id": i, "week": wk, "rule": rp,
+                                 "value": v, "why": wy, "status": st}
+                                for i, wk, rp, v, wy, st in props],
+                    "history": [{"id": i, "week": wk, "status": s,
+                                 "rule": rp, "value": v}
+                                for i, wk, s, rp, v in hist],
+                    "auto_tune": bool(g.args.__dict__.get("auto_tune"))
+                    if hasattr(g.args, "__dict__") else False,
+                    "current": {sp: t.get("cap") for sp, t in
+                                sorted(rules.R["animals"].items())},
+                }), "application/json")
+            elif path == "/api/tuning/accept":
+                pid = _read_pid(self)
+                with lock:
+                    row = g.db.con.execute(
+                        "SELECT rule, value FROM proposals WHERE id=? "
+                        "AND status IN ('pending','offered')",
+                        (pid,)).fetchone()
+                    if row and isinstance(row[1], (int, float)):
+                        reviewer.apply_amendment(g.db, rules, row[0],
+                                                 row[1])
+                        g.db.save_override(args.data, rules)
+                self._send(200, json.dumps({"ok": True}),
+                           "application/json")
+            elif path == "/api/tuning/dismiss":
+                pid = _read_pid(self)
+                with lock:
+                    reviewer.dismiss(g.db, pid)
+                self._send(200, json.dumps({"ok": True}),
+                           "application/json")
             else:
                 self._send(404, "not found", "text/plain")
 
@@ -1329,41 +1364,6 @@ def cmd_web(args):
                             g._invite_operator()
                             invited = True
                 self._send(200, json.dumps({"invited": invited}),
-                           "application/json")
-            elif path == "/api/tuning":
-                with lock:
-                    props = reviewer.pending(g.db)
-                    hist = reviewer.history(g.db, 12)
-                self._send(200, json.dumps({
-                    "pending": [{"id": i, "week": wk, "rule": rp,
-                                 "value": v, "why": wy}
-                                for i, wk, rp, v, wy, _s in props],
-                    "history": [{"id": i, "week": wk, "status": s,
-                                 "rule": rp, "value": v}
-                                for i, wk, s, rp, v in hist],
-                    "auto_tune": bool(g.args.__dict__.get("auto_tune"))
-                    if hasattr(g.args, "__dict__") else False,
-                    "current": {sp: t.get("cap") for sp, t in
-                                sorted(rules.R["animals"].items())},
-                }), "application/json")
-            elif path == "/api/tuning/accept":
-                pid = _read_pid(self)
-                with lock:
-                    row = g.db.con.execute(
-                        "SELECT rule, value FROM proposals WHERE id=? "
-                        "AND status IN ('pending','offered')",
-                        (pid,)).fetchone()
-                    if row and isinstance(row[1], (int, float)):
-                        reviewer.apply_amendment(g.db, rules, row[0],
-                                                 row[1])
-                        g.db.save_override(args.data, rules)
-                self._send(200, json.dumps({"ok": True}),
-                           "application/json")
-            elif path == "/api/tuning/dismiss":
-                pid = _read_pid(self)
-                with lock:
-                    reviewer.dismiss(g.db, pid)
-                self._send(200, json.dumps({"ok": True}),
                            "application/json")
             elif path == "/api/ask":
                 # the ask waits for its turn, then thinks OUTSIDE the

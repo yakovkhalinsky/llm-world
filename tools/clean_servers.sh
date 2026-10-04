@@ -1,21 +1,30 @@
 #!/usr/bin/env bash
-# kill every REAL grove server process — and nothing else.
-#
-# Why this exists: `pgrep -f "groce…"` patterns also match THIS session's
-# tool-call wrapper shells, whose command lines merely quote the same
-# words — killing your own shell mid-cleanup. This script inspects each
-# pid's actual command and only acts on the real runner.
-if [ "$(basename "$0")" = "clean_servers.sh" ] && \
-   ps -p $$ -o cmd= | grep -qv "^bash .*clean_servers.sh"; then
-  :
-fi
-for p in $(pgrep -f "grove" 2>/dev/null); do
-  cmd=$(ps -p "$p" -o cmd= 2>/dev/null)
-  case "$cmd" in
-    "python3 -m grove "*|"python3 -m grove")
-      kill -9 "$p" 2>/dev/null && echo "killed $p → $(echo "$cmd" | cut -c1-70)"
-      ;;
-    *)
-      ;;
-  esac
-done
+# end every REAL grove server/supervisor — by process-group, whole family,
+# never this session's own calls (its group is excluded).
+python3 - <<'EOF'
+import os, signal, subprocess
+
+rows = []
+for line in subprocess.run(["ps", "-e", "-o", "pid=,ppid=,pgid=,cmd="],
+                           capture_output=True, text=True).stdout.splitlines():
+    pid, _, rest = line.strip().partition(" ")
+    ppid, _, rest = rest.strip().partition(" ")
+    pgid, _, cmd = rest.strip().partition(" ")
+    try:
+        rows.append((int(pid), int(ppid), int(pgid), cmd))
+    except ValueError:
+        continue
+
+runners = {p for p, _pp, _g, c in rows
+           if c.startswith("python3 -m grove ")}
+groups = {g for p, _pp, g, _c in rows if p in runners}
+mine = os.getpgrp()
+ended = []
+for g in sorted(groups - {mine}):
+    try:
+        os.killpg(g, signal.SIGKILL)
+        ended.append(g)
+    except (ProcessLookupError, PermissionError):
+        pass
+print(f"ended {len(ended)} grove family/group(s): {ended}")
+EOF
