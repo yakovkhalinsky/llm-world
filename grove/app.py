@@ -97,6 +97,11 @@ class Grove:
         self.world = self.db.load_world()
         if self.world is None:
             sys.exit(f"no world in '{self.args.data}'; run first: grove new")
+        # a restart never opens an overdue steward review: the year
+        # always starts from the moment of loading
+        evw = rules.R["review"]["every_weeks"]
+        if not self.world.get("next_review"):
+            self.world["next_review"] = self.world["tick"] + evw
 
     def init_llm(self):
         self.llm = None if self.args.offline else llmm.LLM(

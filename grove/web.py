@@ -1303,7 +1303,8 @@ def cmd_web(args):
                     }), "application/json")
             elif path == "/api/tuning":
                 with lock:
-                    props = reviewer.pending(g.db)
+                    props = reviewer.pending(g.db, (g.world or {}).get(
+                        "tick", 0) if g.world else 0)
                     hist = reviewer.history(g.db, 12)
                 self._send(200, json.dumps({
                     "pending": [{"id": i, "week": wk, "rule": rp,

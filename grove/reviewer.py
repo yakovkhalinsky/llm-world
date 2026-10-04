@@ -164,11 +164,16 @@ def validate(proposal):
     return True, clamped, why
 
 
-def pending(db):
+def pending(db, current_week=0):
+    # offers older than two seasons expire; at most three are in view
+    db.con.execute(
+        "UPDATE proposals SET status='expired' "
+        "WHERE status='offered' AND week < ?", (current_week - 24,))
+    db.con.commit()
     return db.con.execute(
         "SELECT id, week, rule, value, why, status FROM proposals "
         "WHERE status IN ('pending','offered') ORDER BY id DESC "
-        "LIMIT 10").fetchall()
+        "LIMIT 3").fetchall()
 
 
 def history(db, n=20):
