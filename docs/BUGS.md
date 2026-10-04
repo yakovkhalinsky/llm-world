@@ -334,9 +334,9 @@ during a slow embed).
   runs at capacity 3, so the same line can occupy two slots and
   round-robin serve twice in a row. Check `dup` before the `have >= 3`
   branch instead of inside it.
-- [ ] **b14** `grove/llm.py:212-213` — `self.tok.get("_pin", 0)`: `_pin`
+- [x] **b14** `grove/llm.py:212-213` — `self.tok.get("_pin", 0)`: `_pin`
   is never set anywhere; drop the ghost fallback (keep the `or 0`).
-- [ ] **b15** `grove/app.py:147,155` — `pending_since` is written,
+- [x] **b15** `grove/app.py:147,155` — `pending_since` is written,
   never read; delete it or surface the backlog's age on the dashboard.
 - [x] **b16** `grove/sim.py:247-248` — death attribution: with blight
   and drought both running, drought deaths read "blight" (`any(blights)`
