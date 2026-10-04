@@ -112,9 +112,15 @@ def generate(seed: int, size: int = None) -> dict:
     st["cells"] = cells
 
     # --- initial plants ---------------------------------------------------
+    # the planting recipe is data: the tree pool with its weights, the
+    # shore tree, the fruiting shrub and the shade understory
+    pool = []
+    for sp, wt in gr.get("tree_pool", {"pine": 2, "birch": 2}).items():
+        pool += [sp] * int(wt)
+    if not pool:
+        pool = ["pine", "birch"]
     pid = st["next_id"]
     plants = {}
-    species_pool = ("pine", "birch")
     for y in range(size):
         for x in range(size):
             c = cells[y][x]
@@ -132,14 +138,14 @@ def generate(seed: int, size: int = None) -> dict:
                     if sum(1 for q in plants.values()
                            if q["x"] == x and q["y"] == y) >= 3:
                         break
-                    sp = rng.choice(("pine", "pine", "birch", "birch"))
-                    # willows ring the pond
+                    sp = rng.choice(pool)
+                    # the shore tree rings the water
                     near_water = any(abs(x - wx) + abs(y - wy) <= 2
                                      for wy, wx in
                                      [(yy, xx) for yy in range(size) for xx in range(size)
                                       if cells[yy][xx]["terrain"] == "water"])
                     if near_water and rng.random() < gr["willow_near_water_prob"]:
-                        sp = "willow"
+                        sp = gr.get("shore_species", "willow")
                     age = rng.randint(*gr["initial_age_spread"])
                     stage = "mature"
                     if age < W.PLANT_SPECIES[sp]["mature_age"]:
@@ -149,9 +155,10 @@ def generate(seed: int, size: int = None) -> dict:
                     plants[str(pid)] = W.new_plant(pid, sp, x, y, stage, age)
                     pid += 1
             elif rng.random() < gr["p_berry"] * c["fert"]:
-                plants[str(pid)] = W.new_plant(pid, "berry", x, y,
-                                               "mature" if rng.random() < 0.6
-                                               else "sapling", rng.randint(1, 6))
+                plants[str(pid)] = W.new_plant(
+                    pid, gr.get("shrub_species", "berry"), x, y,
+                    "mature" if rng.random() < 0.6 else "sapling",
+                    rng.randint(1, 6))
                 pid += 1
             c["grass"] = round(min(1.0, gr["grass_base"] + c["fert"] * gr["grass_fert"]
                                   + rng.uniform(-0.2, 0.3)), 3)
@@ -167,8 +174,9 @@ def generate(seed: int, size: int = None) -> dict:
             c = cells[y][x]
             if c["terrain"] == "soil" and light[y][x] < 0.55 \
                     and rng.random() < gr["p_fern_shade"]:
-                plants[str(pid)] = W.new_plant(pid, "fern", x, y, "mature",
-                                               rng.randint(2, 10))
+                plants[str(pid)] = W.new_plant(
+                    pid, gr.get("understory_species", "fern"), x, y,
+                    "mature", rng.randint(2, 10))
                 pid += 1
     st["next_id"] = pid
 

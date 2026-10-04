@@ -133,6 +133,9 @@ R = {
 
     "gen": {
         "noise_octaves": 3, "coarse_grid": 6,
+        "tree_pool": {"pine": 2, "birch": 2},
+        "shore_species": "willow", "shrub_species": "berry",
+        "understory_species": "fern",
         "elev_sigma": 0.35, "fert_sigma": 0.40, "wet_sigma": 0.30,
         "fert_base": 0.35, "fert_spread": 0.9,
         "moist_base": 0.25, "moist_spread": 0.6,
