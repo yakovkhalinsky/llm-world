@@ -343,10 +343,14 @@ during a slow embed).
   wins). Track which pressure actually hit *this* plant that week
   (the damage loops already know) and attribute from that.
 
-## Known risk — no action yet
+## Fixed after the sweep
 
-- The web indexer thread (`web.py:1241-1249`) writes `db.con` from its
-  own thread without the world lock. SQLite serializes access on one
-  connection, and batches are small, so the practical risk is low — but
-  a commit can land mid-`step()`. If anything odd ever shows in the vec
-  table, this is the first suspect.
+- [x] **b17** the web indexer thread writes `db.con` from its own
+  thread without the world lock — the same class of hazard sat in the
+  ask handler's pre-index call. On one shared connection, a foreign
+  commit could seal a week the sim was mid-writing (proven: the sim's
+  own discard could not take the sealed rows back). Both embedding
+  threads now carry their own sqlite connection: their commits block
+  for their turn at the file's write lock and can never land
+  mid-`step()`. If anything odd ever shows in the vec table, the
+  ollama queue is the suspect now, not sqlite.

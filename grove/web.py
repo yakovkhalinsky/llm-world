@@ -15,6 +15,7 @@ Default bind is loopback only (viewable through an ssh tunnel); pass
 --public to open it to the LAN.
 """
 
+import os
 import json
 import socket
 import threading
@@ -22,6 +23,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
+from . import db as dbm
 from . import llm as llmm
 from . import memory
 from . import operator
@@ -1238,11 +1240,17 @@ def cmd_web(args):
     runner.start()
 
     if g.llm and g.llm.enabled:
+        # the embedding threads (the indexer and the ask's pre-index)
+        # get their OWN sqlite connection: a commit of theirs can then
+        # never seal a week that the sim is still writing. Created with
+        # the main one, closed with the main one.
+        emb = dbm.DB(os.path.join(args.data, "grove.db"))
+
         def indexer():
             time.sleep(20)
             while True:
                 try:          # one patient batch per pass; the chronicle
-                    memory.ensure_index(g.db, g.llm, limit=32)
+                    memory.ensure_index(emb, g.llm, limit=32)
                 except Exception:
                     pass
                 time.sleep(75)
@@ -1386,12 +1394,14 @@ def cmd_web(args):
                     time.sleep(0.5)
                     waited += 0.5
                 t0 = time.time()
-                # index newer chronicle lines (out of the lock; the sqlite
-                # connection is serialized, and the forest must not stall)
-                try:
-                    memory.ensure_index(g.db, g.llm)
-                except Exception:
-                    pass
+                # index newer chronicle lines through the embedder's own
+                # sqlite connection — never the sim's; the forest does
+                # not stall (and no half-written week can be sealed)
+                if g.llm is not None and g.llm.enabled:
+                    try:
+                        memory.ensure_index(emb, g.llm)
+                    except Exception:
+                        pass
                 with lock:                       # brief reads only
                     if g.world is None or g.llm is None or not g.llm.enabled:
                         self._send(200, json.dumps(
@@ -1436,3 +1446,5 @@ def cmd_web(args):
     finally:
         runner.stopping.set()
         g.db.close()
+        if g.llm and g.llm.enabled:
+            emb.close()

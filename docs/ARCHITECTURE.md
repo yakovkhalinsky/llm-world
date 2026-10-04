@@ -94,7 +94,10 @@ The world is touched by exactly one runner (the CLI loop, or the web
 dashboard's `SimRunner`) guarded by a world lock; LLM calls happen in a
 background worker and return results that the runner applies at tick
 boundaries. The ask endpoint runs its model call **outside** the lock
-(the forest keeps ticking while the grove ponders). The runner wraps
+(the forest keeps ticking while the grove ponders). The web's embedding
+threads — the background indexer and the ask's pre-index — hold their
+**own** sqlite connection: their commits queue for the file's write
+lock and can never seal a week the sim is mid-writing. The runner wraps
 every beat so no single exception can stop the world.
 
 ## Determinism
