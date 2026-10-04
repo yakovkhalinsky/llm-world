@@ -1096,15 +1096,28 @@ function drawParticles(dt) {
 
 const REGIONS = { all: [0,0,1,1], NW: [0,0,.5,.5], NE: [.5,0,1,.5],
                   SW: [0,.5,.5,1], SE: [.5,.5,1,1] };
-function drawEffects(s) {
+function drawEffects(s, tsec) {
+  // the soul's touches are felt, not outlined: soft feathered air,
+  // breathing when the pressure breathes
   for (const e of s.effects || []) {
     const reg = REGIONS[e.split(" over ")[1].split(" ")[0]] || REGIONS.all;
     const x0 = reg[0] * s.size, xe = reg[2] * s.size;
     const y0 = reg[1] * s.size, ye = reg[3] * s.size;
-    ctx.fillStyle = e.startsWith("blight")
-        ? "rgba(120,60,140,0.15)"
-        : e.startsWith("drought") ? "rgba(190,140,40,0.16)"
-        : "rgba(140,210,140,0.10)";
+    const [mx, my] = iso((x0 + xe) / 2 - 0.5, (y0 + ye) / 2 - 0.5);
+    const span = (Math.abs(xe - x0) + Math.abs(ye - y0)) * 0.5 * TW;
+    const kind = e.startsWith("blight") ? "blight"
+        : e.startsWith("drought") ? "drought" : "bloom";
+    const col = kind === "blight" ? "140,60,150"
+        : kind === "drought" ? "190,140,40" : "140,210,140";
+    const breathe = kind === "blight" ? 0.05 * Math.sin(tsec * 1.1)
+        : kind === "bloom" ? 0.03 * Math.sin(tsec * 0.7) : 0;
+    const core = (kind === "drought" ? 0.17 : kind === "blight" ? 0.14
+                  : 0.11) + breathe;
+    const g = ctx.createRadialGradient(mx, my, span * 0.15, mx, my, span);
+    g.addColorStop(0, "rgba(" + col + "," + core.toFixed(3) + ")");
+    g.addColorStop(0.65, "rgba(" + col + "," + (core * 0.45).toFixed(3) + ")");
+    g.addColorStop(1, "rgba(" + col + ",0)");
+    ctx.fillStyle = g;
     ctx.beginPath();
     ctx.moveTo(...iso(x0, y0));
     ctx.lineTo(...iso(xe, y0));
@@ -1112,10 +1125,49 @@ function drawEffects(s) {
     ctx.lineTo(...iso(x0, ye));
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = "rgba(230,230,230,0.14)";
-    ctx.setLineDash([4, 4]);
+    if (kind === "bloom") {           // the blessing sparkles
+      for (let k = 0; k < 4; k++) {
+        const fx = x0 + ((k * 7 + 3) % Math.max(1, xe - x0)) + 0.5;
+        const fy = y0 + ((k * 11 + 5) % Math.max(1, ye - y0)) + 0.5;
+        const [fxs, fys] = iso(fx, fy);
+        const tw = Math.max(0, Math.sin(tsec * 2.2 + k * 2.6));
+        ctx.fillStyle = "rgba(225,255,220," + (tw * 0.5).toFixed(3) + ")";
+        ctx.fillRect(fxs - 1, fys - 7 - tw * 2, 2, 4 + tw * 3);
+      }
+    }
+  }
+}
+
+/* the soul's arrival: when a new decision lands, a slow ring blooms
+   from the region's heart and fades — the unseen, seen passing */
+let soulRings = [];
+let lastOpWeek = -1;
+function checkSoulArrival(s, tnow) {
+  const ops = s.ops || [];
+  if (!ops.length) return;
+  const last = ops[ops.length - 1];
+  if (lastOpWeek < 0) { lastOpWeek = last.week; return; }
+  if (last.week === lastOpWeek) return;
+  lastOpWeek = last.week;
+  if (last.action === "quiet") return;   // a kept peace needs no ring
+  const reg = REGIONS[last.region || "all"] || REGIONS.all;
+  const [mx, my] = iso((reg[0] + reg[2]) * s.size / 2 - 0.5,
+                       (reg[1] + reg[3]) * s.size / 2 - 0.5);
+  soulRings.push({ mx, my, t0: tnow });
+  if (soulRings.length > 6) soulRings.shift();
+}
+
+function drawSoulRings(tnow) {
+  for (let i = soulRings.length - 1; i >= 0; i--) {
+    const r = soulRings[i];
+    const age = (tnow - r.t0) / 2400;
+    if (age >= 1) { soulRings.splice(i, 1); continue; }
+    const rad = 14 + age * 210;
+    ctx.strokeStyle = "rgba(226,238,230," + ((1 - age) * 0.35).toFixed(3) + ")";
+    ctx.lineWidth = 2.2 * (1 - age) + 0.4;
+    ctx.beginPath();
+    ctx.ellipse(r.mx, r.my, rad, rad * 0.5, 0, 0, 6.3);
     ctx.stroke();
-    ctx.setLineDash([]);
   }
 }
 
@@ -1146,9 +1198,11 @@ function drawScene(tnow) {
     else if (en.k === 2) drawAnimal(en.a, glide, tsec, en.i);
   }
   trackFollow(glide);
+  checkSoulArrival(s, tnow);
   spawnParticles(s, dt);
   drawParticles(dt);
-  drawEffects(s);
+  drawEffects(s, tsec);
+  drawSoulRings(tnow);
 
   if (pal().wash) {
     ctx.fillStyle = pal().wash;
