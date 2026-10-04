@@ -16,7 +16,9 @@ CREATE TABLE IF NOT EXISTS stats   (tick INTEGER, json TEXT);
 CREATE TABLE IF NOT EXISTS chron   (id INTEGER PRIMARY KEY AUTOINCREMENT,
                                     tick INTEGER, kind TEXT, source TEXT, text TEXT);
 CREATE INDEX IF NOT EXISTS chron_kind ON chron (kind);
-CREATE TABLE IF NOT EXISTS cache   (key TEXT PRIMARY KEY, text TEXT);
+CREATE TABLE IF NOT EXISTS cache   (narr TEXT, line TEXT, slot INTEGER,
+                    used INTEGER,
+                    PRIMARY KEY (narr, slot));
 CREATE TABLE IF NOT EXISTS bio     (oid INTEGER, tick INTEGER, key TEXT,
                                     id INTEGER PRIMARY KEY AUTOINCREMENT);
 CREATE INDEX IF NOT EXISTS bio_oid ON bio (oid);
@@ -164,12 +166,35 @@ class DB:
         return [{"tick": t, "text": tx} for t, tx in rows]
 
     # -- llm narration cache -----------------------------------------------
-    def cache_get(self, key):
-        row = self.con.execute(
-            "SELECT text FROM cache WHERE key = ?", (key,)).fetchone()
-        return row[0] if row else None
+    def cache_get(self, narr):
+        """Serve one of up to three stored renderings, round-robin."""
+        rows = self.con.execute(
+            "SELECT line, slot, used FROM cache WHERE narr = ? "
+            "ORDER BY used, slot", (narr,)).fetchall()
+        if not rows:
+            return None
+        line, slot, used = rows[0]
+        nxt = (max(r[2] for r in rows) + 1) if len(rows) > 1 else used + 1
+        self.con.execute("UPDATE cache SET used = ? WHERE narr = ? AND slot = ?",
+                         (nxt, narr, slot))
+        self.con.commit()
+        return line
 
-    def cache_set(self, key, text):
+    def cache_set(self, narr, text):
+        """Store up to three distinct renderings per story-signature."""
+        have = self.con.execute(
+            "SELECT COUNT(*) FROM cache WHERE narr = ?", (narr,)).fetchone()[0]
+        if have >= 3:
+            dup = self.con.execute(
+                "SELECT 1 FROM cache WHERE narr = ? AND line = ?",
+                (narr, text)).fetchone()
+            if dup:
+                return
+            self.con.execute(
+                "DELETE FROM cache WHERE narr = ? AND slot = ("
+                "SELECT slot FROM cache WHERE narr = ? ORDER BY used ASC "
+                "LIMIT 1)", (narr, narr))
         self.con.execute(
-            "INSERT OR REPLACE INTO cache (key, text) VALUES (?, ?)", (key, text))
+            "INSERT INTO cache (narr, line, slot, used) VALUES (?, ?, ?, 0)",
+            (narr, text, have))
         self.con.commit()

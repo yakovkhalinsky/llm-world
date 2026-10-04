@@ -130,15 +130,23 @@ class Grove:
         items = chronicler.batch(notable, w)
         llm_items = []
         for it in items:
-            cached = self.db.cache_get(it["key"])
             if it["slot"].get("kind") in ("op", "destiny", "destiny_lost"):
                 self.db.record(it["key"], it["tick"], it["template"], "soul")
-            elif cached:
+                continue
+            cached = self.db.cache_get(it["narr_key"])
+            if cached:                    # this story was already paid for
                 self.db.record(it["key"], it["tick"], cached, "llm")
             else:
                 self.db.record(it["key"], it["tick"], it["template"])
-            if it["slot"].get("kind") not in ("op", "destiny", "destiny_lost"):
-                llm_items.append(it)
+                llm_items.append(it)      # only new stories reach the model
+        if llm_items and self.worker is not None:
+            for it in llm_items:
+                self.eid += 1
+                it["eid"] = f"e{self.eid}"
+                if not self.pending_chron:
+                    self.pending_since = w["tick"]
+                self.pending_chron[it["eid"]] = it
+        return evs, notable
         if llm_items and self.worker is not None:
             for it in llm_items:
                 self.eid += 1
@@ -219,6 +227,7 @@ class Grove:
             "user": chronicler.build_prompt(item, recents),
             "schema": CHRON_SCHEMA, "max_tokens": 60, "temperature": 0.9,
             "extra": {"base": item["template"], "key": item["key"],
+                      "narr": item["narr_key"],
                       "tick": item["tick"], "recents": recents},
             "retries": 2})
 
