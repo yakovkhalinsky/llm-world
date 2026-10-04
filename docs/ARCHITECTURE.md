@@ -2,8 +2,8 @@
 
 > The one design rule: **the simulation engine owns all state; the LLM
 > only bends it.** Every model output is schema-validated with a
-> deterministic fallback, so the world cannot break when a 1–3B model
-> writes nonsense, times out, or is simply unplugged.
+> deterministic fallback, so the world cannot break when a model —
+> small or enormous — writes nonsense, times out, or is simply unplugged.
 
 ## The world in one sentence
 
@@ -16,36 +16,39 @@ deterministic: `gen.generate(seed)` + the same ticks = the same world.
 
 ## Tick order (grove/sim.py)
 
-1. The week increments; season turns reset name budgets and trigger the
-   **robin migration** (they leave at the frost, return in spring).
+1. The week increments; a season turn triggers the **robin migration**
+   (they leave at the frost, return in spring); the naming budget
+   refills at the tick's end, every week.
 2. The **queued operator effect** lands (the soul speaks at tick
    boundaries; its decision is validated then applied deterministically).
 3. Weather: a seeded roll with persistence (rain sticks, storms are
    operator-invited or autumnal rarities); winter is frost.
-4. Cells: rain/decay on moisture, grass regrowth (season × moisture ×
+4. Light: rebuilt from the canopy (each tree shades its cell and
+   neighbors in two strengths) — before the cells, which read it.
+5. Cells: rain/decay on moisture, grass regrowth (season × moisture ×
    light × drought), **wet-streak soak**, mushroom blooms (favored on
    humus, after rain), carcass decay.
-5. Light: rebuilt from the canopy (each tree shades its cell and
-   neighbors in two strengths).
 6. Plants: aging and stage transitions (seed→sapling→mature→old→log),
    weather wounds (frost stuns understory, storms fell trees by
    strength, blight/drought effects burn), berries fruiting in spring,
    **seed rain** (failed landings go to the **seed bank**) and fern
-   spread (spore failures bank too), death → log → **humus**.
-7. **Understory pockets**: trees cap at one per cell; ferns and bushes
-   live UNDER them (one pocket per cell), including germination.
-8. Animals: hunger drain (heavier in winter), forage (grass, berries,
+   spread (spore failures bank too), death → log → **humus**. The
+   understory lives here: trees cap at one per cell and ferns/bushes
+   sit UNDER them (one pocket per cell).
+
+7. Animals: hunger drain (heavier in winter), forage (grass, berries,
    mushrooms, carrion), hunt (predation scales with prey density; the
    density-dependent loop keeps boom-bust from collapsing), flee
    behavior for rabbits, litters with kid-ids recorded, old age,
    transient visitors departing.
-9. **Destiny checks**: the soul's watches resolve on water-adjacency or
-   age, or end when the watched creature dies.
-10. **Seed-bank germination** (autumn): when a species is nearly gone,
+8. **Destiny checks**: the soul's watches resolve on water-adjacency or
+   age, or end when the watched creature dies. The seed bank settles
+   itself too: 0.5% of its memory decays every fourth week.
+9. **Seed-bank germination** (autumn): when a species is nearly gone,
    the bank — soil memory, never consumed — sprouts it into genuinely
    suitable spots (light, water, crowding aware). The forest can never
    lose a species forever.
-11. **Recolonization** (animals): a species absent 16+ weeks returns as
+10. **Recolonization** (animals): a species absent 16+ weeks returns as
    a small group from beyond the edge.
 
 ## Persistence (grove/db.py)
@@ -56,10 +59,10 @@ One SQLite file (`grove_data/grove.db`):
 |---|---|
 | `world` | the whole world state as one JSON blob (row 1) |
 | `stats` | per-week census (animals + plants) — the sparklines' source |
-| `chron` | chronicle rows: `raw` event dumps + rendered lines (`template`/`llm`/`soul`/`voice`) keyed by event signature |
-| `bio` | biography ledger: (entity id, week) → chronicle key |
+| `chron` | chronicle rows: `raw` event dumps + rendered lines (`template`/`llm`/`soul`/`voice`); the event signature lives in the `kind` column |
+| `bio` | biography ledger: (entity id, week) → chronicle signature |
 | `vec` | chronicle embeddings (nomic-embed-text) for ask-the-grove |
-| `cache` | narration cache by event signature |
+| `cache` | narration cache by story signature — up to three renderings each |
 
 Resets archive the old file (`archive-<date>-wk<N>.db`) instead of
 deleting it: chronicles and biographies outlive their worlds.
@@ -68,9 +71,9 @@ deleting it: chronicles and biographies outlive their worlds.
 
 | job | cadence | model (local tier) | contract | fallback |
 |---|---|---|---|---|
-| **operator** (World Soul) | every 60–120 s wall | llama-3.2-3b | one JSON fate from menu (storm/drought/blight/bloom/migration/visitor/**destiny**/quiet) + bounded params | `quiet` |
-| **chronicle** | when 2+ events backlogged | the soul's model, always | flat `{"text": …}` ≤ 88 chars | template |
-| **voice** (naming + diaries) | ~1/week, ≤8/season | the soul's model, always | `{"name": …, "diary": …}` | name list |
+| **operator** (World Soul) | every 40–80 s wall (60–120 offline) | llama-3.2-3b | one JSON fate from menu (storm/drought/blight/bloom/migration/visitor/**destiny**/quiet) + bounded params | `quiet` |
+| **chronicle** | when ≥4 events are backlogged | the soul's model, always | flat `{"text": …}` ≤ 88 chars | template |
+| **voice** (naming + diaries) | ~3/week, ≤14/season | the soul's model, always | `{"name": …, "diary": …}` | name list |
 | **ask** (memory-keeper) | on demand | the soul's model, always | `{"answer": …}` from retrieved excerpts | apology line |
 
 Model calls: Ollama `/api/chat`, **streaming with a hard wall-clock

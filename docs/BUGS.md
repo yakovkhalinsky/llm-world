@@ -1,14 +1,15 @@
 # Grove — bug worklist
 
-Findings from the 2026-10-04 review: a manual sweep of all modules plus a
-focused review of the latest commit (`ef3ad5a`). Work through top-down —
-the P0s are small diffs against features this week's commits already
-claim are working. Tick the box when the fix lands and its check
-passes; one fix per commit, message in the grove's voice.
-
-Verification at the bottom. The sim's number-knobs are untouched, so
-the balance gate is not implicated — only fix **3** touches the engine,
-and it touches a path the gate never runs (operator actions).
+Findings from the 2026-10-04 review: a manual sweep of all modules plus
+a focused review of the latest commit (`ef3ad5a`). **All fixed the same
+day** — b1–b16 from the sweep, then b17 (the indexer hazard listed here
+as a known risk) and b18 (one model, cloud-first) after it. One fix per
+commit, messages in the grove's voice; each item was verified by its
+own prescribed check before it was committed and pushed. The balance
+gate ran clean over the engine-touching fixes (8 worlds × 900 weeks,
+every species persisting); of those, b16 touched the plant loop only in
+how a death names its cause. Keep this list as the record — new
+findings get new numbers below.
 
 ---
 

@@ -10,7 +10,7 @@ python3 tools/balance.py --seeds 8 --weeks 900
 ```
 
 This runs 8 seeded worlds for ~19 simulated years each (pure engine, no
-LLM, ~4 min on the grove's own CPU) and fails loudly if any species goes
+LLM, ≈90 s on the grove's own CPU) and fails loudly if any species goes
 extinct, the canopy shrinks under 120 plants, or a species is absent at
 the end. `--seeds N --weeks W` for quicker loops; robins are exempt only
 if the run ends in winter (they are legitimately south).
@@ -34,6 +34,7 @@ Plants:
 | `storm_fall_mature` / `storm_fall_old` | weekly fall chance in a storm, by stage |
 | `frost_hp` | weekly frost wound; the cold stuns understory (a floor of 1 hp) but kills slowly |
 | `near_water` (willow) | a seedling must land within N cells of water |
+| `spread_prob` / `spread_radius` (fern) | the spore spread: weekly chance and distance; failed spores bank too |
 
 Animals:
 
@@ -41,7 +42,8 @@ Animals:
 |---|---|
 | `hunger_drain` | weekly hunger; over 9 they starve toward death |
 | `speed` / `scan` / `winterslow` | movement per week, forage/hunt search radius, winter sluggishness |
-| `hunt` / `hunt_prob` (+ density scaling) | the predator-prey loop: hunting efficiency scales with prey density (`sim.py` divides by ~the warren's normal size) |
+| `hunt` / `hunt_prob` (+ `hunt_prob_min`, `hunting_density_scale`) | the predator-prey loop: hunting efficiency scales with prey density (`sim.py` divides by ~the warren's normal size) |
+| `strike` / `strike_prob` / `strike_range` (owl) | owls hunt by ambush, not pursuit — the strike loop instead of the chase |
 | `lit_size` / `lit_prob` / `breed_seasons` / `energy_breed` | reproduction: litter size/chance, the seasons it may breed, the energy to breed |
 | `cap` | soft population ceiling: no breeding above it |
 | `lifespan` | death by old age |
@@ -54,17 +56,21 @@ Animals:
 - `LLM.soul_gap()` (grove/llm.py): the wall-seconds band between soul
   invitations, by tier — the local soul speaks every 60–120 s rolled,
   the cloud's every 40–80.
-- `maybe_schedule` (grove/app.py): the chronicle flushes when ≥ N events
-  backlog (2 locally); the naming budget is 1/week, ≤ 8/season.
+- `maybe_schedule` (grove/app.py): the chronicle flushes when ≥ 4 events
+  backlog (and the flush takes its slot on a three-week rotation); the
+  naming budget is 3/week, ≤ 14/season.
 
 ## What the small models can and cannot carry
 
 Measured on this machine (4 weak CPU cores, no GPU):
 
-- llama-3.2-3b: best judgment and names; ~20–60 s per warm call. The
-  soul and the voice.
-- llama-3.2-1b: best throughput; ~5–8 s per line. The memory-keeper
-  (ask), and the voice's fallback seat when 3b fails twice.
+- glm-5.3-flash:cloud: the grove's default voice, through Ollama's own
+  proxy — ~1–3 s per chronicle line, ~3–8 s per soul decision; it
+  reasons deeply (the bullet below) before every answer.
+- llama-3.2-3b: best judgment and names on-box; ~20–60 s per warm call.
+  The one voice of `--tier local`.
+- llama-3.2-1b: best throughput; ~5–8 s per line. Now only the chain's
+  deepest seat — the ask rides the one voice like every job.
 - qwen3 (all sizes): no speed win here; dropped.
 - Reasoning clouds (the flash class): their thinking runs in a hidden
   `thinking` channel — send NO `think` key (with `think:false` the proxy
@@ -81,7 +87,7 @@ Measured on this machine (4 weak CPU cores, no GPU):
 | symptom | lever |
 |---|---|
 | a species oscillating to extinction | the predation's density divisor in `_behave` (halve it for gentler pressure) |
-| a canopy closing over the understory | `seed_prob` of trees (the world self-thins at the crowding cap), or the cap in `_trees_in_cell` |
+| a canopy closing over the understory | `seed_prob` of trees (the world self-thins at the crowding cap), or the crowding caps enforced where `_trees_in_cell` is checked (`sim.py`'s plant loop) |
 | a species extinct forever | check the seed bank's deposits (`_seed`'s failure path banks) and the germination's spots |
 | too many creatures | the `cap` of their table |
 | the chronicle too busy | `MAX_PER_TICK` in `events.py` + `notable`'s fold rules |

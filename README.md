@@ -1,18 +1,20 @@
-# Grove — a self-contained forest, operated by a small local LLM
+# Grove — a self-contained forest, given one voice by Ollama
 
 <p align="center"><img src="docs/grove.svg" alt="the grove, week by week"
  width="700"></p>
 
-A living forest biome that runs entirely on your machine: ponds, pines,
-willows, berry glades, grass, mushrooms — and rabbits, deer, foxes, owls,
-robins and boars living, hunting, starving and being born through the
-seasons. A small local language model is the **World Soul**: every few
-weeks it decides which fate befalls the woods (a storm, a drought, a
-blight, a bloom, a passing wolf...), its words become the chronicle, and
-it names the newborns.
+A living forest biome that runs on your machine: ponds, pines, willows,
+berry glades, grass, mushrooms — and rabbits, deer, foxes, owls, robins
+and boars living, hunting, starving and being born through the seasons.
+A language model is the **World Soul**: roughly every minute it decides
+which fate befalls the woods (a storm, a drought, a blight, a bloom, a
+passing wolf...), its words become the chronicle, and it names the
+newborns — by default `glm-5.3-flash:cloud` through your own Ollama,
+with `--tier local` pinning the whole forest on-box.
 
-No cloud. No API keys. State lives in one SQLite file. Zero pip
-dependencies — the engine is pure Python stdlib, the model runs in Ollama.
+No API keys, ever — even the cloud voice comes through your own Ollama.
+State lives in one SQLite file. Zero pip dependencies — the engine is
+pure Python stdlib, the model runs in Ollama.
 
 ```
 WEEK 41 · SPRING · 🌧 rain   🐇38 🦌16 🦊9 🦉4 🐦22 🐗6
@@ -67,12 +69,12 @@ pause · `s` step · `n` invite the soul · `f` fullscreen · `c` calm.
   then `ssh -N -L 8787:localhost:8787 yakov@<this-box>` and open
   `http://localhost:8787` on the other machine.
 - **No browser at all:** `ssh` in and run `./grove.sh run` inside
-  `tmux` (or `nohup ./grove.sh web & > grove.log`) — the terminal view is
-  the same world, and detach/reattach as you like.
+  `tmux` (or `nohup ./grove.sh web > grove-web.log 2>&1 &`) — the
+  terminal view is the same world, and detach/reattach as you like.
 
-Leave it running detached with `tmux` (recommended) or
-`nohup ./grove.sh run-forever 2>&1` style scripts; use `cron`/`systemd`
-if you want the grove to wake up on boot.
+Leave it running detached with `tmux` (recommended), or `nohup` a
+server: `nohup ./grove.sh web --public > grove-web.log 2>&1 &`; use
+`cron`/`systemd` if you want the grove to wake up on boot.
 
 ```sh
 ./grove.sh step 200 --offline   # simulate 8+ years headless, fast
@@ -87,14 +89,14 @@ if you prefer.
 ## The model
 
 Small-model reality: on a ~2 GHz 4-core CPU there is no GPU and inference
-is CPU-bound — ~1.9 tok/s generation on Llama-3.2-3B. The defaults are
+is CPU-bound — ~1.9 tok/s generation on Llama-3.2-3B. The local tier is
 tuned for slow silicon:
 
 - **the default tier: one cloud voice with local fallback.** Every
   job — the World Soul's decisions, the chronicle, naming and diaries,
   the asks, the steward — speaks with ONE model and moves as one down
-  its chain. The default is `glm-5.3-flash:cloud` (~1–2 s per call
-  through the same Ollama); two failed calls step down the chain, and
+  its chain. The default is `glm-5.3-flash:cloud` (a few seconds per
+  call through the same Ollama); two failed calls step down the chain, and
   when no cloud model is reachable the forest falls back onto the local
   llama.
 - **`--tier local`**: fully offline and spend-free: the same one voice
@@ -136,7 +138,8 @@ can name, follow and lose.
 > context and never writes world state. It gets small, bounded jobs with
 > schema-validated outputs and deterministic fallbacks.
 
-- **World Soul** — roughly one decision every few minutes (wall time):
+- **World Soul** — roughly one decision every minute (wall time; the
+  cloud soul every 40–80 s, the offline llama every 60–120 s):
   a ≤ 400-token digest → one JSON decision from an enumerated menu
   (`storm, drought, blight, bloom, migration, visitor, destiny, quiet`),
   applied by validated, deterministic rules. Nonsense in → `quiet` out.
@@ -174,7 +177,7 @@ all species must persist).
 | `grove/app.py` | shared runner (used by CLI and web) |
 | `grove/web.py` | the full-screen isometric dashboard (one HTML page) |
 | `grove/__main__.py` | CLI + run loop |
-| `tools/balance.py` | the ecologist's gate: 8 worlds × 10 years, all must pass |
+| `tools/balance.py` | the ecologist's gate: seeded worlds × years, all must pass |
 | `tools/check_page.py` | headless verification of the served page |
 | `tools/render_svg.py` | the README's scene, rendered from the live world |
 | `docs/ARCHITECTURE.md` | how it all works: tick order, contracts, threads |

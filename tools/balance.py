@@ -4,7 +4,8 @@ Runs many seeded worlds headlessly (no LLM) and reports population
 persistence, boom/bust ranges, extinctions and recolonizations, with
 hard pass/fail lines so sim tuning stays honest.
 
-  python3 tools/balance.py [--seeds 12] [--weeks 600] [--fast]
+  python3 tools/balance.py [--seeds 12] [--weeks 600] [--jobs N]
+  (defaults: 10 seeds × 900 weeks, all the CPU's cores)
 """
 
 import argparse
