@@ -181,8 +181,9 @@ def _update_plants(w, evs, light):
         li = light[p["y"]][p["x"]]
         p["age"] += 1
         damaged = False
+        p_bl, p_dr = False, False
 
-        # blight / drought pressure
+        # blight / drought pressure — which one actually bites this plant
         for e in blights:
             region = _region_set(e["region"], size)
             if (region is None or (p["x"], p["y"]) in region) and \
@@ -190,12 +191,14 @@ def _update_plants(w, evs, light):
                 mult = 1.6 if p["sp"] in ("fern", "birch") else 1.0
                 p["hp"] -= 1.2 * mult
                 damaged = True
+                p_bl = True
         for e in droughts:
             region = _region_set(e["region"], size)
             if (region is None or (p["x"], p["y"]) in region) \
                     and c["moisture"] < 0.12:
                 p["hp"] -= 0.5
                 damaged = True
+                p_dr = True
 
         # weather stress
         if w["weather"] == "frost" and spec["frost_hp"]:
@@ -244,8 +247,8 @@ def _update_plants(w, evs, light):
         if not damaged and growing and c["moisture"] > 0.10:
             p["hp"] = min(10.0, p["hp"] + rules.R["cells"]["regen_per_week"] + c.get("humus", 0) * rules.R["cells"]["regen_humus_bonus"])
         if p["hp"] <= 0:
-            cause = "blight" if any(blights) else \
-                ("drought" if any(droughts) else "withered")
+            cause = "blight" if p_bl else \
+                ("drought" if p_dr else "withered")
             _fell(w, p, evs, cause)
             continue
         if p["age"] >= spec["max_age"]:

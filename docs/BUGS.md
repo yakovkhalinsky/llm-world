@@ -338,7 +338,7 @@ during a slow embed).
   is never set anywhere; drop the ghost fallback (keep the `or 0`).
 - [ ] **b15** `grove/app.py:147,155` — `pending_since` is written,
   never read; delete it or surface the backlog's age on the dashboard.
-- [ ] **b16** `grove/sim.py:247-248` — death attribution: with blight
+- [x] **b16** `grove/sim.py:247-248` — death attribution: with blight
   and drought both running, drought deaths read "blight" (`any(blights)`
   wins). Track which pressure actually hit *this* plant that week
   (the damage loops already know) and attribute from that.
