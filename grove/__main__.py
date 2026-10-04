@@ -243,6 +243,9 @@ def _add_llm_flags(sp):
     sp.add_argument("--token-budget", type=int, default=None,
                     help="max cloud tokens per day; over it the grove "
                          "thins to local narration and slows the soul")
+    sp.add_argument("--auto-tune", action="store_true",
+                    help="the steward's accepted proposals apply "
+                         "themselves (one rule a year, bounded)")
     sp.add_argument("--host", default=None)
 
 
@@ -308,6 +311,13 @@ def main(argv=None):
     if args.rules:
         rules.load_override(args.rules)
         print(f"rules override: {args.rules}")
+    # the world's own constitution: the amendments the steward accepted
+    own = os.path.join(args.data, "world_rules.json")
+    if os.path.exists(own):
+        rules.load_override(own)
+        print(f"world constitution: {own}")
+    if getattr(args, "auto_tune", False):
+        rules.R["review"]["auto_tune"] = True
     if args.cmd == "new" and args.seed is None:
         args.seed = random.randint(1, 10_000)
     # subcommands that didn't set model/host inherit the defaults

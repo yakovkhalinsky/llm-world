@@ -22,7 +22,8 @@ from . import rules
 DEFAULT_HOST = "http://127.0.0.1:11434"
 
 LOCAL_JOBS = {"soul": "llama3.2:3b", "chron": "llama3.2:1b",
-              "voice": "llama3.2:3b", "ask": "llama3.2:1b"}
+              "voice": "llama3.2:3b", "ask": "llama3.2:1b",
+              "review": "llama3.2:3b"}
 LOCAL_ALT = {"llama3.2:3b": "llama3.2:1b", "llama3.2:1b": "llama3.2:3b"}
 CLOUD_CHAIN = ["glm-5.2:cloud", "deepseek-v4-pro:cloud", "llama3.2:1b"]
 LOCAL_FALLBACK_ORDER = ["llama3.2:1b", "llama3.2:3b"]
@@ -30,9 +31,9 @@ LOCAL_FALLBACK_ORDER = ["llama3.2:1b", "llama3.2:3b"]
 # hybrid = the soul's judgment in the cloud, the forest's voice local:
 #   the chronicle is ~80% of the token spend and the local 1B keeps up
 TIER_JOBS = {
-    "local": ([], ["soul", "chron", "voice", "ask"]),
-    "cloud": (["soul", "chron", "voice", "ask"], []),
-    "hybrid": (["soul", "ask"], ["chron", "voice"]),
+    "local": ([], ["soul", "chron", "voice", "ask", "review"]),
+    "cloud": (["soul", "chron", "voice", "ask", "review"], []),
+    "hybrid": (["soul", "ask", "review"], ["chron", "voice"]),
 }
 
 

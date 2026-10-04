@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS bio     (oid INTEGER, tick INTEGER, key TEXT,
 CREATE INDEX IF NOT EXISTS bio_oid ON bio (oid);
 CREATE TABLE IF NOT EXISTS vec     (key TEXT PRIMARY KEY, tick INTEGER,
                                     text TEXT, vec TEXT, dim INTEGER);
+CREATE TABLE IF NOT EXISTS proposals (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    week INTEGER, status TEXT, rule TEXT,
+                                    value REAL, why TEXT, verdict TEXT);
 """
 
 
@@ -133,6 +136,25 @@ class DB:
             "INSERT INTO bio (oid, tick, key) VALUES (?, ?, ?)",
             (oid, tick, key))
         self.con.commit()
+
+    def add_amendment(self, week, status, rule, value, why, verdict):
+        self.con.execute(
+            "INSERT INTO proposals (week, status, rule, value, why, "
+            "verdict) VALUES (?, ?, ?, ?, ?, ?)",
+            (week, status, rule, value, (why or "")[:200],
+             (verdict or "")[:200]))
+        self.con.commit()
+
+    # -- the world's own constitution, persisted across restarts -----------
+    def override_path(self, data_dir):
+        import os
+        return os.path.join(data_dir, "world_rules.json")
+
+    def save_override(self, data_dir, rules_mod):
+        path = self.override_path(data_dir)
+        with open(path, "w") as f:
+            json.dump(rules_mod.R, f, indent=1, sort_keys=True,
+                      default=str)
 
     def bio(self, oid):
         rows = self.con.execute(

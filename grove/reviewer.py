@@ -1,0 +1,226 @@
+"""reviewer.py — the LLM's ecological review of the world's ruleset.
+
+Roughly once a simulated year the reviewer reads: the current rules,
+the year's census (peaks/troughs/ends per species), the population's
+crises (extinctions, recolonizations, germinations, the robins'), the
+soil's bank, and the recent chronicle. It proposes AT MOST TWO rule
+amendments with reasons (or no change at all: restraint is expected).
+
+Proposals are validated against rules.R["bounds"] before anything
+happens: out-of-laws are refused with the reason. Default flow keeps
+them pending in the amendments' ledger for the viewer to accept on the
+dashboard; `--auto-tune` applies instead, and the accepted/automated
+changes persist in the world's own override file.
+
+The tone: a steward, not a tinkerer. Only one rule in flight at a time
+(a rule needs a year to be judged); the reviewer may also simply say
+the world needs nothing.
+"""
+
+import json
+import re
+import time
+
+from . import rules
+from .world import counts as world_counts, plant_counts as world_plant_counts
+
+REVIEW_SYSTEM = (
+    "You are the grove's steward, reviewing its written constitution "
+    "once a year with the previous year's ledger in hand. You may "
+    "propose amendments to the rules (each: a path, a proposed value, "
+    "and one honest sentence why), or propose nothing. Judge from the "
+    "ledger: a boom that ends in extinction asks for smaller caps; a "
+    "species living at its ceiling the whole year may deserve more "
+    "room; an understory gone quiet asks for gentler seed rain or a "
+    "more open canopy; near-extinctions ask for patience, not "
+    "panic. Propose at most two changes, each small: a constitution "
+    "needs a year's evidence to be judged again. In 'verdict' write "
+    "one sentence in the voice of a keeper of a living world.\n"
+    'Reply ONLY as JSON: {"verdict":"...", "amendments":'
+    '[{"rule":"animals.rabbit.cap","value":20,"why":"..."}], '
+    '"nothing":false}'
+)
+
+REVIEW_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdict": {"type": "string"},
+        "nothing": {"type": "boolean"},
+        "amendments": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"rule": {"type": "string"},
+                           "value": {"type": "number"},
+                           "why": {"type": "string"}},
+            "required": ["rule", "why"]}},
+    },
+    "required": ["verdict", "amendments"],
+}
+
+
+def _year_ledger(world, db, weeks=48):
+    """The reviewed year's census: per-species peak/trough/end + the
+    crises the world recorded."""
+    t = world["tick"]
+    hist = db.history(weeks)
+    series = {}
+    for _tick, snap in hist:
+        for sect in ("pop", "plants"):
+            for sp, n in snap.get(sect, {}).items():
+                a, b = series.setdefault(sect, {}).get(sp, (10**9, -1))
+                series[sect][sp] = (min(a, n), max(b, n))
+    end = {"pop": world_counts(world), "plants": world_plant_counts(world)}
+    events = {}
+    for row in db.con.execute(
+            "SELECT kind, COUNT(*) FROM chron WHERE source='raw' AND "
+            "kind IN ('recolonize','germinate','robins_left',"
+            "'robins_return','germinate') GROUP BY kind").fetchall():
+        events[row[0]] = row[1]
+    starves = db.con.execute(
+        "SELECT COUNT(*) FROM chron WHERE source='raw' AND "
+        "kind='starve'").fetchone()[0]
+    return {"peak_trough_end": series, "end": end,
+            "crises": events, "starving_lately": starves,
+            "soil_bank": world.get("seedbank", {}),
+            "week": t}
+
+
+
+
+
+def digest(world, db, weeks=48):
+    """The review's evidence, in compact text (a few hundred tokens)."""
+    led = _year_ledger(world, db, weeks)
+    lines = [f"week {world['tick']}"]
+    for sect in ("pop", "plants"):
+        for sp, (lo, hi) in sorted((led["peak_trough_end"] or {}).get(
+                sect, {}).items()):
+            end = led["end"][sect].get(sp, 0)
+            lines.append(f" {sect} {sp}: peak {hi}, trough {lo}, now {end}")
+    if led["crises"]:
+        lines.append("crises: " + ", ".join(
+            f"{k} ({n}×)" for k, n in led["crises"].items()))
+    if led["starving_lately"]:
+        lines.append(f"starvations {led['starving_lately']}×")
+    bank = led["soil_bank"]
+    if bank:
+        lines.append("seed bank: " + ", ".join(f"{k} {v}"
+                                               for k, v in bank.items()))
+    cur = rules_current()
+    if cur:
+        lines.append("current rules: " + "; ".join(cur))
+    return "\n".join(lines)
+
+
+def rules_current():
+    """The lawful paths' current values (what a steward may propose on)."""
+    out = []
+    for sp, t in sorted(rules.R["animals"].items()):
+        if t.get("visitor"):
+            continue
+        out.append(f"{sp}.cap={t.get('cap')}")
+    for sp, t in sorted(rules.R["plants"].items()):
+        out.append(f"{sp}.seed_prob={t.get('seed_prob')}")
+    return out
+
+
+def _bounds_for(path):
+    """The legal band for a dotted path; species-wildcards apply."""
+    law = rules.R.get("bounds", {})
+    if path in law:
+        return law[path]
+    parts = path.split(".")
+    if len(parts) == 3 and parts[0] in ("animals", "plants"):
+        band = law.get(parts[0] + ".*." + parts[2])
+        if band:
+            return band
+    return None
+
+
+def validate(proposal):
+    """(ok, clamped_value, reason) against the bounds' hard law."""
+    if not isinstance(proposal, dict):
+        return False, None, "not a proposal"
+    path = str(proposal.get("rule", "")).strip()
+    if not path or not re.match(r"^(animals|plants|pop|weather|cells)\."
+                                r"[A-Za-z0-9*]+(\.[A-Za-z0-9*]+)?$",
+                                path):
+        return False, None, f"unlawful path: {path!r}"
+    band = _bounds_for(path)
+    if band is None:
+        return False, None, f"no law covers {path!r}"
+    value = proposal.get("value")
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return False, None, "value is not a number"
+    lo, hi = band
+    if path.startswith("animals.") and path.endswith(".cap") and \
+            value < 2:
+        return False, None, "a species may never be reduced toward zero"
+    clamped = max(lo, min(hi, value))
+    why = ""
+    if clamped != value:
+        why = f"clamped into {lo}..{hi}"
+    return True, clamped, why
+
+
+def pending(db):
+    return db.con.execute(
+        "SELECT id, week, rule, proposed, why, verdict FROM proposals "
+        "WHERE status = 'pending' ORDER BY id DESC LIMIT 10").fetchall()
+
+
+def history(db, n=20):
+    return db.con.execute(
+        "SELECT id, week, rule, proposed, why, status FROM proposals "
+        "ORDER BY id DESC LIMIT ?", (n,)).fetchall()
+
+
+def record(db, world, proposals, verdict, auto):
+    """Validate + store; auto-apply the ones the law allows."""
+    out = []
+    applied = False
+    for prop in (proposals or [])[:2]:
+        ok, value, reason = validate(prop)
+        if not ok:
+            db.add_amendment(world["tick"], "refused", str(
+                prop.get("rule"))[:80], prop.get("value"),
+                f"refused: {reason}", verdict)
+            out.append((False, prop.get("rule"), None, reason))
+            continue
+        if auto and not applied:
+            apply_amendment(db, rules, prop["rule"], value)
+            applied = True
+            out.append((True, prop.get("rule"), value, reason))
+            continue
+        why = str(prop.get("why", ""))[:160] +             (f" [{reason}]" if reason else "")
+        db.add_amendment(world["tick"], "offered", prop["rule"], value,
+                         why, verdict)
+        out.append((True, prop.get("rule"), value, "offered"))
+    return out
+
+
+def apply_amendment(db, rules_mod, path, value):
+    """Set a rule by dotted path (species wildcards resolve to the
+    species actually named by law-abiding species)."""
+    parts = path.split(".")
+    if len(parts) != 3 or parts[1] == "*":
+        return False
+    section = rules_mod.R.setdefault(parts[0], {})
+    target = section.get(parts[1])
+    if target is None:
+        return False
+    target[parts[2]] = value
+    db.con.execute(
+        "UPDATE proposals SET status='applied', value=? "
+        "WHERE rule=? AND status IN ('pending','offered')",
+        (value, path))
+    db.con.commit()
+    return True
+
+
+def dismiss(db, proposal_id):
+    db.con.execute("UPDATE proposals SET status='dismissed' WHERE id=?",
+                   (proposal_id,))
+    db.con.commit()
+    return True

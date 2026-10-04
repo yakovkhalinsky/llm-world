@@ -151,6 +151,24 @@ R = {
 
     "gate": {"seeds": 8, "weeks": 900, "plants_min": 120,
              "species_all_present": True},
+
+    # the amendments' hard law: any LLM review may propose changes, but
+    # only inside these ranges — the engine clamps or refuses, and only
+    # one rule changes per review
+    "bounds": {
+        "animals.*.cap": (2, 60),
+        "animals.*.lifespan": (20, 400),
+        "animals.*.hunger_drain": (0.2, 0.5),
+        "animals.*.lit_prob": (0.02, 0.6),
+        "animals.*.hunt_prob": (0.1, 0.8),
+        "plants.*.seed_prob": (0.02, 0.6),
+        "plants.*.light_need": (0.1, 0.9),
+        "plants.*.storm_fall_old": (0.0, 0.5),
+        "weather.rain_prob.2": (0.0, 0.6),      # autumn's rain
+        "pop.recolonize_after": (8, 40),
+        "pop.robins_return_prob": (0.4, 1.0),
+    },
+    "review": {"every_weeks": 48, "auto_tune": False},
 }
 
 

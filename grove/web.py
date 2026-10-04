@@ -25,6 +25,8 @@ from urllib.parse import urlparse, parse_qs
 from . import llm as llmm
 from . import memory
 from . import operator
+from . import reviewer
+from . import rules
 from . import render
 from . import world as W
 from .app import Grove
@@ -337,9 +339,11 @@ PAGE = r"""<!doctype html>
       <div class="tabs">
         <button class="on" id="tabChron">chronicle</button>
         <button id="tabCensus">census</button>
+        <button id="tabTune">⚖ tuning</button>
       </div>
       <ul class="chron" id="chron"></ul>
       <div id="sparks" hidden></div>
+      <div id="tune" hidden style="max-height:38vh; overflow:auto"></div>
       <div class="status" id="look"></div>
     </div>
 
@@ -1132,7 +1136,37 @@ $("tabChron").onclick = () => {
 };
 $("tabCensus").onclick = () => {
   $("chron").hidden = true; $("sparks").hidden = false;
+  $("tune").hidden = true;
   $("tabCensus").classList.add("on"); $("tabChron").classList.remove("on");
+  $("tabTune").classList.remove("on");
+};
+$("tabTune").onclick = async () => {
+  $("chron").hidden = true; $("sparks").hidden = true;
+  $("tune").hidden = false;
+  $("tabTune").classList.add("on"); $("tabChron").classList.remove("on");
+  $("tabCensus").classList.remove("on");
+  const r = await fetch("/api/tuning");
+  const s = await r.json();
+  const rows = (s.pending || []).map(p =>
+    `<li><b>${p.rule}</b> → ${p.value}` +
+    `<div class="when">wk${p.week} — ${p.why}</div>` +
+    `<div><button class="mini" data-a="accept" data-id="${p.id}">⚔ accept</button> ` +
+    `<button class="mini" data-a="dismiss" data-id="${p.id}">leave it</button></div></li>`);
+  $("tune").innerHTML = rows.join("") ||
+      "<div class='when'>the steward offers nothing at the moment.</div>";
+  const hrows = (s.history || []).slice(0, 8).map(h =>
+    `<li style="opacity:.75"><b>${h.rule}</b> → ${h.value}` +
+    ` <span class="when">${h.status} · wk${h.week}</span></li>`);
+  if (hrows.length)
+    $("tune").innerHTML += "<div style='margin-top:8px'><i style='color:var(--dim);font-size:12px'>the world's amendments</i></div>" +
+      "<ul class='chron' style='max-height:none'>" + hrows.join("") + "</ul>";
+  for (const b of document.querySelectorAll("button.mini"))
+    b.onclick = async () => {
+      await fetch("/api/tuning/" + b.dataset.a,
+                  {method: "POST", headers: {"Content-Type": "application/json"},
+                   body: JSON.stringify({ id: parseInt(b.dataset.id) })});
+      $("tabTune").onclick();
+    };
 };
 
 let calm = false;
@@ -1169,6 +1203,15 @@ if (typeof globalThis !== "undefined" && !("groveDebug" in globalThis))
 </body>
 </html>
 """
+
+def _read_pid(handler):
+    """Read {"id": N} from a POST body."""
+    try:
+        n = int(handler.headers.get("Content-Length", 0) or 0)
+        return int(json.loads(handler.rfile.read(n).decode()).get("id"))
+    except (ValueError, json.JSONDecodeError, TypeError):
+        return 0
+
 
 def _ip_hint(host):
     if host != "0.0.0.0":
@@ -1286,6 +1329,41 @@ def cmd_web(args):
                             g._invite_operator()
                             invited = True
                 self._send(200, json.dumps({"invited": invited}),
+                           "application/json")
+            elif path == "/api/tuning":
+                with lock:
+                    props = reviewer.pending(g.db)
+                    hist = reviewer.history(g.db, 12)
+                self._send(200, json.dumps({
+                    "pending": [{"id": i, "week": wk, "rule": rp,
+                                 "value": v, "why": wy}
+                                for i, wk, rp, v, wy, _s in props],
+                    "history": [{"id": i, "week": wk, "status": s,
+                                 "rule": rp, "value": v}
+                                for i, wk, s, rp, v in hist],
+                    "auto_tune": bool(g.args.__dict__.get("auto_tune"))
+                    if hasattr(g.args, "__dict__") else False,
+                    "current": {sp: t.get("cap") for sp, t in
+                                sorted(rules.R["animals"].items())},
+                }), "application/json")
+            elif path == "/api/tuning/accept":
+                pid = _read_pid(self)
+                with lock:
+                    row = g.db.con.execute(
+                        "SELECT rule, value FROM proposals WHERE id=? "
+                        "AND status IN ('pending','offered')",
+                        (pid,)).fetchone()
+                    if row and isinstance(row[1], (int, float)):
+                        reviewer.apply_amendment(g.db, rules, row[0],
+                                                 row[1])
+                        g.db.save_override(args.data, rules)
+                self._send(200, json.dumps({"ok": True}),
+                           "application/json")
+            elif path == "/api/tuning/dismiss":
+                pid = _read_pid(self)
+                with lock:
+                    reviewer.dismiss(g.db, pid)
+                self._send(200, json.dumps({"ok": True}),
                            "application/json")
             elif path == "/api/ask":
                 # the ask waits for its turn, then thinks OUTSIDE the

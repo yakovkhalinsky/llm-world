@@ -13,6 +13,7 @@ import time
 
 from . import chronicler
 from . import db as dbm
+from . import reviewer
 from . import rules
 from . import events as evm
 from . import operator
@@ -190,6 +191,15 @@ class Grove:
             return
         if chron_ready:
             self._flush_chron()
+
+    def _invite_review(self):
+        recent = [r[2] for r in self.db.chronicle_lines(4)]
+        digest = reviewer.digest(self.world, self.db, 48)
+        self.worker.submit({
+            "kind": "review", "system": reviewer.REVIEW_SYSTEM,
+            "user": digest, "schema": reviewer.REVIEW_SCHEMA,
+            "max_tokens": 220, "temperature": 0.6, "extra": {},
+            "retries": 1})
 
     def _flush_chron(self):
         # small models handle single events far better than event arrays:
