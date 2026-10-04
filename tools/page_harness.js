@@ -16,7 +16,7 @@ const ctxTarget = {};
 for (const k of ["fillRect","strokeRect","beginPath","moveTo","lineTo",
   "arc","arcTo","ellipse","quadraticCurveTo","closePath","fill","stroke",
   "fillText","save","restore","translate","scale","rotate","setTransform",
-  "setLineDash","clearRect"])
+  "setLineDash","clearRect","clip"])
   ctxTarget[k] = (...a) => {
     calls++;
     for (const q of a)
