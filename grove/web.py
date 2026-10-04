@@ -116,16 +116,16 @@ def snapshot(grove, runner, lock):
         hist = g.db.history(36)
         pops_now = W.counts(w)
         plants_now = W.plant_counts(w)
-        pop_chips = [{"emo": render.ANIMAL_EMOJI.get(sp, "·"), "n": n,
+        pop_chips = [{"emo": render.emoji(sp), "n": n,
                       "name": sp}
                      for sp, n in sorted(pops_now.items(), key=lambda kv: -kv[1])]
         series = []
         for sp, n in sorted(pops_now.items()):
             ser = [d["pop"].get(sp, 0) for _t, d in hist]
             if n or any(ser):
-                series.append({"name": sp, "emo": render.ANIMAL_EMOJI.get(
-                    sp, "·"), "values": ser})
-        for sp in ("pine", "birch", "willow"):
+                series.append({"name": sp, "emo": render.emoji(sp),
+                               "values": ser})
+        for sp in sorted(rules.R["plants"]):
             ser = [d["plants"].get(sp, 0) for _t, d in hist]
             if ser:
                 series.append({"name": sp, "emo": "🌲" if sp == "pine"
@@ -140,6 +140,9 @@ def snapshot(grove, runner, lock):
         ops = [{"week": h["tick"], "action": h["action"],
                 "region": h.get("region"), "strength": h.get("strength")}
                for h in w.get("op_history", [])]
+        pres = rules.R["presentation"]
+        biome = {"seasons": pres.get("seasons_palette"),
+                 "bodies": pres.get("animal_body")}
         llm_bits = {
             "status": llmm.status_line(g.llm),
             "ok": bool(g.llm and g.llm.enabled),
@@ -169,6 +172,7 @@ def snapshot(grove, runner, lock):
             "chronicle": chron,
             "soul": soul,
             "ops": ops,
+            "biome": biome,
             "effects": ["%s over %s (%d weeks left)" %
                         (e["kind"], e["region"], e["ticks"])
                         for e in w.get("effects", [])],

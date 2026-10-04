@@ -72,7 +72,7 @@ def _update_plants(w, evs, light):
             region = _region_set(e["region"], size)
             if (region is None or (p["x"], p["y"]) in region) and \
                     (e.get("species") in (None, p["sp"])):
-                mult = 1.6 if p["sp"] in ("fern", "birch") else 1.0
+                mult = spec.get("blight_sensitivity", 1.0)
                 p["hp"] -= 1.2 * mult
                 damaged = True
                 p_bl = True
@@ -101,10 +101,10 @@ def _update_plants(w, evs, light):
                 fallen.append(pid)
                 continue
 
-        # growth
+        # growth — understory takes the shade's side of the light law
         if p["stage"] == "sapling":
-            ok = (spec["light_need"] <= li) if p["sp"] != "fern" \
-                else (li < spec["light_need"] * 1.2)
+            ok = (li < spec["light_need"] * 1.2) if \
+                spec["kind"] == "understory" else (spec["light_need"] <= li)
             if growing and c["moisture"] > 0.12 and \
                     p["age"] >= spec["mature_age"] and ok and p["hp"] > 4:
                 p["stage"] = "mature"
@@ -117,14 +117,17 @@ def _update_plants(w, evs, light):
                         "sp": p["sp"], "x": p["x"], "y": p["y"],
                         "age": p["age"]})
 
-        # ferns scorch in full sun
-        if p["sp"] == "fern" and li > 0.85:
-            p["hp"] -= 0.6
+        # the shade-tender scorch in full sun (an understory's lot)
+        if spec["kind"] == "understory" and \
+                li > spec.get("scorch_light", 0.85):
+            p["hp"] -= spec.get("scorch_hp", 0.6)
             damaged = True
 
-        # berry fruiting
-        if p["sp"] == "berry" and p["stage"] in ("mature", "old") \
-                and season == 0 and week_in == 1 and rng.random() < 0.8:
+        # the shrub's one week of fruit
+        if spec["kind"] == "shrub" and p["stage"] in ("mature", "old") \
+                and season == spec.get("fruit_season", 0) \
+                and week_in == spec.get("fruit_week", 1) and \
+                rng.random() < spec.get("fruit_prob", 0.8):
             p["berries"] = True
 
         # recover or die — rot feeds the ground beneath a log
@@ -144,17 +147,17 @@ def _update_plants(w, evs, light):
                 and season in _seasons(spec["seed_season"]) \
                 and rng.random() < spec["seed_prob"]:
             _seed(w, p, spec, light, rng)
-        if p["sp"] == "fern" and p["stage"] == "mature" and growing \
-                and rng.random() < spec.get("spread_prob", 0):
-            _spread_fern(w, p, spec, light, rng)
-            _spread_fern(w, p, spec, light, rng)   # spores go out twice
-        if p["sp"] == "berry" and p["stage"] in ("mature", "old") \
+        if spec["kind"] == "understory" and p["stage"] == "mature" \
+                and growing and rng.random() < spec.get("spread_prob", 0):
+            for _ in range(spec.get("spread_times", 2)):
+                _spread_understory(w, p, spec, light, rng)   # spores ×2
+        if spec["kind"] == "shrub" and p["stage"] in ("mature", "old") \
                 and season in _seasons(spec["seed_season"]) \
                 and rng.random() < spec["seed_prob"]:
             _seed(w, p, spec, light, rng)
-        if p["sp"] == "berry" and p["stage"] in ("mature", "old") \
-                and growing and rng.random() < 0.045:
-            _spread_berry(w, p, rng)   # suckering: a clone next door
+        if spec["kind"] == "shrub" and p["stage"] in ("mature", "old") \
+                and growing and rng.random() < spec.get("sucker_prob", 0.045):
+            _spread_shrub(w, p, rng)     # suckering: a clone next door
 
 def _fell(w, p, evs, cause):
     p["stage"] = "log"
@@ -242,12 +245,12 @@ def _germinate(w, evs):
                         w, x, y, spec["near_water"]):
                     continue
                 li = light[y][x]
-                if sp == "fern":
+                if spec["kind"] == "understory":
                     if not li < spec["light_need"] * 1.2:
                         continue
                 elif li < spec["light_need"] * 0.8:
                     continue
-                if sp in ("fern", "berry"):
+                if spec["kind"] in ("understory", "shrub"):
                     if _understory_in_cell(w, x, y) >= 1:
                         continue
                 elif _trees_in_cell(w, x, y) >= 1:
@@ -271,7 +274,7 @@ def _germinate(w, evs):
             made += 1
         evs.append({"tick": t, "kind": "germinate", "sp": sp, "n": made})
 
-def _spread_berry(w, p, rng):
+def _spread_shrub(w, p, rng):
     """A mature bush root-suckers: a clone in the pocket next door."""
     size = w["size"]
     for _ in range(2):
@@ -284,11 +287,11 @@ def _spread_berry(w, p, rng):
         if _understory_in_cell(w, sx, sy) >= 1:
             continue
         w["plants"][str(w["next_id"])] = W.new_plant(
-            w["next_id"], "berry", sx, sy, "sapling", 0)
+            w["next_id"], p["sp"], sx, sy, "sapling", 0)
         w["next_id"] += 1
         return
 
-def _spread_fern(w, p, spec, light, rng):
+def _spread_understory(w, p, spec, light, rng):
     size = w["size"]
     sy = p["y"] + rng.randint(-1, 1)
     sx = p["x"] + rng.randint(-1, 1)

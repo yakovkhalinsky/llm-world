@@ -40,6 +40,7 @@ R = {
 
     "plants": {},     # the pack folds its nature in at import
     "animals": {},    # species tables live in grove/biomes/ now
+    "presentation": {},  # the pack's words, colours, emoji, names
     "pop": {
         "winter_drain": 1.4,
         "recolonize_after": 16,
@@ -131,10 +132,12 @@ def select_biome(name):
     which nature now holds."""
     global _ACTIVE
     spec = load_spec(name)
-    for section in ("plants", "animals", "gen"):
-        if section in spec:
-            R[section].clear()
-            R[section].update(spec[section])
+    for section in spec:
+        if section not in R:
+            continue
+        if section in ("plants", "animals", "gen"):
+            R[section].clear()          # packs ship these whole
+        R[section].update(spec[section])
     _ACTIVE = name
 
 

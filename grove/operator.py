@@ -6,53 +6,21 @@ The engine validates every field and applies the decision deterministically.
 The LLM bends the world; it never owns it.
 """
 
+from . import rules
 from . import world as W
 from .world import plant_counts
-from .sim import _pop
+from .engine import _pop
 
 MENU = ("storm", "drought", "blight", "bloom", "migration", "visitor",
         "destiny", "quiet")
 REGIONS = ("NW", "NE", "SW", "SE", "all")
 
-SYSTEM = (
-    "You are the World Soul of a small forest — the slow, fate-bearing "
-    "presence behind its weather and fortunes. Every few weeks you are "
-    "given a digest of the grove's state and you choose ONE intervention, "
-    "as a forest would be fated to receive: sometimes harsh, sometimes "
-    "kind, often nothing at all. Read the digest first: help the world "
-    "stay balanced (drought after dry weeks is cruel twice).\n"
-    "Valid fates: storm (a squall with wind-fall), drought (dry weeks), "
-    "blight (a creeping sickness in plants), bloom (grass and berries "
-    "surge), migration (a species arrives at the edge), visitor (a lone "
-    "stag or passing wolf enters briefly), destiny (mark ONE creature "
-    "whose life you will watch), quiet (the soul keeps its peace).\n"
-    "For 'destiny' name a creature by the id number from the digest's "
-    "'known souls' list, and in 'destiny' write one short prophecy "
-    "(under 70 characters) about its life — where it shall go, what it "
-    "shall become. The engine keeps the watch and chronicles the "
-    "fulfillment.\n"
-    "Choose 'region' from NW, NE, SW, SE or all. 'strength' is 1 (mild) "
-    "to 3 (severe). 'blight' may name one plant species: pine, birch, "
-    "willow, fern, berry. 'migration' may name one animal species: "
-    "rabbit, deer, fox, owl, robin, boar. 'visitor' names stag or wolf.\n"
-    "In 'intent' write one plain sentence (under 110 characters) saying "
-    "what you intend, in the voice of the forest itself.\n"
-    'Reply ONLY as JSON: {"action":"...", "region":"...", "strength":1, '
-    '"species":null, "target":null, "destiny":null, "intent":"..."}'
-)
-
-SCHEMA = {
+_SCHEMA_BONES = {
     "type": "object",
     "properties": {
-        "action": {"type": "string",
-                   "enum": ["storm", "drought", "blight", "bloom",
-                            "migration", "visitor", "destiny", "quiet"]},
-        "region": {"type": "string", "enum": ["NW", "NE", "SW", "SE", "all"]},
+        "action": {"type": "string", "enum": list(MENU)},
+        "region": {"type": "string", "enum": list(REGIONS)},
         "strength": {"type": "integer", "enum": [1, 2, 3]},
-        "species": {"type": "string",
-                    "enum": ["pine", "birch", "willow", "fern", "berry",
-                             "rabbit", "deer", "fox", "owl", "robin",
-                             "boar", "stag", "wolf", "none"]},
         "target": {"type": "integer"},
         "destiny": {"type": "string"},
         "intent": {"type": "string"},
@@ -60,7 +28,23 @@ SCHEMA = {
     "required": ["action", "region", "strength", "intent"],
 }
 
-DESTINY_TRIGGERS = ("rabbit", "deer", "fox", "wolf", "stag", "boar")
+
+def system():
+    """The World Soul's brief, in the pack's own words."""
+    return rules.R["presentation"]["soul_system"]
+
+
+def schema():
+    """The op menu with the pack's own species in the enum."""
+    bones = {k: v for k, v in _SCHEMA_BONES["properties"].items()}
+    bones["species"] = {"type": "string", "enum":
+                        list(rules.R["plants"])
+                        + list(rules.R["pop"]["base_residents"])
+                        + list(rules.R["pop"]["visitor_species"])
+                        + ["none"]}
+    return {"type": "object", "properties": bones,
+            "required": _SCHEMA_BONES["required"]}
+
 
 
 def digest(world, recent_lines):
@@ -137,7 +121,7 @@ def known_unnamed(world):
     out = []
     for a in world["animals"].values():
         if not (world["names"].get(str(a["id"])) or a.get("name")):
-            if a["sp"] not in ("stag", "wolf"):   # visitors aren't of us
+            if a["sp"] not in rules.R["pop"]["visitor_species"]:
                 out.append(a)
     return sorted(out, key=lambda a: -a["age"])
 
@@ -168,7 +152,8 @@ def validate(raw):
                                   ("rabbit", "deer", "fox", "owl", "robin",
                                    "boar")):
         effect["species"] = "robin"
-    if action == "visitor" and effect["species"] not in ("stag", "wolf"):
+    if action == "visitor" and effect["species"] not in \
+            rules.R["pop"]["visitor_species"]:
         effect["species"] = "stag"
     if action not in ("blight", "migration", "visitor"):
         effect["species"] = None

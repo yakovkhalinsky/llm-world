@@ -29,7 +29,8 @@ def fallback_name(existing, seed, tick):
     """Deterministic pick from the resident name list."""
     used = set(existing)
     rng = W.rng_for(seed, tick, "voice")
-    free = [n for n in W.CREATURE_NAMES if n not in used] or W.CREATURE_NAMES
+    free = [n for n in W.creature_names()
+            if n not in used] or W.creature_names()
     return rng.choice(free)
 
 

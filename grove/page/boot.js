@@ -18,6 +18,11 @@ async function poll() {
     const s = await r.json();
     if (s.error) { $("status").textContent = s.error; return; }
     ST.s = s;
+    if (s.biome) {
+      // the pack's own colours, over the built-in fallbacks
+      if (s.biome.seasons) Object.assign(SEASONS, s.biome.seasons);
+      if (s.biome.bodies) Object.assign(ANIMAL_BODY, s.biome.bodies);
+    }
     if (s.tick !== ST.seenTick) {          // a NEW sim week: new flight
       ST.seenTick = s.tick;
       const lag = Math.max(0, s.now - s.step_at);   // poll lag, seconds

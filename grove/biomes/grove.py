@@ -1,8 +1,8 @@
-"""The grove's own pack — the original forest, exactly as the
-ruleset has always carried it: the species tables and the planting
-recipe. Its values were copied from the rules at the moment of the
-pack system's birth; the engine still reads rules.R, and the pack
-becomes the single home of the grove's nature."""
+"""The grove's own pack — the original forest: species tables, the
+planting recipe, the world's words, colours, emoji, names, and the
+soul's briefs. The engine still reads rules.R; the pack is where this
+nature lives."""
+
 
 SPEC = {'plants': {'pine': {'kind': 'tree',
                      'mature_age': 20,
@@ -33,7 +33,8 @@ SPEC = {'plants': {'pine': {'kind': 'tree',
                       'storm_fall_old': 0.22,
                       'frost_hp': 0.15,
                       'emoji': 'leaf',
-                      'desc': 'birch'},
+                      'desc': 'birch',
+                      'blight_sensitivity': 1.6},
             'willow': {'kind': 'tree',
                        'mature_age': 9,
                        'old_age': 72,
@@ -61,7 +62,11 @@ SPEC = {'plants': {'pine': {'kind': 'tree',
                      'storm_fall_old': 0.05,
                      'frost_hp': 0.25,
                      'emoji': 'fern',
-                     'desc': 'fern'},
+                     'desc': 'fern',
+                     'blight_sensitivity': 1.6,
+                     'scorch_light': 0.85,
+                     'scorch_hp': 0.6,
+                     'spread_times': 2},
             'berry': {'kind': 'shrub',
                       'mature_age': 3,
                       'old_age': 22,
@@ -76,7 +81,11 @@ SPEC = {'plants': {'pine': {'kind': 'tree',
                       'storm_fall_old': 0.15,
                       'frost_hp': 0.2,
                       'emoji': 'berry',
-                      'desc': 'berry bush'}},
+                      'desc': 'berry bush',
+                      'fruit_season': 0,
+                      'fruit_week': 1,
+                      'fruit_prob': 0.8,
+                      'sucker_prob': 0.045}},
  'animals': {'rabbit': {'hunger_drain': 0.8,
                         'lifespan': 60,
                         'speed': 3,
@@ -214,4 +223,146 @@ SPEC = {'plants': {'pine': {'kind': 'tree',
          'fern_scorch_light': 0.85,
          'starting_seedbank': {'pine': 8, 'birch': 8, 'willow': 4, 'berry': 6, 'fern': 8},
          'founder_names': 6,
-         'founder_prob': 0.22}}
+         'founder_prob': 0.22},
+ 'presentation': {'world_word': 'the grove',
+                  'chronicler_role': 'a forest',
+                  'edge_name': 'the forest',
+                  'season_lines': {0: 'Spring came to the grove.',
+                                   1: 'Summer came to the grove.',
+                                   2: 'Autumn came to the grove.',
+                                   3: 'Winter came to the grove.'},
+                  'place_words': {'NW': 'the north-west woods',
+                                  'NE': 'the north-east woods',
+                                  'SW': 'the south-west woods',
+                                  'SE': 'the south-east woods',
+                                  'all': 'the grove'},
+                  'creature_names': ['Bracken',
+                                     'Sorrel',
+                                     'Thistle',
+                                     'Rowan',
+                                     'Bramble',
+                                     'Clover',
+                                     'Fable',
+                                     'Juniper',
+                                     'Hazel',
+                                     'Wren',
+                                     'Tarn',
+                                     'Moss',
+                                     'Pip',
+                                     'Nettle',
+                                     'Sallow',
+                                     'Alder',
+                                     'Bramblin',
+                                     'Fen',
+                                     'Tansy',
+                                     'Osier',
+                                     'Cinder',
+                                     'Dapple',
+                                     'Loam',
+                                     'Reed',
+                                     'Sedge',
+                                     'Yarrow',
+                                     'Hobble',
+                                     'Quill',
+                                     'Burr',
+                                     'Larch',
+                                     'Marl',
+                                     'Frost',
+                                     'Gorse',
+                                     'Teasel',
+                                     'Cob',
+                                     'Rush',
+                                     'Bent',
+                                     'Vole'],
+                  'animal_emoji': {'rabbit': '🐇',
+                                   'deer': '🦌',
+                                   'fox': '🦊',
+                                   'owl': '🦉',
+                                   'robin': '🐦',
+                                   'boar': '🐗',
+                                   'stag': '🦌',
+                                   'wolf': '🐺'},
+                  'seasons_palette': {'spring': {'grass': '#6fa053',
+                                                 'soil': '#4a3a29',
+                                                 'water': '#2a4d66',
+                                                 'rock': '#5d6266',
+                                                 'pine': '#2f6038',
+                                                 'leaf': '#6f9f4a',
+                                                 'canopyDim': 1.0,
+                                                 'wash': None,
+                                                 'nightT': '#141a22',
+                                                 'nightB': '#1c2419'},
+                                      'summer': {'grass': '#5d8f45',
+                                                 'soil': '#45362a',
+                                                 'water': '#27496b',
+                                                 'rock': '#5a6062',
+                                                 'pine': '#2a5630',
+                                                 'leaf': '#5f9440',
+                                                 'canopyDim': 1.0,
+                                                 'wash': None,
+                                                 'nightT': '#101820',
+                                                 'nightB': '#18251a'},
+                                      'autumn': {'grass': '#9a8a4a',
+                                                 'soil': '#4d3a28',
+                                                 'water': '#284a5e',
+                                                 'rock': '#5d6266',
+                                                 'pine': '#2d5035',
+                                                 'leaf': '#b0762f',
+                                                 'canopyDim': 1.0,
+                                                 'wash': None,
+                                                 'nightT': '#161418',
+                                                 'nightB': '#241f16'},
+                                      'winter': {'grass': '#a8b3ad',
+                                                 'soil': '#5a5148',
+                                                 'water': '#31536e',
+                                                 'rock': '#68707a',
+                                                 'pine': '#2c4a42',
+                                                 'leaf': '#86775d',
+                                                 'canopyDim': 0.85,
+                                                 'wash': 'rgba(190,215,225,0.10)',
+                                                 'nightT': '#0d1218',
+                                                 'nightB': '#1a2226'}},
+                  'animal_body': {'rabbit': '#9b8d90',
+                                  'deer': '#a8834f',
+                                  'fox': '#c26a35',
+                                  'owl': '#8d7358',
+                                  'robin': '#7d8ba0',
+                                  'boar': '#5c4a42',
+                                  'stag': '#9a7546',
+                                  'wolf': '#8a8f94'},
+                  'soul_system': 'You are the World Soul of a small forest — the slow, '
+                                 'fate-bearing presence behind its weather and fortunes. Every '
+                                 "few weeks you are given a digest of the grove's state and "
+                                 'you choose ONE intervention, as a forest would be fated to '
+                                 'receive: sometimes harsh, sometimes kind, often nothing at '
+                                 'all. Read the digest first: help the world stay balanced '
+                                 '(drought after dry weeks is cruel twice).\n'
+                                 'Valid fates: storm (a squall with wind-fall), drought (dry '
+                                 'weeks), blight (a creeping sickness in plants), bloom (grass '
+                                 'and berries surge), migration (a species arrives at the '
+                                 'edge), visitor (a lone stag or passing wolf enters briefly), '
+                                 'destiny (mark ONE creature whose life you will watch), quiet '
+                                 '(the soul keeps its peace).\n'
+                                 "For 'destiny' name a creature by the id number from the "
+                                 "digest's 'known souls' list, and in 'destiny' write one "
+                                 'short prophecy (under 70 characters) about its life — where '
+                                 'it shall go, what it shall become. The engine keeps the '
+                                 'watch and chronicles the fulfillment.\n'
+                                 "Choose 'region' from NW, NE, SW, SE or all. 'strength' is 1 "
+                                 "(mild) to 3 (severe). 'blight' may name one plant species: "
+                                 "pine, birch, willow, fern, berry. 'migration' may name one "
+                                 'animal species: rabbit, deer, fox, owl, robin, boar. '
+                                 "'visitor' names stag or wolf.\n"
+                                 "In 'intent' write one plain sentence (under 110 characters) "
+                                 'saying what you intend, in the voice of the forest itself.\n'
+                                 'Reply ONLY as JSON: {"action":"...", "region":"...", '
+                                 '"strength":1, "species":null, "target":null, "destiny":null, '
+                                 '"intent":"..."}',
+                  'chronicler_system': 'You are the Chronicler of a forest. One event: its '
+                                       'data and a plain base sentence. Rewrite as ONE line '
+                                       '(<=88 chars), same subject and place, new rhythm. '
+                                       'Never another scene; never coordinates; do not echo '
+                                       'listed recent lines. Only JSON: {"text":"..."}',
+                  'shore_place': "the pond's edge"},
+ 'pop': {'water_seekers': ('rabbit', 'deer', 'fox', 'wolf', 'stag', 'boar'),
+         'visitor_species': ('stag', 'wolf')}}

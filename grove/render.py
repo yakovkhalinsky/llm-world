@@ -1,15 +1,22 @@
 """Terminal rendering: emoji map, status header, chronicle feed."""
 
-ANIMAL_EMOJI = {
-    "rabbit": "🐇", "deer": "🦌", "fox": "🦊", "owl": "🦉",
-    "robin": "🐦", "boar": "🐗", "stag": "🦌", "wolf": "🐺",
-}
+from . import rules
 
 WEATHER_EMOJI = {"clear": "☀", "rain": "🌧", "storm": "⛈", "frost": "❄"}
 
 SEASON_LABEL = {0: "SPRING", 1: "SUMMER", 2: "AUTUMN", 3: "WINTER"}
 
 BLOCKS = "▁▂▃▄▅▆▇█"
+
+
+def emoji(sp, fallback="·"):
+    """The pack's emoji for a creature."""
+    return rules.R["presentation"]["animal_emoji"].get(sp, fallback)
+
+
+def animal_species():
+    """Every species the pack dresses."""
+    return list(rules.R["presentation"]["animal_emoji"])
 
 
 def _tile(world, x, y, animals_at, plants_at):
@@ -20,13 +27,13 @@ def _tile(world, x, y, animals_at, plants_at):
     # flyers float above the canopy
     for a in here:
         if a["sp"] in ("robin", "owl"):
-            return ANIMAL_EMOJI[a["sp"]]
+            return emoji(a["sp"], "·")
     # canopy wins the tile from ground animals
     for p in plants_at.get((x, y), ()):
         if p["stage"] in ("mature", "old"):
-            return "🌲" if p["sp"] == "pine" else "🌳"
+            return rules.R["plants"][p["sp"]].get("emoji", "🌳")
     for a in here:
-        return ANIMAL_EMOJI[a["sp"]]
+        return emoji(a["sp"], "·")
     # understory
     top = None
     for p in plants_at.get((x, y), ()):
@@ -74,11 +81,12 @@ def render_map(world):
 def header(world):
     t = world["tick"]
     season = W_season(world)
-    pops = {sp: 0 for sp in ANIMAL_EMOJI if sp not in ("stag", "wolf")}
+    pops = {sp: 0 for sp in animal_species()
+            if sp not in rules.R["pop"]["visitor_species"]}
     for a in world["animals"].values():
         if a["sp"] in pops:
             pops[a["sp"]] += 1
-    pop_line = " ".join(f"{ANIMAL_EMOJI[sp]}{n}" for sp, n in pops.items()
+    pop_line = " ".join(f"{emoji(sp)}{n}" for sp, n in pops.items()
                         if n)
     weather = WEATHER_EMOJI.get(world["weather"], "")
     return (f"WEEK {t} · {season} · {weather} {world['weather']}   "

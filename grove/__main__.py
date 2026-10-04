@@ -133,9 +133,9 @@ def cmd_step(args):
         # the pending soul decision applies at the next tick inside sim.tick
         if w["tick"] >= w["next_op"]:
             recent = [r[2] for r in g.db.chronicle_lines(5)]
-            raw = g.llm.chat_json(operator.SYSTEM,
+            raw = g.llm.chat_json(operator.system(),
                                   operator.digest(w, recent),
-                                  operator.SCHEMA, max_tokens=140,
+                                  operator.schema(), max_tokens=140,
                                   temperature=0.8)
             w["pending_effect"] = operator.validate(raw)
         items = chronicler.batch(notable, w)

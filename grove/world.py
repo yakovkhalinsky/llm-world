@@ -20,15 +20,8 @@ REGION_NAMES = ("NW", "NE", "SW", "SE")
 
 # ---------------------------------------------------------------- plants
 
-PLANT_SPECIES = rules.R["plants"]         # live aliases of the ruleset
+PLANT_SPECIES = rules.R["plants"]         # live aliases of the pack
 ANIMAL_SPECIES = rules.R["animals"]
-CREATURE_NAMES = [
-    "Bracken", "Sorrel", "Thistle", "Rowan", "Bramble", "Clover", "Fable",
-    "Juniper", "Hazel", "Wren", "Tarn", "Moss", "Pip", "Nettle", "Sallow",
-    "Alder", "Bramblin", "Fen", "Tansy", "Osier", "Cinder", "Dapple",
-    "Loam", "Reed", "Sedge", "Yarrow", "Hobble", "Quill", "Burr", "Larch",
-    "Marl", "Frost", "Gorse", "Teasel", "Cob", "Rush", "Bent", "Vole",
-]
 
 # ---------------------------------------------------------------- helpers
 
@@ -69,21 +62,29 @@ def region_cells(size: int, region: str):
                 yield x, y
 
 
-PLACE_WORDS = {"NW": "the north-west woods", "NE": "the north-east woods",
-               "SW": "the south-west woods", "SE": "the south-east woods",
-               "all": "the grove"}
+
+def creature_names():
+    """The pack's pool of names, in its own voice."""
+    return rules.R["presentation"]["creature_names"]
+
+
+def place_words():
+    """The pack's words for a place."""
+    return rules.R["presentation"]["place_words"]
 
 
 def place(world, x, y):
-    """Human-readable spot for prose: pond's edge or a region of the woods."""
+    """Human-readable spot for prose: pond's edge or a region of the world."""
     size = world["size"]
     if x is None:
-        return "the grove"
+        return rules.R["presentation"]["world_word"]
     for ny in (y - 1, y + 1):
         for nx in (x - 1, x + 1):
             if terrain_at(world, nx, ny) == "water":
-                return "the pond's edge"
-    return PLACE_WORDS.get(quadrant(x, y, size), "the grove")
+                return rules.R["presentation"].get("shore_place",
+                                                   "the pond's edge")
+    return place_words().get(quadrant(x, y, size),
+                             rules.R["presentation"]["world_word"])
 
 
 def terrain_at(world, x, y):

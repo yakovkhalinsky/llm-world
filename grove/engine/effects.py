@@ -84,7 +84,7 @@ def _apply_effect(world, effect, evs):
             ev["action"] = "quiet"   # only souls the engine truly knows
         else:
             kind = "water" if a["sp"] in \
-                ("rabbit", "deer", "fox", "wolf", "stag", "boar") else "age"
+                rules.R["pop"]["water_seekers"] else "age"
             world.setdefault("destinies", []).append(
                 {"id": tid, "sp": a["sp"], "text": effect["destiny"],
                  "made": t, "kind": kind})

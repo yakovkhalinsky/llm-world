@@ -10,13 +10,12 @@ import json
 import re
 
 from . import events as E
+from . import rules
 from . import world as W
 
 LINE_CAP = 90
 
-_SEASON_LINES = {0: "Spring came to the grove.", 1: "Summer came to the grove.",
-                 2: "Autumn came to the grove.",
-                 3: "Winter came to the grove."}
+
 
 _CAUSE_HEADS = {"storm": ("The storm", "The gale", "The wind"),
                 "age": ("Great age", "The slow centuries", "Old age"),
@@ -48,24 +47,30 @@ _KIND_BONES = {
                 "Deer cropped the young {ph} at {p}."],
     "picked": ["Berries were picked clean off {L} at {p}.",
                "{L} gave its berries away at {p}."],
-    "recolonize": ["{n} {sp} slipped in from beyond the forest edge.",
+    "recolonize": ["{n} {sp} slipped in from beyond {edge} edge.",
                    "From the wilds beyond, {n} {sp} arrived.",
                    "The east wind brought {n} {sp} back to us."],
-    "arrival": ["A visitor {sp} entered the grove at {p}.",
+    "arrival": ["A visitor {sp} entered {w} at {p}.",
                 "A {sp} appeared at {p}, then lingered."],
-    "departure": ["The visitor {sp} moved on, beyond the trees."],
+    "departure": ["The visitor {sp} moved on, beyond {edge}."],
 }
 
 _STOP = {"the", "an", "at", "and", "was", "a", "of", "in", "on", "for",
          "with", "from", "by", "its", "his", "her", "into", "over",
          "near", "then", "young", "base", "this", "that", "were", "are"}
 
-SYSTEM = (
-    "You are the Chronicler of a forest. One event: its data and a plain "
+_SYSTEM_BODY = (
+    "You are the Chronicler of {role}. One event: its data and a plain "
     "base sentence. Rewrite as ONE line (<=88 chars), same subject and "
     "place, new rhythm. Never another scene; never coordinates; do not "
     "echo listed recent lines. Only JSON: {\"text\":\"...\"}"
 )
+
+
+def system():
+    """The chronicler's breath, in the pack's own words."""
+    return _SYSTEM_BODY.replace(
+        "{role}", rules.R["presentation"]["chronicler_role"])
 
 
 def _stable(*vals):
@@ -88,7 +93,8 @@ def _line(world, e):
     plant_label = f"{name} the {ph}" if name else f"the {ph}"
 
     if kind == "turn":
-        return _SEASON_LINES.get(e.get("season", 0), "A season turned.")
+        return rules.R["presentation"]["season_lines"].get(
+            e.get("season", 0), "A season turned.")
     if kind == "germinate":
         return (f"Old seeds remembered themselves — {e.get('n', 1)} young "
                 f"{e.get('sp')} broke the soil where the species had gone.")
@@ -134,6 +140,8 @@ def _line(world, e):
         plural = ph + ("es" if ph.endswith("h") else "s")
         bones["L"] = f"{bones_n} {plural}" if is_plant else \
             f"{bones_n} wild {plural}"
+    bones["w"] = rules.R["presentation"]["world_word"]
+    bones["edge"] = "the " + rules.R["presentation"]["edge_name"]
     line = variant.format(**bones)
     return line[0].upper() + line[1:]
 
@@ -156,7 +164,8 @@ def batch(events, world):
         slot = {k: v for k, v in e.items() if k in keep and v is not None}
         slot["place"] = W.place(world, e.get("x"), e.get("y"))
         if e["kind"] == "op":   # regions become spoken places
-            slot["place"] = W.PLACE_WORDS.get(e.get("region"), "the grove")
+            slot["place"] = W.place_words().get(
+                e.get("region"), rules.R["presentation"]["world_word"])
         narr = ("|".join(str(slot.get(k, "")) for k in
                 ("kind", "sp", "hunter", "cause", "n", "place")))
         out.append({"key": key, "narr_key": narr, "tick": e["tick"],

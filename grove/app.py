@@ -230,9 +230,9 @@ class Grove:
         self.world["next_op"] = self.world["tick"] + 8
         self.jobs["op"] += 1
         self.worker.submit({
-            "kind": "op", "system": operator.SYSTEM,
+            "kind": "op", "system": operator.system(),
             "user": operator.digest(self.world, recent),
-            "schema": operator.SCHEMA, "max_tokens": 140, "temperature": 0.8,
+            "schema": operator.schema(), "max_tokens": 140, "temperature": 0.8,
             "extra": {}})
 
     def _maybe_name(self, notable):
