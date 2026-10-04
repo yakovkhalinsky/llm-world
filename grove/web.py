@@ -229,7 +229,7 @@ PAGE = r"""<!doctype html>
   .popline .pname { color: var(--dim); }
   .popline .pnum { font-variant-numeric: tabular-nums;
                    font-family: "Menlo", monospace; font-size: 12.5px; }
-  .souline { top: 52px; left: 16px; max-width: min(430px, 60vw); }
+  .souline { top: 72px; left: 16px; max-width: min(430px, 60vw); }
   .feed { left: 16px; bottom: 16px; width: min(560px, 60vw); }
   .ctl { right: 16px; bottom: 16px; width: min(430px, 92vw); }
   #bio { position: fixed; right: 16px; top: 108px; width: min(340px, 88vw);
