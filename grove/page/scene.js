@@ -748,13 +748,14 @@ function drawPlant(t, tsec) {
   }
 }
 
-function drawAnimal(a, f, tsec, idx) {
+/* where a creature is and how it moves: one function, shared by every
+   engine that draws creatures — the recipes consume it, never repeat it */
+function animalGait(a, f, tsec, idx) {
   // glide between week-start and week-end cells — in iso space
   const e = f < 1 ? (f * f * (3 - 2 * f)) : 1;   // smoothstep
   const cx0 = ((a.px - a.py) * TW / 2), cy0 = ((a.px + a.py) * TH / 2);
   const cx1 = ((a.x - a.y) * TW / 2), cy1 = ((a.x + a.y) * TH / 2);
   const gx = cx0 + (cx1 - cx0) * e, gy = cy0 + (cy1 - cy0) * e;
-  const body = ANIMAL_BODY[a.sp] || "#999";
   // the flock, too, is not stamped on a grid: a breath off-centre and
   // a size of its own, stable to its id — it never wobbles in flight
   const jx = (jit(a.id, 5) - 0.5) * 4 * K,
@@ -767,12 +768,12 @@ function drawAnimal(a, f, tsec, idx) {
   const flip = FACING[idx] || 1;
   const flyer = a.sp === "owl" || a.sp === "robin";
   // children are children: little for their first six weeks
-  const sz = a.ag !== undefined && a.ag < 6 ? 0.62 : 1;
+  const szc = a.ag !== undefined && a.ag < 6 ? 0.62 : 1;
   const lift =
       flyer ? -9 + (f < 1 ? Math.sin(tsec * 14 + a.id) * 1.1 : 0)
       : (a.sp === "rabbit" && f < 1
          ? -Math.abs(Math.sin(f * 12 + a.id)) * 5   // rabbits hop with the glide
-         : Math.sin(tsec * 5 + a.x) * 0.8) * sz;
+         : Math.sin(tsec * 5 + a.x) * 0.8) * szc;
   /* landing: the hop's own phase tells when a rabbit touches ground —
      mid-air they stretch, on the landing they squash */
   const hopP = a.sp === "rabbit" && f < 1 ?
@@ -786,12 +787,19 @@ function drawAnimal(a, f, tsec, idx) {
   // and end cells' elevations as they glide
   const eL = elevAt(a.px ?? a.x, a.py ?? a.y) +
       (elevAt(a.x, a.y) - elevAt(a.px ?? a.x, a.py ?? a.y)) * e;
-  const cy = OY + gy + lift * K + jy - eL;
-  if (flyer) shadow(OX + gx + jx, OY + gy + 2, 3 * sz);   // small, distant
-  else shadow(OX + gx + jx, OY + gy, 6 * sz);
+  return { e, gx, gy, flip, flyer, szc, jx, jy, js, stride, lift,
+           hopP, sqx, sqy, eL };
+}
+
+function drawAnimal(a, f, tsec, idx) {
+  const g = animalGait(a, f, tsec, idx);
+  const body = ANIMAL_BODY[a.sp] || "#999";
+  const cy = OY + g.gy + g.lift * K + g.jy - g.eL;
+  if (g.flyer) shadow(OX + g.gx + g.jx, OY + g.gy + 2, 3 * g.szc);
+  else shadow(OX + g.gx + g.jx, OY + g.gy, 6 * g.szc);
   ctx.save();
-  ctx.translate(OX + gx + jx, cy);
-  ctx.scale(flip * K * sz * js * sqx, K * sz * js * sqy);
+  ctx.translate(OX + g.gx + g.jx, cy);
+  ctx.scale(g.flip * K * g.szc * g.js * g.sqx, K * g.szc * g.js * g.sqy);
   const winter = ST.s && ST.s.season === "winter";
   switch (A_SHAPES[a.sp] || a.sp) {
     case "rabbit":
@@ -812,7 +820,7 @@ function drawAnimal(a, f, tsec, idx) {
       ctx.beginPath(); ctx.ellipse(0, 1, 7 * sz, 4 * sz, 0, 0, 6.3);
       ctx.fill();
       // a trot: each pair swings against the other, the far pair dimmer
-      const trot = stride * Math.sin(f * 14 + a.id * 2) * 1.2;
+      const trot = g.stride * Math.sin(f * 14 + a.id * 2) * 1.2;
       ctx.fillStyle = "#8a6a45";
       ctx.fillRect(-3.6 - trot, 4.2, 1.4, 3.6 * sz);
       ctx.fillRect(4.4 + trot, 4.2, 1.4, 3.6 * sz);
@@ -900,7 +908,7 @@ function drawAnimal(a, f, tsec, idx) {
       ctx.beginPath(); ctx.ellipse(0, 1.5, 6.4, 4.2, 0, 0, 6.3); ctx.fill();
       ctx.strokeStyle = "#4a3b35"; ctx.lineWidth = 1;
       // a trot, too, when the boar moves
-      const bt = stride * Math.sin(f * 14 + a.id) * 1.2;
+      const bt = g.stride * Math.sin(f * 14 + a.id) * 1.2;
       ctx.beginPath();
       ctx.moveTo(-4 + bt, 5); ctx.lineTo(-4 + bt, 7);
       ctx.moveTo(3 - bt, 5); ctx.lineTo(3 - bt, 7);
@@ -930,9 +938,9 @@ function drawAnimal(a, f, tsec, idx) {
   if (a.n && a.n !== "-") {
     ctx.font = "italic 9px Georgia, serif";
     ctx.fillStyle = "rgba(10,14,12,0.65)";
-    ctx.fillText(a.n, OX + gx + 1, cy - 10 * K);
+    ctx.fillText(a.n, OX + g.gx + 1, cy - 10 * K);
     ctx.fillStyle = "#dfe9db";
-    ctx.fillText(a.n, OX + gx, cy - 11 * K);
+    ctx.fillText(a.n, OX + g.gx, cy - 11 * K);
   }
 }
 
@@ -966,13 +974,30 @@ function spawnParticles(s, dt) {
                 v: 0, dx: 0, ph: Math.random() * 6.3 });
 }
 
-function drawParticles(dt) {
+/* the air's motion, without the drawing: positions advance, the dead
+   are culled — shared by every engine that paints the air */
+function updateParticles(dt) {
   for (let i = dots.length - 1; i >= 0; i--) {
     const d = dots[i];
     if (d.kind === "fly") {
       d.x += Math.sin(dt * 40 + d.ph) * 0.02 * 60 * dt + 6 * dt;
       d.y += Math.cos(dt * 37 + d.ph) * 0.018 * 60 * dt;
-      if (d.x > CW + 6) { dots.splice(i, 1); continue; }
+      if (d.x > CW + 6) dots.splice(i, 1);
+      continue;
+    }
+    d.y += d.v * dt; d.x += d.dx * dt;
+    if (d.kind === "pollen") d.x += Math.sin(d.y * 0.05 + d.ph) * 4 * dt;
+    if (d.kind === "leaf") d.x += Math.sin((d.y + i * 10) * 0.05) * 12 * dt;
+    if (d.y > CH - 4) dots.splice(i, 1);
+  }
+  if (dots.length > 260) dots.splice(0, dots.length - 260);
+}
+
+function drawParticles(dt) {
+  updateParticles(dt);
+  for (let i = dots.length - 1; i >= 0; i--) {
+    const d = dots[i];
+    if (d.kind === "fly") {
       const glow = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(d.ph * 7 + i));
       ctx.fillStyle = "rgba(232,212,137," + (glow * 0.9).toFixed(3) + ")";
       ctx.beginPath(); ctx.arc(d.x, d.y, 1.6, 0, 6.3); ctx.fill();
@@ -1065,11 +1090,19 @@ function checkSoulArrival(s, tnow) {
   if (soulRings.length > 6) soulRings.shift();
 }
 
+/* the rings age and fall away from the list; the drawing follows */
+function ageRings(tnow) {
+  for (let i = soulRings.length - 1; i >= 0; i--) {
+    const r = soulRings[i];
+    if ((tnow - r.t0) / 2400 >= 1) soulRings.splice(i, 1);
+  }
+}
+
 function drawSoulRings(tnow) {
+  ageRings(tnow);
   for (let i = soulRings.length - 1; i >= 0; i--) {
     const r = soulRings[i];
     const age = (tnow - r.t0) / 2400;
-    if (age >= 1) { soulRings.splice(i, 1); continue; }
     const rad = 14 + age * 210;
     ctx.strokeStyle = "rgba(226,238,230," + ((1 - age) * 0.35).toFixed(3) + ")";
     ctx.lineWidth = 2.2 * (1 - age) + 0.4;

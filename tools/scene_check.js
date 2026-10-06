@@ -452,6 +452,7 @@ const driver = `
      followed ? (followed.oid + ", " + followed.kind) : "nothing followed");
 
   out.ok = okn; out.fail = failn;
+  out.hashes = { bake: hash(full), warm1: full1, warm2: full2 };
   return out;
 })()
 `;
@@ -459,6 +460,8 @@ const driver = `
 /* ---- node side ------------------------------------------------------- */
 (async () => {
   const out = await vm.runInContext(driver, sandbox, { filename: "driver.js" });
+  if (process.argv.includes("--hash"))
+    console.log("golden:", JSON.stringify(out.hashes));
   console.log(`scene_check — ${out.ok} pass, ${out.fail} fail`);
   for (const c of out.checks)
     console.log(`  ${c.pass ? "·" : "✗"} ${c.name}` +
