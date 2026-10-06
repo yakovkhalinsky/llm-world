@@ -39,6 +39,7 @@ function el(id) {
 }
 
 const doc = { getElementById: el,
+               createElement: kind => el("off-" + kind),
                querySelector: sel => el(sel.replace(/^#/, "")),
                querySelectorAll: () => [],
                body: { classList: el("body").classList },
@@ -245,7 +246,7 @@ const driver = `
     return !!xy && Math.abs(xy[0] - x2 * sB) < tol * sB &&
            Math.abs(xy[1] - y2 * sB) < tol * sB;
   };
-  const frame = tr1;                        // the whole world's strokes
+  const frame = full;              // the bake: every static stroke
   const tile6 = tileAt(6, 1);  // grass 0.9, elev 0.9: the hill
   const tufts = frame.filter(s2 =>
       (s2.startsWith("quadraticCurveTo(") || s2.startsWith("moveTo(")) &&
@@ -288,6 +289,18 @@ const driver = `
   const pineTrace = traceOf(() => drawPlant(plants[0], tsec));
   ok("winter thins the canopy",
      pineTrace.includes("globalAlpha=0.85"));
+
+  // one bake: the first frame drew the earth, the warm ones composite
+  // it and pay only for what lives
+  const warm = tr2;
+  ok("a warm frame rides the bake",
+     warm.filter(s2 => s2.startsWith("drawImage(")).length === 1,
+     warm.filter(s2 => s2.startsWith("drawImage(")).length + " composites");
+  ok("a warm frame redraws no walls",
+     !warm.some(s2 => s2 === "fillStyle=#4a392a"));
+  ok("a warm frame pays a fraction of the bake",
+     warm.length * 2 <= full.length,
+     warm.length + " strokes after a bake of " + full.length);
 
   // the landform, gentled: the drawn field makes neighbours agree —
   // its mean jump must be far below the raw field's

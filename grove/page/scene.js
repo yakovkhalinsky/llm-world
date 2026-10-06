@@ -7,7 +7,8 @@ if (new URLSearchParams(location.search).has("plain"))
 const TW = 40, TH = 20;              // isometric tile diamond (2:1)
 const SIDE = 17;                     // slab thickness under the floor
 const PADX = 30, PADY = 72;          // margins head-/foot-room
-const cnv = $("scene"), ctx = cnv.getContext("2d");
+const cnv = $("scene");
+let ctx = cnv.getContext("2d");
 const DPR = Math.max(1.5, window.devicePixelRatio || 1);
 /* art factor: everything drawn scales with the tile size */
 const K = TW / 30;
@@ -247,74 +248,83 @@ function drawVignette() {
   ctx.fillRect(0, 0, CW, CH);
 }
 
-function drawTerrain(s, tsec) {
-  const p = pal(), size = s.size, px = elevPx();
-  const elevF = elevField(s);            // the gentled landform, once
-  for (let i = 0; i < s.cells.length; i++) {
-    const c = s.cells[i];
-    const x = i % size, y = Math.floor(i / size);
-    const eMe = Math.max(0, elevF[i]);   // the tile and its walls agree
-    const [sx, sy0] = iso(x, y);
-    const sy = sy0 - eMe * px;           // the land rises here
+/* the water's body: the filled tile and its dark heart — these stand
+   in the baked earth; only the light upon them breathes live */
+function drawWaterCellStatic(s, i, p, elevF) {
+  const size = s.size;
+  const [sx, sy0] = iso(i % size, (i / size) | 0);
+  const sy = sy0 - Math.max(0, elevF[i]) * elevPx();
+  ctx.fillStyle = p.water;
+  diamondPath(ctx, sx, sy); ctx.fill();
+  // depth: a darker heart in the water, the shallows reading lighter
+  const D = 0.62;
+  ctx.fillStyle = "rgba(6,14,26,0.16)";
+  ctx.beginPath();
+  ctx.moveTo(sx, sy - TH / 2 * D);
+  ctx.lineTo(sx + TW / 2 * D, sy);
+  ctx.lineTo(sx, sy + TH / 2 * D);
+  ctx.lineTo(sx - TW / 2 * D, sy);
+  ctx.closePath(); ctx.fill();
+}
 
-    if (c[0] === "w") {
-      ctx.fillStyle = p.water;
-      diamondPath(ctx, sx, sy); ctx.fill();
-      // depth: a darker heart in the water, the shallows reading lighter
-      const D = 0.62;
-      ctx.fillStyle = "rgba(6,14,26,0.16)";
-      ctx.beginPath();
-      ctx.moveTo(sx, sy - TH / 2 * D);
-      ctx.lineTo(sx + TW / 2 * D, sy);
-      ctx.lineTo(sx, sy + TH / 2 * D);
-      ctx.lineTo(sx - TW / 2 * D, sy);
-      ctx.closePath(); ctx.fill();
-      // caustics: two slow light-lines drifting over each sheet of water
-      const w1 = Math.sin(tsec * 1.4 + i * 1.7) * 2;
-      const w2 = Math.sin(tsec * 0.9 + i * 2.3) * 3;
-      ctx.strokeStyle = "rgba(200,225,240,0.20)";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(sx - 7, sy + w1);
-      ctx.lineTo(sx + 4, sy + w1);
-      ctx.moveTo(sx - 2, sy + 1 + w2 * 0.7);
-      ctx.lineTo(sx + 8, sy + 1 + w2 * 0.7);
-      ctx.stroke();
-      // foam: light rim along every edge that faces land
-      const nbrs = [i + 1, i - 1, i + size, i - size];
-      for (let e = 0; e < 4; e++) {
-        const j = nbrs[e];
-        if (j < 0 || j >= s.cells.length || s.cells[j][0] === "w" ||
-            (e === 0 && (i % size) === size - 1) ||
-            (e === 1 && (i % size) === 0))
-          continue;
-        const pts = { 0: [sx, sy + TH / 2, sx + TW / 2, sy],   // +x: SE edge
-                      1: [sx - TW / 2, sy, sx, sy - TH / 2],   // -x: NW edge
-                      2: [sx - TW / 2, sy, sx, sy + TH / 2],   // +y: SW edge
-                      3: [sx, sy - TH / 2, sx + TW / 2, sy] }; // -y: NE edge
-        const pt = pts[e];
-        // the foam breathes with its own tide: brighter and dimmer,
-        // and a second, quieter line laps just inside the rim
-        const ph = Math.sin(tsec * 1.8 + i * 0.9);
-        ctx.strokeStyle = "rgba(205,228,238," +
-            (0.28 + ph * 0.10).toFixed(3) + ")";
-        ctx.lineWidth = 1.6;
-        ctx.beginPath();
-        ctx.moveTo(pt[0], pt[1]); ctx.lineTo(pt[2], pt[3]);
-        ctx.stroke();
-        ctx.strokeStyle = "rgba(205,228,238," +
-            Math.max(0, 0.10 - ph * 0.07).toFixed(3) + ")";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo((pt[0] + sx * 0.09) / 1.09, (pt[1] + sy * 0.09) / 1.09);
-        ctx.lineTo((pt[2] + sx * 0.09) / 1.09, (pt[3] + sy * 0.09) / 1.09);
-        ctx.stroke();
-      }
+/* the water's life, per frame: caustics drifting, foam breathing */
+function drawWaterCellLive(s, i, tsec, p, elevF) {
+  const size = s.size;
+  const [sx, sy0] = iso(i % size, (i / size) | 0);
+  const sy = sy0 - Math.max(0, elevF[i]) * elevPx();
+  const w1 = Math.sin(tsec * 1.4 + i * 1.7) * 2;
+  const w2 = Math.sin(tsec * 0.9 + i * 2.3) * 3;
+  ctx.strokeStyle = "rgba(200,225,240,0.20)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(sx - 7, sy + w1);
+  ctx.lineTo(sx + 4, sy + w1);
+  ctx.moveTo(sx - 2, sy + 1 + w2 * 0.7);
+  ctx.lineTo(sx + 8, sy + 1 + w2 * 0.7);
+  ctx.stroke();
+  // foam: light rim along every edge that faces land, breathing
+  const nbrs = [i + 1, i - 1, i + size, i - size];
+  for (let e = 0; e < 4; e++) {
+    const j = nbrs[e];
+    if (j < 0 || j >= s.cells.length || s.cells[j][0] === "w" ||
+        (e === 0 && (i % size) === size - 1) ||
+        (e === 1 && (i % size) === 0))
       continue;
-    }
+    const pts = { 0: [sx, sy + TH / 2, sx + TW / 2, sy],   // +x: SE edge
+                  1: [sx - TW / 2, sy, sx, sy - TH / 2],   // -x: NW edge
+                  2: [sx - TW / 2, sy, sx, sy + TH / 2],   // +y: SW edge
+                  3: [sx, sy - TH / 2, sx + TW / 2, sy] }; // -y: NE edge
+    const pt = pts[e];
+    // the foam breathes with its own tide: brighter and dimmer,
+    // and a second, quieter line laps just inside the rim
+    const ph = Math.sin(tsec * 1.8 + i * 0.9);
+    ctx.strokeStyle = "rgba(205,228,238," +
+        (0.28 + ph * 0.10).toFixed(3) + ")";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(pt[0], pt[1]); ctx.lineTo(pt[2], pt[3]);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(205,228,238," +
+        Math.max(0, 0.10 - ph * 0.07).toFixed(3) + ")";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo((pt[0] + sx * 0.09) / 1.09, (pt[1] + sy * 0.09) / 1.09);
+    ctx.lineTo((pt[2] + sx * 0.09) / 1.09, (pt[3] + sy * 0.09) / 1.09);
+    ctx.stroke();
+  }
+}
 
-    diamondPath(ctx, sx, sy);
-    ctx.fillStyle = p.soil;
+/* a land cell: soil, grass, tufts, stone, walls, shore, seams — the
+   earth has no tide, so none of this depends on the frame */
+function drawLandCell(s, i, p, elevF) {
+  const size = s.size, px = elevPx();
+  const c = s.cells[i];
+  const x = i % size, y = Math.floor(i / size);
+  const eMe = Math.max(0, elevF[i]);   // the tile and its walls agree
+  const [sx, sy0] = iso(x, y);
+  const sy = sy0 - eMe * px;           // the land rises here
+  diamondPath(ctx, sx, sy);
+  ctx.fillStyle = p.soil;
     ctx.fill();
     const g = c[1];
     if (g > 0.06) {
@@ -445,7 +455,30 @@ function drawTerrain(s, tsec) {
       ctx.fillStyle = "#c9c2b8";
       ctx.beginPath(); ctx.arc(sx, sy + 2, 3.2, 0, 6.3); ctx.fill();
     }
+}
+
+/* the whole earth — stone, soil and water's body — with the water's
+   light on top; this draws today only where the offscreen bake can't */
+function drawTerrain(s, tsec) {
+  const p = pal(), px = elevPx();
+  const elevF = elevField(s);            // the gentled landform, once
+  for (let i = 0; i < s.cells.length; i++) {
+    const c = s.cells[i];
+    if (c[0] === "w") {
+      drawWaterCellStatic(s, i, p, elevF);
+      drawWaterCellLive(s, i, tsec, p, elevF);
+    } else {
+      drawLandCell(s, i, p, elevF);
+    }
   }
+}
+
+/* the same earth but the water's light, for the frame's live pass */
+function drawWaterLive(s, tsec) {
+  const p = pal();
+  const elevF = elevField(s);
+  for (let i = 0; i < s.cells.length; i++)
+    if (s.cells[i][0] === "w") drawWaterCellLive(s, i, tsec, p, elevF);
 }
 
 /* the world sits on a raised earth slab */
@@ -1047,6 +1080,60 @@ function drawSoulRings(tnow) {
 }
 
 let flash = 0;
+/* the earth, remembered: the slab, every tile's fill, the walls, the
+   shore's marks, the plants at rest — drawn once to an offscreen
+   canvas whenever the week, the pack's relief or the view changes.
+   The frame then composites the bake and pays only for what lives:
+   the water's light, the creatures, the air. */
+let baked = null;
+function drawBaked(s, tsec) {
+  const key = [s.tick, s.season, s.weather, elevPx(),
+               Math.round(VIEW.dw), Math.round(VIEW.dh)].join("|");
+  if (baked && baked.key === key) {
+    ctx.drawImage(baked.cv, 0, 0, CW, CH);
+    return;
+  }
+  if (!document.createElement) {         // no offscreen: the earth
+    drawSlab(s);                         // draws live, as it always did
+    const p = pal(), elevF = elevField(s);
+    for (let i = 0; i < s.cells.length; i++) {
+      const c = s.cells[i];
+      if (c[0] === "w") drawWaterCellStatic(s, i, p, elevF);
+      else drawLandCell(s, i, p, elevF);
+    }
+    for (const en of plantOrder(s)) drawPlant(en, tsec);
+    return;
+  }
+  const cv = document.createElement("canvas");
+  cv.width = cnv.width;
+  cv.height = cnv.height;
+  const oc = cv.getContext("2d");
+  const old = ctx;
+  ctx = oc;                            // the rooms serve whom they must
+  ctx.setTransform(VIEW.dw * DPR / CW, 0, 0, VIEW.dw * DPR / CW, 0, 0);
+  drawSlab(s);
+  const p = pal();
+  const elevF = elevField(s);
+  for (let i = 0; i < s.cells.length; i++) {
+    const c = s.cells[i];
+    if (c[0] === "w") drawWaterCellStatic(s, i, p, elevF);
+    else drawLandCell(s, i, p, elevF);
+  }
+  for (const en of plantOrder(s)) drawPlant(en, 0);   // trees at rest
+  ctx = old;
+  baked = { key, cv };
+  ctx.drawImage(cv, 0, 0, CW, CH);
+}
+
+/* plants in painter order (they stood in the frame's sort before) */
+function plantOrder(s) {
+  const ents = [];
+  for (const t of s.plants) ents.push(t);
+  ents.sort((u, q) => (u.x + u.y) - (q.x + q.y) ||
+                       (u.st === "log") - (q.st === "log"));
+  return ents;
+}
+
 function drawScene(tnow) {
   const s = ST.s;
   if (!s || !s.cells) return;
@@ -1058,23 +1145,15 @@ function drawScene(tnow) {
   const glide = glidePhase();
 
   drawBackdrop(tsec);
-  drawSlab(s);
-  drawTerrain(s, tsec);
+  drawBaked(s, tsec);                      // the earth and its trees
+  drawWaterLive(s, tsec);                  // the water's light, live
   drawCloudShadows(s, tsec);
   drawReflections(s, tsec);
   drawGlint(s, tsec);
 
-  /* depth sorting: entities paint far-to-near (by x+y); within one
-     diamond the ground cover comes first, creatures in front */
-  const ents = [];
-  for (const t of s.plants)
-    ents.push({ d: t.x + t.y, k: t.st === "log" ? 0 : 1, t });
-  s.animals.forEach((a, i) => ents.push({ d: a.x + a.y, k: 2, a, i }));
-  ents.sort((p, q) => p.d - q.d || p.k - q.k);
-  for (const en of ents) {
-    if (en.k === 1) drawPlant(en.t, tsec);
-    else if (en.k === 2) drawAnimal(en.a, glide, tsec, en.i);
-  }
+  /* the creatures: the only souls left to pay for, frame by frame —
+     the plants stand in the bake, at rest, in their painter order */
+  s.animals.forEach((a, i) => drawAnimal(a, glide, tsec, i));
   trackFollow(glide);
   checkSoulArrival(s, tnow);
   spawnParticles(s, dt);

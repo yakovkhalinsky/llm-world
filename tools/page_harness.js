@@ -16,7 +16,7 @@ const ctxTarget = {};
 for (const k of ["fillRect","strokeRect","beginPath","moveTo","lineTo",
   "arc","arcTo","ellipse","quadraticCurveTo","closePath","fill","stroke",
   "fillText","save","restore","translate","scale","rotate","setTransform",
-  "setLineDash","clearRect","clip"])
+  "setLineDash","clearRect","clip","drawImage"])
   ctxTarget[k] = (...a) => {
     calls++;
     for (const q of a)
@@ -65,6 +65,7 @@ new Function("window", "document", "location", "performance",
   { devicePixelRatio: 2, innerWidth: 1200, innerHeight: 800,
     addEventListener: () => {} },
   { getElementById: id => els[id] || (els[id] = el(id)),
+    createElement: kind => el("off-" + kind),
     querySelector: () => ({ clientWidth: 1090, clientHeight: 500,
                             scrollLeft: 0, scrollTop: 0 }),
     body: { classList: { contains: () => false, add: () => {} } } },
