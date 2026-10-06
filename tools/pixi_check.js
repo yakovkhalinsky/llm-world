@@ -229,6 +229,15 @@ const WORLD = `
      mrm.toFixed(3));
   ok("the moon leaves its dashes",
      vm.runInContext("ENG.glint.length", a.sandbox) === 4, "4 dashes");
+  const gc = vm.runInContext(
+      "({n: ENG.groundClouds.length, x: ENG.groundClouds[0]._.x," +
+      " y: ENG.groundClouds[0]._.y, w: ENG.sceneBox.w," +
+      " h: ENG.sceneBox.h})", a.sandbox);
+  ok("the ground's shadows drift over the island, world-local",
+     gc.n === 3 && gc.x > -300 && gc.x < gc.w + 300 &&
+     gc.y > gc.h * 0.2 && gc.y < gc.h * 0.8,
+     "x " + gc.x.toFixed(0) + " of " + (gc.w + 300).toFixed(0) +
+     ", y " + (gc.y / gc.h).toFixed(2) + " of the island's height");
   const aura = vm.runInContext(
       "ENG.auras.length ? ENG.auras[0].spr.tint : 0", a.sandbox);
   ok("the aura wears the bloom's tint", aura === 0x8cd28c,

@@ -481,3 +481,12 @@ during a slow embed).
   render's wall count fell 553 → 93, byte-stable across runs, ground
   counts untouched). Numbers measured: raw mean |Δ| 5.14px drawn
   0.73px on the check's own field.
+
+- [x] **b27** — found within the hour: the fit refactor had left the
+  ground-side cloud shadows drifting in **window** units while they
+  live inside the world group (placed and scaled): at fit they sweep
+  far past the island into the sky's own space. Fixed: their drift and
+  seat are the island's own box now (`ENG.sceneBox`). Check: the
+  harness reads the first shadow's seat — inside the island's width
+  and between a fifth and four fifths of its height, at every frame
+  the frozen clock hands out.

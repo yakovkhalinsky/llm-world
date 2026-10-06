@@ -570,10 +570,13 @@ function engWaterLive(s, tsec) {
 
 /* the shadows on the ground, per frame */
 function engGroundCloudLive(s, tsec) {
+  // world-local units: these live inside the world group, so their
+  // drift is the island's own width, not the window's
+  const SW = ENG.sceneBox.w, SH = ENG.sceneBox.h;
   for (let i = 0; i < ENG.groundClouds.length; i++) {
     const sp = ENG.groundClouds[i];
-    sp.position.set(((tsec * 9 + i * 520) % (CW + 460)) - 230,
-                    CH * (0.22 + i * 0.24));
+    sp.position.set(((tsec * 9 + i * 520) % (SW + 460)) - 230,
+                    SH * (0.30 + i * 0.18));
     sp.width = 2 * (120 + i * 36);
     sp.height = 52;
     sp.alpha = 0.1;
