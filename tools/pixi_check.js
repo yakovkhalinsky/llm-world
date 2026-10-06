@@ -261,9 +261,28 @@ const WORLD = `
   ok("the click binds once to the engine's canvas",
      true, "bound at boot");
 
+  // --- the window is the scene's screen -------------------------------
+  ok("the canvas is the whole screen at fit",
+     vm.runInContext("CW === 1400 && CH === 800", a.sandbox),
+     vm.runInContext("CW + 'x' + CH", a.sandbox));
+  const box = vm.runInContext(
+      "({x: ENG.worldGroup._.x, y: ENG.worldGroup._.y," +
+      " sx: ENG.worldGroup._.sx})", a.sandbox);
+  const expPX = vm.runInContext("PX", a.sandbox),
+        expPY = vm.runInContext("PY", a.sandbox),
+        expFIT = vm.runInContext("FIT", a.sandbox);
+  ok("the island sits centered, scaled to fit",
+     box.x === expPX && box.y === expPY && box.sx === expFIT,
+     `pos (${expPX.toFixed(0)}, ${expPY.toFixed(0)}) × ${expFIT.toFixed(2)}`);
+  const earthW = vm.runInContext("ENG.earthSpr.width", a.sandbox);
+  ok("the earth sprite spans the island's own box",
+     Math.abs(earthW - 380) < 0.01, "width " + earthW);
+
   // --- the earth, one texture ---------------------------------------
-  ok("the earth rides between sky and the living",
+  ok("the earth rides under the world group, over the living",
      vm.runInContext("ENG.stage.children[1]", a.sandbox) ===
+     vm.runInContext("ENG.worldGroup", a.sandbox) &&
+     vm.runInContext("ENG.worldGroup.children[0]", a.sandbox) ===
      vm.runInContext("ENG.earthLayer", a.sandbox) &&
      vm.runInContext("ENG.earthLayer.children.length", a.sandbox) === 1);
   const spr0w = vm.runInContext("ENG.earthSpr.width", a.sandbox);
@@ -351,7 +370,7 @@ const WORLD = `
   // the facade's nodes carry the same truths they always carried
   const bke = vm.runInContext(
       "({w: ENG.bakeCv.width, h: ENG.bakeCv.height})", a.sandbox);
-  const bkS = bke.w / 380;    // the bake's device px per logical
+  const bkS = bke.w / 380;    // device px per logical unit
   function num2(s2, kind) {   // coords parsed straight from the trace
     if (!s2.startsWith(kind + "(")) return null;
     const body2 = s2.slice(kind.length + 1, s2.length - 1).split(",");
@@ -395,8 +414,9 @@ const WORLD = `
   // per-object captures draw at one-to-one: the world's own units
   function capPlant(p2, t2) {
     TRACE.length = 0;
-    vm.runInContext("engCapture(" + Math.ceil(vm.runInContext("CW",
-        a.sandbox)) + "," + Math.ceil(vm.runInContext("CH", a.sandbox)) +
+    vm.runInContext("engCapture(" + Math.ceil(vm.runInContext(
+        "ENG.sceneBox.w", a.sandbox)) + "," + Math.ceil(vm.runInContext(
+        "ENG.sceneBox.h", a.sandbox)) +
         ", oc => drawPlant(" + JSON.stringify(p2) + ", " + t2 + "))",
         a.sandbox);
     const tr = TRACE.slice();

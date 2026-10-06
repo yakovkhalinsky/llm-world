@@ -13,7 +13,7 @@ let ctx = null;              // the recipes draw only inside captures
 const DPR = Math.max(1.5, window.devicePixelRatio || 1);
 /* art factor: everything drawn scales with the tile size */
 const K = TW / 30;
-let OX = 0, OY = 0, CW = 0, CH = 0;
+let OX = 0, OY = 0, CW = 0, CH = 0, FIT = 1, PX = 0, PY = 0;
 /* contain-fit: the scene takes whatever room the window gives it,
    drawn at device resolution so zoom stays sharp; only re-fits when
    the size, zoom or window box actually changed */
@@ -22,21 +22,22 @@ function fitCanvas(size) {
   const sc = document.querySelector(".map-scroll");
   const availW = (sc ? sc.clientWidth : window.innerWidth - 20) || 600;
   const availH = (sc ? sc.clientHeight : window.innerHeight - 200) || 400;
-  const w = (size - 1) * TW + TW + PADX * 2;
-  const h = (size - 1) * TH + TH + PADY * 2;
+  const SW = (size - 1) * TW + TW + PADX * 2;   // the scene's own box
+  const SH = (size - 1) * TH + TH + PADY * 2;
   const key = `${size}|${VIEW.zoom}|${Math.round(availW)}x${Math.round(availH)}`;
   if (fitCanvas.key === key) return;
   fitCanvas.key = key;
-  CW = w; CH = h;
-  OX = w / 2; OY = PADY;           // (0,0) sits at the top corner —
-                                   // both engines live in these units
-  if (VIEW.zoom === 1) {
-    VIEW.dw = Math.min(availW, availH * w / h);
-    VIEW.dh = VIEW.dw * h / w;                 // contain: both fit
-  } else {
-    VIEW.dw = availW * VIEW.zoom;              // zoom wins; user pans
-    VIEW.dh = VIEW.dw * h / w;
-  }
+  /* the canvas is the screen at fit — the whole window, sky and all —
+     and the island floats centered inside it; zoomed, the box grows
+     past the window and the scroller pans, as it did */
+  CW = VIEW.zoom === 1 ? availW : availW * VIEW.zoom;
+  CH = VIEW.zoom === 1 ? availH : CW * SH / SW;
+  VIEW.dw = CW; VIEW.dh = CH;
+  FIT = Math.min(CW / SW, CH / SH);             // the world's fit scale
+  PX = (CW - SW * FIT) / 2;                     // where the world sits
+  PY = (CH - SH * FIT) / 2;                     // on that canvas
+  OX = SW / 2; OY = PADY;          // world-local, where the top corner lives
+  ENG.sceneBox = { w: SW, h: SH, fit: FIT, px: PX, py: PY };
   if (ENG && ENG.app)
     ENG.app.renderer.resize(Math.round(VIEW.dw), Math.round(VIEW.dh),
                             DPR);
@@ -45,7 +46,8 @@ function fitCanvas(size) {
 window.addEventListener("resize", () => {
   if (ST.s && ST.s.size) fitCanvas(ST.s.size);
 });
-/* cell (x, y) → screen position of the diamond's center */
+/* cell (x, y) → the world's local position of the diamond's center;
+   the world sits placed by (PX, PY) and scaled by FIT on the canvas */
 function iso(x, y) { return [OX + (x - y) * TW / 2, OY + (x + y) * TH / 2]; }
 
 /* the earth's own scale: units of elevation to pixels, from the pack
@@ -928,11 +930,14 @@ function loop(tnow) {
 
 /* pick a cell from a click, honoring the land's relief: the flat map
    is a first guess, and the raised diamonds around it correct it */
+/* a click's screen point → the world's own units: the world sits
+   placed at (PX, PY) and scaled by FIT on the canvas */
 function pickCell(s, u0, v0) {
-  const gx = Math.round((u0 - OX) / (TW / 2) / 2
-                        + (v0 - OY) / (TH / 2) / 2);
-  const gy = Math.round((v0 - OY) / (TH / 2) / 2
-                        - (u0 - OX) / (TW / 2) / 2);
+  const uw = (u0 - PX) / FIT, vw = (v0 - PY) / FIT;
+  const gx = Math.round((uw - OX) / (TW / 2) / 2
+                        + (vw - OY) / (TH / 2) / 2);
+  const gy = Math.round((vw - OY) / (TH / 2) / 2
+                        - (uw - OX) / (TW / 2) / 2);
   let best = null, bestD = 1e9;
   for (let dy = -1; dy <= 1; dy++)
     for (let dx = -1; dx <= 1; dx++) {
@@ -940,10 +945,10 @@ function pickCell(s, u0, v0) {
       if (x < 0 || y < 0 || x >= s.size || y >= s.size) continue;
       const [cx, cy0] = iso(x, y);
       const cy = cy0 - elevAt(x, y);
-      const du = Math.abs(u0 - cx) / (TW / 2) +
-                 Math.abs(v0 - cy) / (TH / 2);
+      const du = Math.abs(uw - cx) / (TW / 2) +
+                 Math.abs(vw - cy) / (TH / 2);
       if (du <= 1.001) {
-        const d = (u0 - cx) * (u0 - cx) + (v0 - cy) * (v0 - cy);
+        const d = (uw - cx) * (uw - cx) + (vw - cy) * (vw - cy);
         if (d < bestD) { best = [x, y]; bestD = d; }
       }
     }

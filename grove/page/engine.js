@@ -38,7 +38,8 @@ async function engBoot() {
     const sc = document.querySelector(".map-scroll");
     if (sc && sc.insertBefore) sc.insertBefore(ENG.canvas, cnv);
     cnv.classList.add("retired");
-    ENG.skyLayer = new PIXI.Container();
+    ENG.skyLayer = new PIXI.Container();  // the window's own sky, 1:1
+    ENG.worldGroup = new PIXI.Container(); // the island: placed, scaled
     ENG.earthLayer = new PIXI.Container();
     ENG.liveLayer = new PIXI.Container();
     ENG.liveA = new PIXI.Container();     // water light, shadows, mirror,
@@ -46,9 +47,9 @@ async function engBoot() {
     ENG.animalLayer = new PIXI.Container();  // the creatures (C6 fills it)
     ENG.poolLayer = new PIXI.Container(); // the air's particles, pooled
     ENG.liveB = new PIXI.Container();     // auras and the rings
-    ENG.overLayer = new PIXI.Container();
-    app.stage.addChild(ENG.skyLayer, ENG.earthLayer, ENG.liveLayer,
-                       ENG.overLayer);
+    ENG.overLayer = new PIXI.Container(); // the window's mist and light
+    app.stage.addChild(ENG.skyLayer, ENG.worldGroup, ENG.overLayer);
+    ENG.worldGroup.addChild(ENG.earthLayer, ENG.liveLayer);
     ENG.liveLayer.addChild(ENG.liveA, ENG.animalLayer, ENG.poolLayer,
                            ENG.liveB);
     engInitSky();
@@ -100,10 +101,11 @@ function engBaked(s, key) {
   if (ENG.bakeKey === key && ENG.bakeTex) return;
   const cap = (ENG.app && ENG.app.renderer &&
                ENG.app.renderer.maxTextureSize) || 4096;
-  let s0 = VIEW.dw * DPR / CW;         // device pixels per logical unit
-  s0 = Math.min(s0, cap / CW, cap / CH);   // a phone's ceiling, honored
-  const dwB = Math.max(1, Math.floor(CW * s0)),
-        dhB = Math.max(1, Math.floor(CH * s0));
+  let s0 = FIT * DPR;                  // device pixels per logical unit
+  s0 = Math.min(s0, cap / ENG.sceneBox.w, cap / ENG.sceneBox.h);
+                                       // a phone's ceiling, honored
+  const dwB = Math.max(1, Math.floor(ENG.sceneBox.w * s0)),
+        dhB = Math.max(1, Math.floor(ENG.sceneBox.h * s0));
   const sameBox = ENG.bakeCv && ENG.bakeCv.width === dwB &&
                   ENG.bakeCv.height === dhB;
   if (sameBox) {                       // the box held: update in place
@@ -121,7 +123,8 @@ function engBaked(s, key) {
       ENG.earthLayer.addChild(ENG.earthSpr);
     }
   }
-  engCoverage(ENG.earthSpr, CW, CH);   // logical: covered to the pixel
+  engCoverage(ENG.earthSpr, ENG.sceneBox.w, ENG.sceneBox.h);
+                                       // the island's own box
   ENG.bakeKey = key;
 }
 
@@ -694,6 +697,9 @@ function drawScenePixi(tnow) {
   drawScenePixi.last = tnow;
   if (!ENG.active) return;             // the engine is still waking
   const glide = glideOf(tnow);         // the shared fraction
+  // the island sits placed and scaled; the sky is the screen's own
+  ENG.worldGroup.position.set(PX, PY);
+  ENG.worldGroup.scale.set(FIT, FIT);
 
   const p = pal();
   // the sky
