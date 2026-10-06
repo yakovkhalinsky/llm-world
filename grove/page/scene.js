@@ -1132,9 +1132,28 @@ let flash = 0;
    The frame then composites the bake and pays only for what lives:
    the water's light, the creatures, the air. */
 let baked = null;
+/* the earth's recipes, painted onto one surface — the single truth
+   every engine captures from */
+function paintEarth(oc, s, mapScale) {
+  const old = ctx;
+  ctx = oc;                            // the rooms serve whom they must
+  ctx.setTransform(mapScale, 0, 0, mapScale, 0, 0);
+  drawSlab(s);
+  const p = pal();
+  const elevF = elevField(s);
+  for (let i = 0; i < s.cells.length; i++) {
+    const c = s.cells[i];
+    if (c[0] === "w") drawWaterCellStatic(s, i, p, elevF);
+    else drawLandCell(s, i, p, elevF);
+  }
+  for (const en of plantOrder(s)) drawPlant(en, 0);   // trees at rest
+  ctx = old;
+}
+
 function drawBaked(s, tsec) {
   const key = [s.tick, s.season, s.weather, elevPx(),
                Math.round(VIEW.dw), Math.round(VIEW.dh)].join("|");
+  if (ENGINE === "pixi") { engBaked(s, key); return; }
   if (baked && baked.key === key) {
     ctx.drawImage(baked.cv, 0, 0, CW, CH);
     return;
@@ -1153,20 +1172,7 @@ function drawBaked(s, tsec) {
   const cv = document.createElement("canvas");
   cv.width = cnv.width;
   cv.height = cnv.height;
-  const oc = cv.getContext("2d");
-  const old = ctx;
-  ctx = oc;                            // the rooms serve whom they must
-  ctx.setTransform(VIEW.dw * DPR / CW, 0, 0, VIEW.dw * DPR / CW, 0, 0);
-  drawSlab(s);
-  const p = pal();
-  const elevF = elevField(s);
-  for (let i = 0; i < s.cells.length; i++) {
-    const c = s.cells[i];
-    if (c[0] === "w") drawWaterCellStatic(s, i, p, elevF);
-    else drawLandCell(s, i, p, elevF);
-  }
-  for (const en of plantOrder(s)) drawPlant(en, 0);   // trees at rest
-  ctx = old;
+  paintEarth(cv.getContext("2d"), s, VIEW.dw * DPR / CW);
   baked = { key, cv };
   ctx.drawImage(cv, 0, 0, CW, CH);
 }

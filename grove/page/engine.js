@@ -77,6 +77,38 @@ function engTex(cv) {
   return cv.__tex;
 }
 
+/* -------- the earth, one texture: the recipes paint it once per
+   week's key onto a kept canvas; the texture updates in place and the
+   GPU composites it forever after — nothing per frame re-draws it ---- */
+function engBaked(s, key) {
+  if (ENG.bakeKey === key && ENG.bakeTex) return;
+  const cap = (ENG.app && ENG.app.renderer &&
+               ENG.app.renderer.maxTextureSize) || 4096;
+  let s0 = VIEW.dw * DPR / CW;         // device pixels per logical unit
+  s0 = Math.min(s0, cap / CW, cap / CH);   // a phone's ceiling, honored
+  const dwB = Math.max(1, Math.floor(CW * s0)),
+        dhB = Math.max(1, Math.floor(CH * s0));
+  const sameBox = ENG.bakeCv && ENG.bakeCv.width === dwB &&
+                  ENG.bakeCv.height === dhB;
+  if (sameBox) {                       // the box held: update in place
+    paintEarth(ENG.bakeCv.getContext("2d"), s, s0);
+    ENG.bakeTex.source.update();
+  } else {
+    const cv = engCapture(dwB, dhB, oc => paintEarth(oc, s, s0));
+    if (ENG.bakeTex && ENG.bakeTex.destroy)
+      ENG.bakeTex.destroy(true);
+    ENG.bakeTex = engTex(cv);
+    ENG.bakeCv = cv;
+    if (ENG.earthSpr) ENG.earthSpr.texture = ENG.bakeTex;
+    else {
+      ENG.earthSpr = new PIXI.Sprite(ENG.bakeTex);
+      ENG.earthLayer.addChild(ENG.earthSpr);
+    }
+  }
+  engCoverage(ENG.earthSpr, CW, CH);   // logical: covered to the pixel
+  ENG.bakeKey = key;
+}
+
 /* -------- the sky: one gradient captured per palette, stars and
    clouds as sprites the frame only nudges -------------------------- */
 function engInitSky() {
@@ -197,6 +229,9 @@ function drawScenePixi(tnow) {
     sp.width = 300 + i * 80;
     sp.alpha = 0.2;
   }
+
+  // the earth: one texture per week's key, the engine's own bake
+  drawBaked(s, tsec);
 
   // the overlays: mist breathes with the season, the rest says so
   engCoverage(ENG.overlay.mist, CW, CH * 0.58);

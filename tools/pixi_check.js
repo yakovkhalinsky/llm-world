@@ -47,8 +47,7 @@ const ctx2d = new Proxy({}, {
 
 /* ---- the element stub ------------------------------------------------ */
 const elements = new Map();
-function el(id) {
-  if (elements.has(id)) return elements.get(id);
+function elStub(id) {
   const e = {
     id, textContent: "", innerHTML: "", className: "", disabled: false,
     value: "", hidden: false, dataset: {}, onclick: null, style: {},
@@ -70,12 +69,18 @@ function el(id) {
     },
     getContext() { return ctx2d; },
   };
+  return e;
+}
+function el(id) {
+  if (elements.has(id)) return elements.get(id);
+  const e = elStub(id);
   elements.set(id, e);
   return e;
 }
 
 /* ---- the PIXI facade: only what the page asks, recorded -------------- */
-let NODE_WRITES = 0, TEXTURES = 0, RENDERS = 0, INITS = 0, RESIZES = [];
+let NODE_WRITES = 0, TEXTURES = 0, RENDERS = 0, INITS = 0,
+    RESIZES = [], UPDATES = 0, DESTROYS = 0;
 let FAIL_INIT = false;
 
 class PixiNode {
@@ -122,8 +127,10 @@ function makeFacade() {
                       addEventListener() {},
                       getBoundingClientRect: () =>
                         ({ left: 0, top: 0, width: 528, height: 528 }) };
-      this.renderer = { resize(w, h, res) { RESIZES.push([Math.round(w),
-                           Math.round(h), res]); } };
+      this.renderer = {
+        maxTextureSize: 4096,
+        resize(w, h, res) { RESIZES.push([Math.round(w), Math.round(h),
+                                          res]); } };
     }
     async init(opts) {
       INITS++;
@@ -135,7 +142,8 @@ function makeFacade() {
   return {
     Application,
     Container: PixiNode,
-    Sprite: class extends PixiNode {},
+    Sprite: class extends PixiNode { constructor(tex) { super();
+        if (tex !== undefined) this.texture = tex; } },
     Text: class extends PixiNode { constructor(str) { super();
         this.text = str; } },
     Graphics: class extends PixiNode {},
@@ -143,7 +151,8 @@ function makeFacade() {
                           addColorStop() {} },
     Texture: { from(src) {
       TEXTURES++;
-      return { source: { update() {} },
+      return { source: { update() { UPDATES++; } },
+               destroy(rec) { DESTROYS++; },
                __src: src, width: src && src.width || 0,
                height: src && src.height || 0 };
     } },
@@ -156,7 +165,7 @@ async function boot(sandbox) {
   sandbox.document = {
     getElementById: el, querySelector: () => el("map-scroll"),
     querySelectorAll: () => [],
-    createElement: kind => el("off-" + kind),
+    createElement: kind => elStub(kind),   // fresh: each capture
     body: { classList: el("body").classList },
     fullscreenElement: null,
     documentElement: { requestFullscreen: () => Promise.resolve() },
@@ -256,6 +265,42 @@ const WORLD = `
      w1 + " vs " + w2);
   ok("the click binds once to the engine's canvas",
      true, "bound at boot");
+
+  // --- the earth, one texture ---------------------------------------
+  ok("the earth rides between sky and the living",
+     vm.runInContext("ENG.stage.children[1]", a.sandbox) ===
+     vm.runInContext("ENG.earthLayer", a.sandbox) &&
+     vm.runInContext("ENG.earthLayer.children.length", a.sandbox) === 1);
+  const spr0w = vm.runInContext("ENG.earthSpr.width", a.sandbox);
+  ok("the earth sprite covers the logical box",
+     spr0w > 0 && vm.runInContext("ENG.earthSpr.height", a.sandbox) > 0,
+     "width " + spr0w.toFixed(0) + " logical");
+  vm.runInContext("ENG.bakeCv.__mark = 17;", a.sandbox);
+  const tex0 = vm.runInContext("ENG.bakeTex", a.sandbox) && null;
+  vm.runInContext("ENG.__texBefore = ENG.bakeTex;", a.sandbox);
+  const u0 = UPDATES;
+  vm.runInContext("ST.s.tick = 473; fitCanvas.key = null;", a.sandbox);
+  frames(a.sandbox, a.rafQ, 1);
+  ok("a new week rebakes the earth in place",
+     vm.runInContext("ENG.bakeCv.__mark", a.sandbox) === 17 &&
+     UPDATES === u0 + 1 &&
+     vm.runInContext("ENG.earthSpr.texture", a.sandbox) ===
+     vm.runInContext("ENG.bakeTex", a.sandbox),
+     "canvas kept (mark " + vm.runInContext("ENG.bakeCv.__mark", a.sandbox) +
+     "), one source update, texture ref stable");
+  frames(a.sandbox, a.rafQ, 1);
+  ok("a warm week rebakes nothing more",
+     UPDATES === u0 + 1, "the key only moves with the world's weeks");
+  vm.runInContext("VIEW.zoom = 2.2; fitCanvas.key = null; ST.s.tick = 475;",
+                  a.sandbox);
+  frames(a.sandbox, a.rafQ, 1);
+  const bw = vm.runInContext("ENG.bakeCv.width", a.sandbox),
+        bh = vm.runInContext("ENG.bakeCv.height", a.sandbox);
+  ok("the bake honors the device's ceiling",
+     bw <= 4096 && bh <= 4096, bw + "x" + bh + " under zoom at DPR 1.5");
+  const fZoom = frames(a.sandbox, a.rafQ, 2);
+  ok("zoomed warm frames capture nothing",
+     fZoom.trace === 0, fZoom.trace + " ctx writes");
 
   /* --- an engine refused falls to words, once, honestly --- */
   FAIL_INIT = true;                    // before the boot, so the init
