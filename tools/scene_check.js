@@ -11,7 +11,7 @@ const fs = require("fs"),
       vm = require("vm");
 
 const page = [];
-for (const name of ["boot.js", "scene.js", "panels.js"])
+for (const name of ["boot.js", "scene.js", "engine.js", "panels.js"])
   page.push(fs.readFileSync(
       path.join(__dirname, "..", "grove", "page", name), "utf8"));
 

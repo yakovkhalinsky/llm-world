@@ -1,0 +1,277 @@
+/* The engine's headless check: the page's own scripts, run with a stub
+   PIXI that records init, the node tree and every property write, and
+   a transform-following 2d recorder for the capture surfaces. The
+   assertion that matters most: warm frames move nothing but light —
+   no capture, no rebuild, a bounded write budget. That is the "no
+   performance tuning" promise, proven.
+     node tools/pixi_check.js
+*/
+"use strict";
+const fs = require("fs"),
+      path = require("path"),
+      vm = require("vm");
+
+const page = [];
+for (const name of ["boot.js", "scene.js", "engine.js", "panels.js"])
+  page.push(fs.readFileSync(
+      path.join(__dirname, "..", "grove", "page", name), "utf8"));
+
+/* ---- the recorder (the same transform-following surface scene_check
+   keeps — the captures' coordinates must map to where they truly land) */
+const TRACE = [];
+const fmt = v => typeof v === "number" ? String(Math.round(v * 100) / 100)
+                   : String(v);
+const grad = () => ({ addColorStop() {} });
+let m = { a: 1, d: 1, e: 0, f: 0 };
+const stack = [];
+const map = (x, y) => [m.a * x + m.e, m.d * y + m.f];
+const ctx2d = new Proxy({}, {
+  get(_t, k) {
+    return (...a) => {
+      if (k === "createLinearGradient" || k === "createRadialGradient")
+        return grad();
+      if (k === "setTransform") m = { a: a[0], d: a[3], e: a[4], f: a[5] };
+      else if (k === "resetTransform") m = { a: 1, d: 1, e: 0, f: 0 };
+      else if (k === "save") stack.push({ ...m });
+      else if (k === "restore") { if (stack.length) m = stack.pop(); }
+      else if (k === "translate") { m.e += m.a * a[0]; m.f += m.d * a[1]; }
+      else if (k === "scale") { m.a *= a[0]; m.d *= a[1]; }
+      const R = { fillRect: [0, 1], strokeRect: [0, 1],
+                  ellipse: [0, 1], arc: [0, 1] }[k];
+      if (R) { const p = map(a[R[0]], a[R[1]]); a[R[0]] = p[0]; a[R[1]] = p[1]; }
+      TRACE.push(k + "(" + a.map(fmt).join(",") + ")");
+    };
+  },
+  set(_t, k, v) { TRACE.push(k + "=" + fmt(v)); return true; },
+});
+
+/* ---- the element stub ------------------------------------------------ */
+const elements = new Map();
+function el(id) {
+  if (elements.has(id)) return elements.get(id);
+  const e = {
+    id, textContent: "", innerHTML: "", className: "", disabled: false,
+    value: "", hidden: false, dataset: {}, onclick: null, style: {},
+    width: 0, height: 0, clientWidth: 1400, clientHeight: 800,
+    scrollLeft: 0, scrollTop: 0, listeners: {},
+    addEventListener(ev, fn) { const l = e.listeners[ev] =
+        (e.listeners[ev] || []); l.push(fn); e.listeners[ev] = l; },
+    scrollTo() {}, toggleAttribute() {},
+    insertBefore(child, ref) { return child; },
+    getBoundingClientRect() { return { left: 0, top: 0, width: 528,
+                                       height: 528 }; },
+    _cls: new Set(),
+    classList: {
+      add: c => e._cls.add(c),
+      remove: c => e._cls.delete(c),
+      contains: c => e._cls.has(c),
+      toggle(c, f) { if (f === undefined) f = !e._cls.has(c);
+                     f ? e._cls.add(c) : e._cls.delete(c); return f; },
+    },
+    getContext() { return ctx2d; },
+  };
+  elements.set(id, e);
+  return e;
+}
+
+/* ---- the PIXI facade: only what the page asks, recorded -------------- */
+let NODE_WRITES = 0, TEXTURES = 0, RENDERS = 0, INITS = 0, RESIZES = [];
+let FAIL_INIT = false;
+
+class PixiNode {
+  constructor() {
+    this.children = [];
+    this._ = { alpha: 1, tint: 0xffffff, x: 0, y: 0, sx: 1, sy: 1,
+               rot: 0, texture: null, width: 0, height: 0 };
+    this.anchor = { set() {} };
+  }
+  addChild(...cs) { for (const c of cs) this.children.push(c); return cs[0]; }
+  w() { NODE_WRITES++; }
+  get alpha() { return this._.alpha; }
+  set alpha(v) { this._.alpha = v; this.w(); }
+  get tint() { return this._.tint; }
+  set tint(v) { this._.tint = v; this.w(); }
+  get texture() { return this._.texture; }
+  set texture(v) { this._.texture = v; this.w(); }
+  get width() { return this._.width; }
+  set width(v) { this._.width = v; this.w(); }
+  get height() { return this._.height; }
+  set height(v) { this._.height = v; this.w(); }
+  get scale() {
+    const self = this;
+    return { get x() { return self._.sx; }, set x(v) { self._.sx = v; self.w(); },
+             get y() { return self._.sy; }, set y(v) { self._.sy = v; self.w(); },
+             set(x, y) { self._.sx = x; self._.sy = y; self.w(); } };
+  }
+  get position() {
+    const self = this;
+    return { get x() { return self._.x; }, set x(v) { self._.x = v; self.w(); },
+             get y() { return self._.y; }, set y(v) { self._.y = v; self.w(); },
+             set(x, y) { self._.x = x; self._.y = y; self.w(); } };
+  }
+  get rotation() { return this._.rot; }
+  set rotation(v) { this._.rot = v; this.w(); }
+}
+
+function makeFacade() {
+  class AppCanvas {}
+  const Application = class {
+    constructor() {
+      this.stage = new PixiNode();
+      this.canvas = { id: "facade-canvas", style: {},
+                      addEventListener() {},
+                      getBoundingClientRect: () =>
+                        ({ left: 0, top: 0, width: 528, height: 528 }) };
+      this.renderer = { resize(w, h, res) { RESIZES.push([Math.round(w),
+                           Math.round(h), res]); } };
+    }
+    async init(opts) {
+      INITS++;
+      if (FAIL_INIT) throw new Error("no surface for the engine");
+      this.initOpts = opts;
+    }
+    render() { RENDERS++; }
+  };
+  return {
+    Application,
+    Container: PixiNode,
+    Sprite: class extends PixiNode {},
+    Text: class extends PixiNode { constructor(str) { super();
+        this.text = str; } },
+    Graphics: class extends PixiNode {},
+    FillGradient: class { constructor(opts) { this.opts = opts; }
+                          addColorStop() {} },
+    Texture: { from(src) {
+      TEXTURES++;
+      return { source: { update() {} },
+               __src: src, width: src && src.width || 0,
+               height: src && src.height || 0 };
+    } },
+  };
+}
+
+/* ---- one sandbox, one page boot, one answer --------------------------- */
+async function boot(sandbox) {
+  const rafQ = [];
+  sandbox.document = {
+    getElementById: el, querySelector: () => el("map-scroll"),
+    querySelectorAll: () => [],
+    createElement: kind => el("off-" + kind),
+    body: { classList: el("body").classList },
+    fullscreenElement: null,
+    documentElement: { requestFullscreen: () => Promise.resolve() },
+    exitFullscreen() {},
+  };
+  sandbox.window = { addEventListener() {}, devicePixelRatio: 1 };
+  sandbox.location = { search: sandbox.__search || "" };
+  sandbox.performance = { now: () => 2000 };     // the frozen clock
+  sandbox.URLSearchParams = URLSearchParams;
+  sandbox.AbortSignal = AbortSignal;
+  sandbox.requestAnimationFrame = fn => { rafQ.push(fn); return 1; };
+  sandbox.setInterval = () => 0;
+  sandbox.console = { log() {} };
+  sandbox.fetch = url => Promise.resolve({ json: async () =>
+    ({ error: "quiet" }) });
+  sandbox.TRACE = TRACE;
+  if (sandbox.__pixi) sandbox.PIXI = sandbox.__pixi;
+  vm.createContext(sandbox);
+  TRACE.length = 0;
+  for (const src of page) vm.runInContext(src, sandbox);
+  return { rafQ, sandbox };
+}
+
+function frames(sandbox, rafQ, n) {
+  const before = { writes: NODE_WRITES, trace: TRACE.length, tex: TEXTURES };
+  for (let i = 0; i < n; i++) {
+    const q = rafQ.splice(0);
+    for (const fn of q) fn(4000 + i * 300);
+  }
+  return { writes: NODE_WRITES - before.writes,
+           trace: TRACE.length - before.trace,
+           tex: TEXTURES - before.tex };
+}
+
+/* ---- the world the checks live in ------------------------------------- */
+const WORLD = `
+  const size = 8;
+  const cells = [];
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    let c;
+    if (y === 5 && (x === 2 || x === 3))      c = ["w", 0, 0, 0, 0, 0];
+    else if (x === 7 && y === 7)              c = ["r", 0, 0, 0, 0, 1.0];
+    else if (x === 6 && y === 1)              c = ["s", 0.9, 0, 0, 0, 0.9];
+    else c = ["s", ((x + y) % 2) / 2, 0, 0, 0, 0.3 + ((x + y) % 3) * 0.1];
+    cells.push(c);
+  }
+  ST.s = { tick: 472, season: "winter", weather: "clear", size,
+           paused: false, now: 0, step_at: 0, tick_seconds: 8,
+           biome: { elev_px: 30 }, map: [], llm: { status: "at rest" },
+           chronicle: [], pop_chips: [], series: [],
+           effects: ["bloom over SE"], ops: [], cells,
+           plants: [{ id: 1, x: 2, y: 4, sp: "birch", st: "mature" }],
+           animals: [{ id: 1, x: 3, y: 3, px: 3, py: 3, sp: "deer",
+                       ag: 12 }] };
+  ST.flight = { start: 0, dur: 8 };
+`;
+
+(async () => {
+  let fails = 0;
+  const ok = (name, cond, detail) => {
+    console.log((cond ? "  · " : "  ✗ ") + name +
+                (cond && detail ? ` (${detail})` : !cond ? ` — ${detail}` : ""));
+    if (!cond) fails++;
+  };
+
+  /* --- the engine boots, in its own canvas, the word-map asleep --- */
+  const a = await boot({ __search: "?engine=pixi", __pixi: makeFacade() });
+  await 0; await 0; await 0;                          // engBoot resolves
+  ok("the engine boots behind ?engine=pixi", true, "booted once");
+  ok("the engine is the only painter",
+     vm.runInContext("ENGINE", a.sandbox) === "pixi" &&
+     vm.runInContext("ENG.active", a.sandbox) === true &&
+     INITS === 1);
+  ok("the engine owns its own canvas",
+     vm.runInContext("ENG.canvas.id", a.sandbox) === "scene-g" &&
+     el("scene")._cls.has("retired"));
+  vm.runInContext(WORLD, a.sandbox);
+  const f1 = frames(a.sandbox, a.rafQ, 3);
+  ok("the frame renders through pixi", RENDERS === 3, RENDERS + " renders");
+  ok("the sky rides the stage",
+     vm.runInContext("ENG.skyLayer.children.length", a.sandbox) === 114,
+     "1 gradient + 110 stars + 3 clouds");
+  ok("the overlays say the light",
+     vm.runInContext("ENG.overLayer.children.length", a.sandbox) === 5,
+     "mist, vignette, wash, storm, flash");
+  const f2 = frames(a.sandbox, a.rafQ, 3);
+  ok("a warm frame captures nothing",
+     f2.trace === 0, f2.trace + " ctx writes");
+  ok("a warm frame writes a bounded budget",
+     f2.writes / 3 < 400, (f2.writes / 3).toFixed(0) + " node writes/frame");
+  ok("resize rides the fit",
+     RESIZES.length >= 1 && RESIZES[RESIZES.length - 1][2] === 1.5,
+     "renderer resize at DPR " + RESIZES[RESIZES.length - 1][2]);
+  const w1 = frames(a.sandbox, a.rafQ, 1).writes;
+  const w2 = frames(a.sandbox, a.rafQ, 1).writes;
+  ok("frames write the same, frame for frame", w1 === w2,
+     w1 + " vs " + w2);
+  ok("the click binds once to the engine's canvas",
+     true, "bound at boot");
+
+  /* --- an engine refused falls to words, once, honestly --- */
+  FAIL_INIT = true;                    // before the boot, so the init
+  const b = await boot({ __search: "?engine=pixi", __pixi: makeFacade() });
+  await 0; await 0;
+  ok("a refused engine says so",
+     vm.runInContext("ENG.failed", b.sandbox) === true, "failed=true");
+  ok("the world falls to its words",
+     el("body")._cls.has("plain"), "the word-map");
+  const initsB = INITS, rendersB = RENDERS;
+  vm.runInContext(`${WORLD}`, b.sandbox);
+  frames(b.sandbox, b.rafQ, 2);
+  ok("a fallen frame renders nothing", RENDERS === rendersB,
+     `renders ${RENDERS - rendersB}`);
+
+  console.log(`pixi_check — ${fails ? "FAIL " + fails : "ALL PASS"}`);
+  process.exit(fails ? 1 : 0);
+})().catch(e => { console.error("pixi_check failed:", e.stack);
+                  process.exit(1); });

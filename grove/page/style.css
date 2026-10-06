@@ -59,7 +59,12 @@
                 background: radial-gradient(ellipse at 50% 32%,
                     rgba(40, 62, 48, 0.5), rgba(10, 15, 12, 0) 72%); }
   #scene { display: block; cursor: pointer; border-radius: 0; }
-  body.plain #scene { display: none; }
+  #scene-g { display: block; cursor: pointer; border-radius: 0; }
+  #scene.retired { display: none; }
+  .engine-mark { font-size: 10px; opacity: .6; margin-left: 6px;
+                 letter-spacing: .05em; }
+  body.plain #scene, body.plain #scene-g { display: none; }
+  body.plain .engine-mark { display: none; }
   body.plain { overflow: auto; }
   body.plain .wrap { position: static; padding: 16px; max-width: 1160px;
                      margin: 0 auto; }

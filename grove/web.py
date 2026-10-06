@@ -191,15 +191,17 @@ def snapshot(grove, runner, lock):
 
 
 def _load_page():
-    """Assemble the served page: the skeleton, the style, and three
-    scripts joined in boot order (index -> style.css -> boot/scene/
-    panels). The assembled single string is what the harness sees."""
+    """Assemble the served page: the skeleton, the style, and the page's
+    four scripts joined in boot order (index -> style.css ->
+    boot/scene/engine/panels). engine.js is inert in every world where
+    the boot did not choose pixi. The assembled single string is what
+    the harness sees."""
     dd = os.path.join(os.path.dirname(__file__), "page")
     read = lambda name: open(os.path.join(dd, name)).read()
     return (read("index.html")
             .replace("{{STYLE}}", "\n" + read("style.css"))
             .replace("{{SCRIPT}}", read("boot.js") + read("scene.js")
-                     + read("panels.js")))
+                     + read("engine.js") + read("panels.js")))
 
 
 PAGE = _load_page()

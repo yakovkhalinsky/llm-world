@@ -1,6 +1,11 @@
 /* ================= canvas scene ================= */
-try { $("scene").getContext("2d"); }
-catch (e) { document.body.classList.add("plain"); }
+/* the engine decided in boot; the scene's own canvas stays untouched
+   when pixi will own the paint — a 2d context, once taken, closes the
+   door forever */
+try {
+  (ENGINE === "pixi" ? document.createElement("canvas") : $("scene"))
+      .getContext("2d");
+} catch (e) { document.body.classList.add("plain"); }
 if (new URLSearchParams(location.search).has("plain"))
   document.body.classList.add("plain");
 
@@ -8,7 +13,7 @@ const TW = 40, TH = 20;              // isometric tile diamond (2:1)
 const SIDE = 17;                     // slab thickness under the floor
 const PADX = 30, PADY = 72;          // margins head-/foot-room
 const cnv = $("scene");
-let ctx = cnv.getContext("2d");
+let ctx = ENGINE === "pixi" ? null : cnv.getContext("2d");
 const DPR = Math.max(1.5, window.devicePixelRatio || 1);
 /* art factor: everything drawn scales with the tile size */
 const K = TW / 30;
@@ -27,6 +32,8 @@ function fitCanvas(size) {
   if (fitCanvas.key === key) return;
   fitCanvas.key = key;
   CW = w; CH = h;
+  OX = w / 2; OY = PADY;           // (0,0) sits at the top corner —
+                                   // both engines live in these units
   if (VIEW.zoom === 1) {
     VIEW.dw = Math.min(availW, availH * w / h);
     VIEW.dh = VIEW.dw * h / w;                 // contain: both fit
@@ -34,11 +41,17 @@ function fitCanvas(size) {
     VIEW.dw = availW * VIEW.zoom;              // zoom wins; user pans
     VIEW.dh = VIEW.dw * h / w;
   }
+  if (ENGINE === "pixi") {
+    if (ENG && ENG.app)
+      ENG.app.renderer.resize(Math.round(VIEW.dw), Math.round(VIEW.dh),
+                              DPR);
+    else { fitCanvas.key = null; }             // retry once the app lives
+    return;
+  }
   cnv.width = Math.round(VIEW.dw * DPR);
   cnv.height = Math.round(VIEW.dh * DPR);
   cnv.style.width = `${Math.round(VIEW.dw)}px`;
   cnv.style.height = `${Math.round(VIEW.dh)}px`;
-  OX = w / 2;  OY = PADY;          // (0,0) sits at the top corner
   const s = VIEW.dw * DPR / w;     // logical → buffer pixels
   ctx.setTransform(s, 0, 0, s, 0, 0);
 }
@@ -1213,8 +1226,10 @@ function drawScene(tnow) {
 }
 
 function loop(tnow) {
-  if (!document.body.classList.contains("plain"))
-    drawScene(tnow);
+  if (!document.body.classList.contains("plain")) {
+    if (ENGINE === "pixi") drawScenePixi(tnow);
+    else drawScene(tnow);
+  }
   requestAnimationFrame(loop);
 }
 
@@ -1243,41 +1258,48 @@ function pickCell(s, u0, v0) {
 }
 
 /* look at a tile (click) — inverse isometric mapping; a named (or lone)
-   occupant opens its biography */
-cnv.addEventListener("click", e => {
-  const s = ST.s;
-  if (!s || !s.cells) return;
-  const r = cnv.getBoundingClientRect();
-  const u0 = (e.clientX - r.left) / r.width * CW;
-  const v0 = (e.clientY - r.top) / r.height * CH;
-  const picked = pickCell(s, u0, v0);
-  if (!picked) return;
-  const [x, y] = picked;
-  const c = s.cells[y * s.size + x];
-  const here = [];
-  for (const a of s.animals || [])
-    if (a.x === x && a.y === y) here.push({ id: a.id, kind: "animal",
-                                            sp: a.sp, n: a.n });
-  for (const t of s.plants || [])
-    if (t.x === x && t.y === y && t.st !== "log") here.push(
-      { id: t.id, kind: "plant", sp: t.sp, st: t.st, n: t.n });
-  const named = here.filter(t => t.n);
-  if (named.length === 1 || here.length === 1) {
-    const one = named[0] || here[0];
-    openBio(one.id, one.kind, one.sp, one.n);
-    $("look").textContent = "Here: " + (one.n || "a wild " + one.sp);
-    return;
-  }
-  const bits = [];
-  if (c[0] === "w") bits.push("the water");
-  else if (c[0] === "r") bits.push("rock");
-  else if (c[1] > 0.5) bits.push("long grass");
-  else bits.push("open ground");
-  for (const t of here)
-    bits.push(`${t.n || "a wild " + t.sp} (${t.kind === "plant"
-               ? t.st : "creature"})`);
-  $("look").textContent = "Here: " + bits.join(" · ");
-});
+   occupant opens its biography. One handler, bound to whichever canvas
+   the engine put the world on. */
+let sceneClickTarget = null;
+function bindSceneClick(target) {
+  if (sceneClickTarget === target) return;      // never twice
+  sceneClickTarget = target;
+  target.addEventListener("click", e => {
+    const s = ST.s;
+    if (!s || !s.cells) return;
+    const r = target.getBoundingClientRect();
+    const u0 = (e.clientX - r.left) / r.width * CW;
+    const v0 = (e.clientY - r.top) / r.height * CH;
+    const picked = pickCell(s, u0, v0);
+    if (!picked) return;
+    const [x, y] = picked;
+    const c = s.cells[y * s.size + x];
+    const here = [];
+    for (const a of s.animals || [])
+      if (a.x === x && a.y === y) here.push({ id: a.id, kind: "animal",
+                                              sp: a.sp, n: a.n });
+    for (const t of s.plants || [])
+      if (t.x === x && t.y === y && t.st !== "log") here.push(
+        { id: t.id, kind: "plant", sp: t.sp, st: t.st, n: t.n });
+    const named = here.filter(t => t.n);
+    if (named.length === 1 || here.length === 1) {
+      const one = named[0] || here[0];
+      openBio(one.id, one.kind, one.sp, one.n);
+      $("look").textContent = "Here: " + (one.n || "a wild " + one.sp);
+      return;
+    }
+    const bits = [];
+    if (c[0] === "w") bits.push("the water");
+    else if (c[0] === "r") bits.push("rock");
+    else if (c[1] > 0.5) bits.push("long grass");
+    else bits.push("open ground");
+    for (const t of here)
+      bits.push(`${t.n || "a wild " + t.sp} (${t.kind === "plant"
+                 ? t.st : "creature"})`);
+    $("look").textContent = "Here: " + bits.join(" · ");
+  });
+}
+if (ENGINE !== "pixi") bindSceneClick(cnv);
 
 /* zoom: fit / 1.5x / 2x — real levels; the scroller pans when zoomed */
 const zoomLevels = [["zoomFit", 1], ["zoom1x", 1.6], ["zoom2x", 2.2]];
