@@ -490,3 +490,19 @@ during a slow embed).
   harness reads the first shadow's seat — inside the island's width
   and between a fifth and four fifths of its height, at every frame
   the frozen clock hands out.
+
+- [x] **b28** the terrain tiles rendered torn — with per-cell elevation
+  drawn, two neighbouring tiles at different heights share an edge no
+  more (each diamond sits at its own height), and the wall quads that
+  should cover the step only drew at ≥4px interior drops: **814 of the
+  world's 1104 neighbour steps sat between the thresholds — open
+  hairline gaps** from the raised tile's edge straight to the backdrop.
+  The walls are geometry, not decoration: a step's face exists whenever
+  the ground drops, so interior walls now draw at >0.5px (the gentled
+  field's steps are 0.5–5px — contour lines, not the old noise slabs);
+  the rim keeps its ≥1px. The twin matched the wrong branch first trip
+  (interior left at 4 while the rim changed — 528 faces on the real
+  render caught it: ~480 drops closed + rims). Check: the harness
+  counts the gentled field's drops and asserts one face for each —
+  "the walls close every step the ground makes" — plus the twin's
+  byte-stable render and the ground counts across seasons.

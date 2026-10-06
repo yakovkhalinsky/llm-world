@@ -288,14 +288,13 @@ function drawLandCell(s, i, p, elevF) {
       ctx.stroke();
     }
 
-    /* the walls: where the ground beside this tile stands lower, the
-       earth shows its side, sunlit to the SE, shaded to the SW. A
-       gentle step only reads in the surface; a wall is drawn when the
-       break is a ledge. At the island's rim the face always falls to
-       the plinth below. */
+    /* the walls: the steps' own faces. A step's side exists whenever
+       the ground beside drops — tiny ones are contour lines, tall ones
+       are ledges — and nothing between is torn open. Sunlit to the SE,
+       shaded to the SW; at the island's rim the face falls to the plinth. */
     const dX = (eMe - (x < size - 1 ?
                        Math.max(0, elevF[i + 1]) : 0)) * px;
-    if (dX > (x === size - 1 ? 1 : 4)) {
+    if (dX > (x === size - 1 ? 1 : 0.5)) {
       ctx.fillStyle = "#4a392a";
       ctx.beginPath();
       ctx.moveTo(sx + TW / 2, sy);
@@ -306,7 +305,7 @@ function drawLandCell(s, i, p, elevF) {
     }
     const dY = (eMe - (y < size - 1 ?
                        Math.max(0, elevF[i + size]) : 0)) * px;
-    if (dY > (y === size - 1 ? 1 : 4)) {
+    if (dY > (y === size - 1 ? 1 : 0.5)) {
       ctx.fillStyle = "#3a2d20";
       ctx.beginPath();
       ctx.moveTo(sx, sy + TH / 2);

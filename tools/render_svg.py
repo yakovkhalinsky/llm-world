@@ -336,15 +336,15 @@ def main(out):
                                           5 + u * 1.6, pal["grass"]))
             walls = []                          # SE in sun, SW in shade
             nbX = max(0, SMOOTHED[i + 1]) if x < size - 1 else 0
-            dX = (eMe - nbX) * EPX              # a wall only at
-            if dX > (4 if x < size - 1 else 1):          # a true ledge
+            dX = (eMe - nbX) * EPX              # every step's own face:
+            if dX > (0.5 if x < size - 1 else 1):        # nothing torn
                 walls.append(poly(
                     [(cx + TW / 2, cy), (cx, cy + TH / 2),
                      (cx, cy + TH / 2 + dX), (cx + TW / 2, cy + dX)],
                     "#4a392a"))
             nbY = max(0, SMOOTHED[i + size]) if y < size - 1 else 0
             dY = (eMe - nbY) * EPX
-            if dY > (4 if y < size - 1 else 1):
+            if dY > (0.5 if y < size - 1 else 1):
                 walls.append(poly(
                     [(cx, cy + TH / 2), (cx - TW / 2, cy),
                      (cx - TW / 2, cy + dY), (cx, cy + TH / 2 + dY)],

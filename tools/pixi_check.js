@@ -420,9 +420,17 @@ const WORLD = `
      riseB + " corners at the height");
   const sunlB = bakeTr.filter(s2 => s2 === "fillStyle=#4a392a").length;
   const shadB = bakeTr.filter(s2 => s2 === "fillStyle=#3a2d20").length;
-  ok("the bake's walls stand only at true ledges",
-     sunlB >= 4 && shadB >= 4 && (sunlB + shadB) <= 24,
-     sunlB + " sunlit, " + shadB + " shaded");
+  const drops = vm.runInContext(
+      "(() => { const f = elevField(ST.s); let n = 0;" +
+      " for (let i = 0; i < size * size; i++) {" +
+      "  const x = i % size, y = (i / size) | 0;" +
+      "  if (x < size - 1 && (Math.max(0, f[i]) - Math.max(0, f[i + 1]))" +
+      "      * elevPx() > 0.5) n++;" +
+      "  if (y < size - 1 && (Math.max(0, f[i]) - Math.max(0, f[i + size]))" +
+      "      * elevPx() > 0.5) n++; } return n; })()", a.sandbox);
+  ok("the walls close every step the ground makes",
+     sunlB + shadB >= drops && sunlB >= 4 && shadB >= 4,
+     drops + " drops, " + (sunlB + shadB) + " faces");
   const tuftB = bakeTr.filter(s2 => s2.startsWith("quadraticCurveTo(") &&
       nearB(s2, "quadraticCurveTo", hillB[0], hillB[1], 8)).length;
   ok("the tall grass stands in tufts", tuftB >= 3, tuftB + " strokes");
