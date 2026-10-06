@@ -186,6 +186,14 @@ const WORLD = `
   ok("the sky rides the stage",
      vm.runInContext("ENG.skyLayer.children.length", a.sandbox) === 114,
      "1 gradient + 110 stars + 3 clouds");
+  ok("the clouds are clouds, not stars",
+     vm.runInContext("ENG.cloudSpr.every(sp => sp.texture.__src === " +
+      "ENG.cloudCv)", a.sandbox) === true &&
+     vm.runInContext("ENG.cloudSpr.every(sp => sp.texture.__src.width " +
+      "=== 240)", a.sandbox) === true &&
+     vm.runInContext("ENG.starSpr.every(sp => sp.texture.__src.width " +
+      "=== 2)", a.sandbox) === true,
+     "240-wide captures for the three clouds, 2px stars for the field");
   ok("the overlays say the light",
      vm.runInContext("ENG.overLayer.children.length", a.sandbox) === 5,
      "mist, vignette, wash, storm, flash");

@@ -427,6 +427,16 @@ during a slow embed).
   cell. Check: render and count — 35 water, 42 rock, 499 soil base
   diamonds, 472 grass overlays, cell for cell against the world.
 
+- [x] **b26** *found by looking at the sky* — the three clouds drifting
+  past the dashboard's night were **white rectangles**: the engine's
+  capture built the cloud sprites from the stars' 2×2 white texture
+  (`engine.js` `engInitSky` reached for `starTex` where it meant the
+  240×48 soft cloud it had just captured; `cloudCv` rode unused). Fixed:
+  the clouds use their own texture; the harness now asserts the
+  sprites' texture *identity* (clouds the cloud capture, stars the
+  2px), which the old node-count check could not see through. The first
+  bug found by an eye on the real device, not by a harness.
+
 ## Found on the page's own ground (the graphics review)
 
 - [x] **b23** `grove/page/scene.js:364-378` — the cactus branch wrote

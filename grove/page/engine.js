@@ -162,9 +162,9 @@ function engInitSky() {
     ENG.skyLayer.addChild(sp);
     ENG.starSpr.push(sp);
   }
-  const starTex = engTex(starCv);
+  const cloudTex = engTex(cloudCv);
   for (let i = 0; i < 3; i++) {
-    const sp = new PIXI.Sprite(starTex);
+    const sp = new PIXI.Sprite(cloudTex);
     sp.anchor && sp.anchor.set && sp.anchor.set(0.5);
     sp.__i = i;
     ENG.skyLayer.addChild(sp);
