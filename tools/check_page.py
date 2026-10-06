@@ -33,6 +33,10 @@ args.offline = False    # restore — llm presence doesn't matter for the page
 html = web.PAGE   # exactly what a browser receives
 assert 'join("\\n")' in html, "JS \\n escape got eaten by Python"
 assert 'requestAnimationFrame(loop)' in html
+assert '<script src="/pixi.js"></script>' in html, "the engine's tag lost"
+web_bytes = web._pixi_bytes()
+assert len(web_bytes) > 500_000 and b"PIXI" in web_bytes[:5000], \
+    "the vendored engine did not ride through the route"
 
 (TMP / "grove_page.html").write_text(html)
 (TMP / "grove_state.json").write_text(json.dumps(state))

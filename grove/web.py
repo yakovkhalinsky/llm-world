@@ -204,6 +204,26 @@ def _load_page():
 
 PAGE = _load_page()
 
+PIXI_JS = os.path.join(os.path.dirname(__file__), "page",
+                       "vendor", "pixi.min.js")
+
+
+def _pixi_bytes():
+    """The scene's engine, vendored — the file the head may never
+    fetch from a CDN at runtime."""
+    global _PIXI_CACHE
+    try:
+        if _PIXI_CACHE is None:
+            with open(PIXI_JS, "rb") as f:
+                _PIXI_CACHE = f.read()
+    except OSError:
+        _PIXI_CACHE = b""
+    return _PIXI_CACHE
+
+
+_PIXI_CACHE = None
+
+
 def _read_pid(handler):
     """Read {"id": N} from a POST body."""
     try:
@@ -271,6 +291,12 @@ def cmd_web(args):
             path = urlparse(self.path).path
             if path == "/":
                 self._send(200, PAGE, "text/html; charset=utf-8")
+            elif path == "/pixi.js":
+                b = _pixi_bytes()
+                if b:
+                    self._send(200, b, "application/javascript; charset=utf-8")
+                else:
+                    self._send(404, "the engine's file is missing", "text/plain")
             elif path == "/api/state":
                 try:
                     state = snapshot(g, runner, lock)

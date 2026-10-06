@@ -1,6 +1,20 @@
 
 "use strict";
 const $ = id => document.getElementById(id);
+
+/* which engine will paint the world: the probe touches a throwaway
+   canvas — never #scene, whose 2d context, once taken, can never give
+   a GPU renderer its home. The engine has not arrived yet; the page
+   still paints with canvas 2d as it always has. */
+const ENGINE = (() => {
+  if (new URLSearchParams(location.search).has("plain")) return "off";
+  if (typeof PIXI === "undefined") return "none";      // vendor missing
+  try {
+    const probe = document.createElement("canvas");
+    return (probe.getContext("webgl2") || probe.getContext("webgl"))
+        ? "pixi" : "none";
+  } catch (e) { return "none"; }
+})();
 const ago = (tick, now) => { const d = now - tick;
   return d <= 0 ? "now" : d + "wk ago"; };
 
