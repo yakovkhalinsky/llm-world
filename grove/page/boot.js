@@ -4,21 +4,17 @@ const $ = id => document.getElementById(id);
 
 /* which engine will paint the world: the probe touches a throwaway
    canvas — never #scene, whose 2d context, once taken, can never give
-   a GPU renderer its home. During the migration pixi rides behind
-   ?engine=pixi; when the checklist passes, the flag's gate flips. */
-let PIXI_IS_DEFAULT = false;        // the gate flips in the last commit
+   a GPU renderer its home. Pixi is the page's painter; without the
+   library or a GPU surface the world falls to its words. */
 const ENGINE = (() => {
   const qs = new URLSearchParams(location.search);
   if (qs.has("plain")) return "off";                     // the word-map
-  const want = qs.get("engine");
-  if (want === "c2d") return "c2d";
-  if (typeof PIXI === "undefined") return "c2d";         // vendor absent
-  if (want !== "pixi" && !PIXI_IS_DEFAULT) return "c2d";
+  if (typeof PIXI === "undefined") return "none";
   try {
     const probe = document.createElement("canvas");
     return (probe.getContext("webgl2") || probe.getContext("webgl"))
-        ? "pixi" : "c2d";
-  } catch (e) { return "c2d"; }
+        ? "pixi" : "none";
+  } catch (e) { return "none"; }
 })();
 const ago = (tick, now) => { const d = now - tick;
   return d <= 0 ? "now" : d + "wk ago"; };

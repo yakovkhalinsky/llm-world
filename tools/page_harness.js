@@ -4,6 +4,11 @@
 //
 //   node tools/page_harness.js <page.html> <state.json>
 const fs = require("fs");
+const { makeFacade } = require("./facade.js");
+const pixiRec = { writes: 0, textures: 0, updates: 0, destroys: 0,
+                  renders: 0, inits: 0, resizes: [], anchorSets: 0,
+                  failInit: false, maxTextureSize: 4096 };
+let offN = 0;
 
 const html = fs.readFileSync(process.argv[2] || "/tmp/grove_page.html",
                              "utf8");
@@ -41,35 +46,46 @@ const ctx = new Proxy(ctxTarget, {
 const rafQ = [];
 let nowMs = 1000;
 
-function el(id) {
+function elBase(id) {
   const e = {
     id, textContent: "", innerHTML: "", disabled: false, className: "",
     style: {}, width: 0, height: 0, listeners: {},
-    classList: { add() {}, remove() {}, toggle() {},
-                 contains: () => false },
-    addEventListener: (ev, fn) => { e.listeners[ev] = fn; },
-    addEventListener: (ev, fn) => { e.listeners[ev] = fn; },
+    classList: { set: new Set(), add(c) { e.classList.set.add(c); },
+                 remove(c) { e.classList.set.delete(c); },
+                 toggle() {}, contains: c => e.classList.set.has(c) },
+    addEventListener: (ev, fn) => {
+      (e.listeners[ev] = e.listeners[ev] || []).push(fn); },
     getBoundingClientRect: () => ({ left: 8, top: 8, width: 528, height: 528 }),
     getContext: () => ctx,
   };
   return e;
 }
+function el(id) {
+  if (els[id]) return els[id];
+  const e = elBase(id);
+  els[id] = e;
+  return e;
+}
 const els = {};
 ["scene", "map", "when", "weather", "pops", "soul", "chron", "sparks",
- "status", "pauseBtn", "stepBtn", "soulBtn", "look"]
-  .forEach(id => { els[id] = el(id); });
+ "status", "pauseBtn", "stepBtn", "soulBtn", "look", "engine",
+ "bio", "bioName", "bioState", "bioRows", "followBtn", "bioClose",
+ "tabChron", "tabCensus", "tabTune", "tune", "qinput", "askBtn",
+ "askout", "fsBtn", "zoomFit", "zoom1x", "zoom2x", "scroller"]
+  .forEach(id => { el(id); });
 const fakeFetch = async () => ({ json: async () => state });
 
-new Function("window", "document", "location", "performance",
+new Function("window", "document", "location", "performance", "PIXI",
   "requestAnimationFrame", "setInterval", "fetch", "AbortSignal", js)(
   { devicePixelRatio: 2, innerWidth: 1200, innerHeight: 800,
     addEventListener: () => {} },
-  { getElementById: id => els[id] || (els[id] = el(id)),
-    createElement: kind => el("off-" + kind),
+  { getElementById: id => el(id),
+    createElement: kind => elBase("off-" + kind + "-" + (offN++)),
     querySelector: () => ({ clientWidth: 1090, clientHeight: 500,
                             scrollLeft: 0, scrollTop: 0 }),
-    body: { classList: { contains: () => false, add: () => {} } } },
+    body: { classList: elBase("body").classList } },
   { search: "" }, { now: () => nowMs },
+  makeFacade(pixiRec),
   fn => { rafQ.push(fn); return 1; },
   () => 0, fakeFetch, { timeout: () => undefined });
 
@@ -85,7 +101,13 @@ setTimeout(() => {
     throw new Error(`scene drew almost nothing (${calls} ctx calls)`);
   console.log(`scene OK: ${calls} draw calls across 30 frames (raf loop)`);
 
-  els.scene.listeners.click({ clientX: 208, clientY: 308 });
+  // the click goes to the canvas the engine actually put the world on
+  const target = (pixiRec.inits && globalThis.groveDebug &&
+                  globalThis.groveDebug.ENG &&
+                  globalThis.groveDebug.ENG.canvas) || els.scene;
+  const fns = (target.listeners && target.listeners.click) ||
+      (els.scene.listeners && els.scene.listeners.click) || [];
+  fns[fns.length - 1]({ clientX: 208, clientY: 308 });
   if (!els.look.textContent.trim()) throw new Error("click produced nothing");
   console.log("click OK:", els.look.textContent.slice(0, 90));
   if (!els.chron.innerHTML && state.chronicle && state.chronicle.length)

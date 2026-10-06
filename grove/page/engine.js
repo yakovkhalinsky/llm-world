@@ -19,7 +19,10 @@ function markEngine(name) {
 }
 
 if (ENGINE === "pixi") engBoot();
-else markEngine(ENGINE);
+else {
+  if (ENGINE === "none") document.body.classList.add("plain");
+  markEngine(ENGINE === "off" ? "" : ENGINE);
+}
 
 async function engBoot() {
   try {
@@ -85,6 +88,11 @@ function engTex(cv) {
   return cv.__tex;
 }
 
+function bakeKey(s) {
+  return [s.tick, s.season, s.weather, elevPx(), Math.round(VIEW.dw),
+          Math.round(VIEW.dh)].join("|");
+}
+
 /* -------- the earth, one texture: the recipes paint it once per
    week's key onto a kept canvas; the texture updates in place and the
    GPU composites it forever after — nothing per frame re-draws it ---- */
@@ -116,6 +124,8 @@ function engBaked(s, key) {
   engCoverage(ENG.earthSpr, CW, CH);   // logical: covered to the pixel
   ENG.bakeKey = key;
 }
+
+/* the bake key's own function; the statics key on the same value */
 
 /* -------- the sky: one gradient captured per palette, stars and
    clouds as sprites the frame only nudges -------------------------- */
@@ -680,8 +690,8 @@ function drawScenePixi(tnow) {
   if (!s || !s.cells) return;
   fitCanvas(s.size);
   const tsec = tnow / 1000;
-  const dt = Math.min(0.1, (tnow - (drawScene.last || tnow)) / 1000);
-  drawScene.last = tnow;
+  const dt = Math.min(0.1, (tnow - (drawScenePixi.last || tnow)) / 1000);
+  drawScenePixi.last = tnow;
   if (!ENG.active) return;             // the engine is still waking
   const glide = glideOf(tnow);         // the shared fraction
 
@@ -720,8 +730,9 @@ function drawScenePixi(tnow) {
   }
 
   // the earth: one texture per week's key, the engine's own bake
-  drawBaked(s, tsec);
+  engBaked(s, bakeKey(s));
   engTickStatics(s);
+  checkSoulArrival(s, tnow);           // the rings spawn as they ever did
   engWaterLive(s, tsec);
   engGroundCloudLive(s, tsec);
   engMirrorLive(s, tsec);
@@ -746,6 +757,7 @@ function drawScenePixi(tnow) {
     engCoverage(ENG.overlay.storm, CW, CH);
     ENG.overlay.storm.tint = 0x141c28;
     ENG.overlay.storm.alpha = 0.25;
+    if (Math.random() < 0.006) flash = 0.30;
   } else ENG.overlay.storm.alpha = 0;
   if (flash > 0) {
     engCoverage(ENG.overlay.flash, CW, CH);

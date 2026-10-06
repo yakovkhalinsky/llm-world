@@ -129,4 +129,5 @@ requestAnimationFrame(loop);
 // test/debug hook: lets a headless harness (or the console) reach the scene
 if (typeof globalThis !== "undefined" && !("groveDebug" in globalThis))
   Object.defineProperty(globalThis, "groveDebug", {
-    value: { ST, drawScene, updateDom, poll }, configurable: true });
+    value: { ST, ENG, drawScenePixi, glideOf, pickCell, updateDom,
+             poll }, configurable: true });

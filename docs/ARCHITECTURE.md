@@ -12,7 +12,7 @@
 | `grove/engine/` | the tick's domains: `weather.py` (sky + soil), `plants.py` (light, seed rain, the bank), `animals.py` (feeding laws, flight, hunts), `population.py` (destinies, recolonization, migration), `effects.py` (the operator's fates), `tick.py` (the conductor) |
 | `grove/sim.py` | the engine's face: the old import surface still answers |
 | `grove/biomes/` | a world's nature: `grove.py`, `desert.py` — species, recipes, words, colours |
-| `grove/page/` | the dashboard as real files: `index.html` + `style.css` + `boot/scene/panels.js`, joined to one string at import |
+| `grove/page/` | the dashboard as real files: `index.html` + `style.css` + `boot/scene/engine/panels.js`, joined to one string at import; `engine.js` composes the scene in PixiJS (textures captured per week/pose from the same 2D recipes in `scene.js`); `vendor/pixi.min.js` served at `/pixi.js` |
 | `grove/rules.py` | the engine's law + the active pack folded in (aliases never rebind) |
 | `grove/web.py`, `app.py`, `db.py`, `llm.py`, `chronicler.py`, `operator.py`, `memory.py`, `reviewer.py`, `gen.py`, `world.py`, `events.py` | the services around the engine |
 

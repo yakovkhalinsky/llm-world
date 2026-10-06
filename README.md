@@ -42,7 +42,10 @@ Keys in watch mode: `space` pause · `s` step · `n` invite the soul now ·
 ## Viewing it from another device
 
 `grove web` serves a live dashboard over plain HTTP — no build step, works
-offline, one hand-written page. It is a **full-screen HUD**: the isometric
+offline, one hand-written page, rendered by **PixiJS** (vendored, served at
+`/pixi.js`): the ground and its trees captured as textures when the week
+changes, creatures caught once per pose, every frame only moves light and
+souls. It is a **full-screen HUD**: the isometric
 map fills the window and the controls float as translucent panels that
 **fade away after a few still seconds** — only the grove remains. The
 scene: a floating earth slab, diamonds shaded by season and moisture,
@@ -54,7 +57,8 @@ the soul's effects are active. Click a named creature for its biography
 (born → named → hunted → remembered) with a follow-cam; ask the grove
 questions and it answers from the world's own history. Keys: `space`
 pause · `s` step · `n` invite the soul · `f` fullscreen · `c` calm.
-`?plain` (or no canvas) falls back to the emoji page.
+`?plain` (or no WebGL) falls back to the emoji page. The scene's headless
+checks: `node tools/pixi_check.js`.
 
 ```sh
 ./grove.sh web                  # loopback only (for an ssh tunnel)

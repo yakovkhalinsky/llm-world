@@ -2,18 +2,14 @@
 /* the engine decided in boot; the scene's own canvas stays untouched
    when pixi will own the paint — a 2d context, once taken, closes the
    door forever */
-try {
-  (ENGINE === "pixi" ? document.createElement("canvas") : $("scene"))
-      .getContext("2d");
-} catch (e) { document.body.classList.add("plain"); }
 if (new URLSearchParams(location.search).has("plain"))
   document.body.classList.add("plain");
 
 const TW = 40, TH = 20;              // isometric tile diamond (2:1)
 const SIDE = 17;                     // slab thickness under the floor
 const PADX = 30, PADY = 72;          // margins head-/foot-room
-const cnv = $("scene");
-let ctx = ENGINE === "pixi" ? null : cnv.getContext("2d");
+const cnv = $("scene");     // kept for the plain word-map and history
+let ctx = null;              // the recipes draw only inside captures
 const DPR = Math.max(1.5, window.devicePixelRatio || 1);
 /* art factor: everything drawn scales with the tile size */
 const K = TW / 30;
@@ -41,19 +37,10 @@ function fitCanvas(size) {
     VIEW.dw = availW * VIEW.zoom;              // zoom wins; user pans
     VIEW.dh = VIEW.dw * h / w;
   }
-  if (ENGINE === "pixi") {
-    if (ENG && ENG.app)
-      ENG.app.renderer.resize(Math.round(VIEW.dw), Math.round(VIEW.dh),
-                              DPR);
-    else { fitCanvas.key = null; }             // retry once the app lives
-    return;
-  }
-  cnv.width = Math.round(VIEW.dw * DPR);
-  cnv.height = Math.round(VIEW.dh * DPR);
-  cnv.style.width = `${Math.round(VIEW.dw)}px`;
-  cnv.style.height = `${Math.round(VIEW.dh)}px`;
-  const s = VIEW.dw * DPR / w;     // logical → buffer pixels
-  ctx.setTransform(s, 0, 0, s, 0, 0);
+  if (ENG && ENG.app)
+    ENG.app.renderer.resize(Math.round(VIEW.dw), Math.round(VIEW.dh),
+                            DPR);
+  else fitCanvas.key = null;             // retry once the app lives
 }
 window.addEventListener("resize", () => {
   if (ST.s && ST.s.size) fitCanvas(ST.s.size);
@@ -214,53 +201,6 @@ const STARS = (() => {
   return arr;
 })();
 
-function drawBackdrop(tsec) {
-  // the slab floats over a deep, season-tinted night; stars shine far
-  // off and cloud shadows drift beneath the world
-  const p = pal();
-  const sky = ctx.createLinearGradient(0, 0, 0, CH);
-  sky.addColorStop(0, p.nightT);
-  sky.addColorStop(1, p.nightB);
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, CW, CH);
-  for (const st of STARS) {
-    const a = st.br * (0.6 + 0.4 * Math.sin(tsec * 1.7 + st.tw));
-    ctx.fillStyle = "rgba(226,236,235," + a.toFixed(3) + ")";
-    ctx.fillRect(st.u * CW, st.v * CH, st.s, st.s);
-  }
-  // three slow cloud shadows beneath the world
-  for (let i = 0; i < 3; i++) {
-    const cx = ((tsec * 11 + i * 470) % (CW + 400)) - 200;
-    const cy = CH * (0.18 + i * 0.26);
-    ctx.fillStyle = "rgba(10,16,13,0.10)";
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, 150 + i * 40, 34, 0, 0, 6.3);
-    ctx.fill();
-  }
-}
-
-function drawMist() {
-  // far-side mist: the fog lives at the scene's top, above the far woods
-  const s = ST.s || {};
-  const deep = (s.season === "winter") ? 0.30 :
-      (s.weather === "clear") ? 0.16 : 0.23;
-  const fog = ctx.createLinearGradient(0, 0, 0, CH * 0.58);
-  fog.addColorStop(0, "rgba(178,206,205," + deep + ")");
-  fog.addColorStop(1, "rgba(178,206,205,0)");
-  ctx.fillStyle = fog;
-  ctx.fillRect(0, 0, CW, CH * 0.58);
-}
-
-function drawVignette() {
-  const v = ctx.createRadialGradient(
-      CW / 2, CH / 2, Math.min(CW, CH) * 0.36,
-      CW / 2, CH / 2, Math.max(CW, CH) * 0.74);
-  v.addColorStop(0, "rgba(2,6,5,0)");
-  v.addColorStop(1, "rgba(2,6,5,0.32)");
-  ctx.fillStyle = v;
-  ctx.fillRect(0, 0, CW, CH);
-}
-
 /* the water's body: the filled tile and its dark heart — these stand
    in the baked earth; only the light upon them breathes live */
 function drawWaterCellStatic(s, i, p, elevF) {
@@ -285,52 +225,6 @@ function waterLight(i, tsec) {
   return { w1: Math.sin(tsec * 1.4 + i * 1.7) * 2,
            w2: Math.sin(tsec * 0.9 + i * 2.3) * 3,
            foam: Math.sin(tsec * 1.8 + i * 0.9) };
-}
-
-/* the water's life, per frame: caustics drifting, foam breathing */
-function drawWaterCellLive(s, i, tsec, p, elevF) {
-  const size = s.size;
-  const [sx, sy0] = iso(i % size, (i / size) | 0);
-  const sy = sy0 - Math.max(0, elevF[i]) * elevPx();
-  const L = waterLight(i, tsec);
-  const w1 = L.w1, w2 = L.w2, ph = L.foam;
-  ctx.strokeStyle = "rgba(200,225,240,0.20)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(sx - 7, sy + w1);
-  ctx.lineTo(sx + 4, sy + w1);
-  ctx.moveTo(sx - 2, sy + 1 + w2 * 0.7);
-  ctx.lineTo(sx + 8, sy + 1 + w2 * 0.7);
-  ctx.stroke();
-  // foam: light rim along every edge that faces land, breathing
-  const nbrs = [i + 1, i - 1, i + size, i - size];
-  for (let e = 0; e < 4; e++) {
-    const j = nbrs[e];
-    if (j < 0 || j >= s.cells.length || s.cells[j][0] === "w" ||
-        (e === 0 && (i % size) === size - 1) ||
-        (e === 1 && (i % size) === 0))
-      continue;
-    const pts = { 0: [sx, sy + TH / 2, sx + TW / 2, sy],   // +x: SE edge
-                  1: [sx - TW / 2, sy, sx, sy - TH / 2],   // -x: NW edge
-                  2: [sx - TW / 2, sy, sx, sy + TH / 2],   // +y: SW edge
-                  3: [sx, sy - TH / 2, sx + TW / 2, sy] }; // -y: NE edge
-    const pt = pts[e];
-    // the foam breathes with its own tide: brighter and dimmer,
-    // and a second, quieter line laps just inside the rim
-    ctx.strokeStyle = "rgba(205,228,238," +
-        (0.28 + ph * 0.10).toFixed(3) + ")";
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    ctx.moveTo(pt[0], pt[1]); ctx.lineTo(pt[2], pt[3]);
-    ctx.stroke();
-    ctx.strokeStyle = "rgba(205,228,238," +
-        Math.max(0, 0.10 - ph * 0.07).toFixed(3) + ")";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo((pt[0] + sx * 0.09) / 1.09, (pt[1] + sy * 0.09) / 1.09);
-    ctx.lineTo((pt[2] + sx * 0.09) / 1.09, (pt[3] + sy * 0.09) / 1.09);
-    ctx.stroke();
-  }
 }
 
 /* a land cell: soil, grass, tufts, stone, walls, shore, seams — the
@@ -478,28 +372,6 @@ function drawLandCell(s, i, p, elevF) {
 
 /* the whole earth — stone, soil and water's body — with the water's
    light on top; this draws today only where the offscreen bake can't */
-function drawTerrain(s, tsec) {
-  const p = pal(), px = elevPx();
-  const elevF = elevField(s);            // the gentled landform, once
-  for (let i = 0; i < s.cells.length; i++) {
-    const c = s.cells[i];
-    if (c[0] === "w") {
-      drawWaterCellStatic(s, i, p, elevF);
-      drawWaterCellLive(s, i, tsec, p, elevF);
-    } else {
-      drawLandCell(s, i, p, elevF);
-    }
-  }
-}
-
-/* the same earth but the water's light, for the frame's live pass */
-function drawWaterLive(s, tsec) {
-  const p = pal();
-  const elevF = elevField(s);
-  for (let i = 0; i < s.cells.length; i++)
-    if (s.cells[i][0] === "w") drawWaterCellLive(s, i, tsec, p, elevF);
-}
-
 /* the world sits on a raised earth slab */
 function drawSlab(s) {
   const size = s.size, p = pal();
@@ -525,71 +397,6 @@ function drawSlab(s) {
   ctx.ellipse(OX, OY + (size - 1) * TH + SIDE + 8,
               (size - 1) * TW / 2 + 30, 20, 0, 0, 6.3);
   ctx.fill();
-}
-
-/* the sky's weather drifts across the ground itself, faint — the world
-   sits under the same clouds its shadow sits under */
-function drawCloudShadows(s, tsec) {
-  for (let i = 0; i < 3; i++) {
-    const cx = ((tsec * 9 + i * 520) % (CW + 460)) - 230;
-    const cy = CH * (0.22 + i * 0.24);
-    ctx.fillStyle = "rgba(10,16,13,0.05)";
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, 120 + i * 36, 26, 0, 0, 6.3);
-    ctx.fill();
-  }
-}
-
-/* the mirrored world: a shore plant leans into the water below it,
-   upside down and quiet, clipped inside the tile it leans on */
-function drawReflections(s, tsec) {
-  const p = pal(), size = s.size;
-  const at = {};
-  for (const t of s.plants) at[t.x + "," + t.y] = t;
-  for (let i = 0; i < s.cells.length; i++) {
-    if (s.cells[i][0] !== "w") continue;
-    const x = i % size, y = Math.floor(i / size);
-    const [sx, sy] = iso(x, y);
-    for (const [nx, ny] of [[x - 1, y], [x, y - 1]]) {
-      const t = at[nx + "," + ny];
-      if (!t || t.st === "log") continue;
-      const shape = SHAPES[t.sp] || "deciduous";
-      ctx.save();
-      diamondPath(ctx, sx, sy); ctx.clip();
-      ctx.translate(sx + (nx - x) * TW / 4, sy - TH * 0.1);
-      ctx.scale(1, -0.5);                 // lean, squash, quiet
-      ctx.globalAlpha = reflectionAlpha(i, tsec);
-      ctx.fillStyle = p.leaf || "#6f9f4a";
-      if (shape === "pine") {
-        ctx.beginPath();
-        ctx.moveTo(0, -15); ctx.lineTo(7, 0); ctx.lineTo(-7, 0);
-        ctx.closePath(); ctx.fill();
-      } else {
-        ctx.beginPath(); ctx.ellipse(0, -7, 7.5, 5, 0, 0, 6.3); ctx.fill();
-        ctx.fillRect(-1, -1, 2, 5);
-      }
-      ctx.restore();
-    }
-  }
-}
-
-/* moonlight finds the water: a shimmer column over the pond's heart */
-function drawGlint(s, tsec) {
-  let xi = 0, yi = 0, n = 0;
-  for (let i = 0; i < s.cells.length; i++)
-    if (s.cells[i][0] === "w") {
-      xi += i % s.size; yi += Math.floor(i / s.size); n++;
-    }
-  if (!n) return;
-  const [gx, gy] = iso(xi / n, yi / n);
-  for (let k = 0; k < 4; k++) {
-    const d = glintDash(k, gx, gy, tsec);
-    ctx.strokeStyle = "rgba(210,228,246," + (0.12 + 0.06 * d.ph).toFixed(3) + ")";
-    ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    ctx.moveTo(d.lx - 5 - d.ph, d.ly); ctx.lineTo(d.lx + 5 + d.ph, d.ly);
-    ctx.stroke();
-  }
 }
 
 /* the moonlight's dashes — one truth for every engine */
@@ -967,27 +774,6 @@ function animalBody(shape, a, ph) {
   }
 }
 
-function drawAnimal(a, f, tsec, idx) {
-  const g = animalGait(a, f, tsec, idx);
-  const ph = gaitPhases(a, f, tsec);
-  const cy = OY + g.gy + g.lift * K + g.jy - g.eL;
-  if (g.flyer) shadow(OX + g.gx + g.jx, OY + g.gy + 2, 3 * g.szc);
-  else shadow(OX + g.gx + g.jx, OY + g.gy, 6 * g.szc);
-  ctx.save();
-  ctx.translate(OX + g.gx + g.jx, cy);
-  ctx.scale(g.flip * K * g.szc * g.js * g.sqx, K * g.szc * g.js * g.sqy);
-  animalBody(A_SHAPES[a.sp] || a.sp, a, ph);
-
-  ctx.restore();
-  if (a.n && a.n !== "-") {
-    ctx.font = "italic 9px Georgia, serif";
-    ctx.fillStyle = "rgba(10,14,12,0.65)";
-    ctx.fillText(a.n, OX + g.gx + 1, cy - 10 * K);
-    ctx.fillStyle = "#dfe9db";
-    ctx.fillText(a.n, OX + g.gx, cy - 11 * K);
-  }
-}
-
 /* particles fall over the whole scene */
 const dots = [];
 function spawnParticles(s, dt) {
@@ -1037,40 +823,6 @@ function updateParticles(dt) {
   if (dots.length > 260) dots.splice(0, dots.length - 260);
 }
 
-function drawParticles(dt) {
-  updateParticles(dt);
-  for (let i = dots.length - 1; i >= 0; i--) {
-    const d = dots[i];
-    if (d.kind === "fly") {
-      const glow = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(d.ph * 7 + i));
-      ctx.fillStyle = "rgba(232,212,137," + (glow * 0.9).toFixed(3) + ")";
-      ctx.beginPath(); ctx.arc(d.x, d.y, 1.6, 0, 6.3); ctx.fill();
-      continue;
-    }
-    d.y += d.v * dt; d.x += d.dx * dt;
-    if (d.kind === "pollen") d.x += Math.sin(d.y * 0.05 + d.ph) * 4 * dt;
-    if (d.kind === "leaf") d.x += Math.sin((d.y + i * 10) * 0.05) * 12 * dt;
-    if (d.y > CH - 4) { dots.splice(i, 1); continue; }
-    ctx.save();
-    ctx.globalAlpha = d.kind === "rain" ? 0.55 : 0.8;
-    if (d.kind === "rain") {
-      ctx.strokeStyle = "#9fc6dd"; ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(d.x, d.y);
-      ctx.lineTo(d.x - d.dx * 0.05, d.y - d.v * 0.05);
-      ctx.stroke();
-    } else {
-      ctx.fillStyle = d.kind === "leaf" ? "#a5763c"
-          : d.kind === "pollen" ? "#e6e0c8" : "#eef4f6";
-      ctx.beginPath(); ctx.arc(d.x, d.y, d.kind === "leaf" ? 2.2 : 1.3,
-                               0, 6.3);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-  if (dots.length > 260) dots.splice(0, dots.length - 260);
-}
-
 const REGIONS = { all: [0,0,1,1], NW: [0,0,.5,.5], NE: [.5,0,1,.5],
                   SW: [0,.5,.5,1], SE: [.5,.5,1,1] };
 /* the soul's touch — its geometry and its breath, one truth for
@@ -1103,36 +855,6 @@ function reflectionAlpha(i, tsec) {
   return 0.09 + 0.03 * Math.sin(tsec * 1.3 + i * 0.7);
 }
 
-function drawEffects(s, tsec) {
-  // the soul's touches are felt, not outlined: soft feathered air,
-  // breathing when the pressure breathes
-  for (const e of s.effects || []) {
-    const ef = effectFields(e, s, tsec);
-    const { x0, xe, y0, ye, mx, my, span, kind, col, core } = ef;
-    const g = ctx.createRadialGradient(mx, my, span * 0.15, mx, my, span);
-    g.addColorStop(0, "rgba(" + col + "," + core.toFixed(3) + ")");
-    g.addColorStop(0.65, "rgba(" + col + "," + (core * 0.45).toFixed(3) + ")");
-    g.addColorStop(1, "rgba(" + col + ",0)");
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.moveTo(...iso(x0, y0));
-    ctx.lineTo(...iso(xe, y0));
-    ctx.lineTo(...iso(xe, ye));
-    ctx.lineTo(...iso(x0, ye));
-    ctx.closePath();
-    ctx.fill();
-    if (kind === "bloom") {           // the blessing sparkles
-      for (let k = 0; k < 4; k++) {
-        const sp = bloomSpark(k, ef, tsec);
-        const [fxs, fys] = iso(sp.fx, sp.fy);
-        const tw = sp.tw;
-        ctx.fillStyle = "rgba(225,255,220," + (tw * 0.5).toFixed(3) + ")";
-        ctx.fillRect(fxs - 1, fys - 7 - tw * 2, 2, 4 + tw * 3);
-      }
-    }
-  }
-}
-
 /* the soul's arrival: when a new decision lands, a slow ring blooms
    from the region's heart and fades — the unseen, seen passing */
 let soulRings = [];
@@ -1157,20 +879,6 @@ function ageRings(tnow) {
   for (let i = soulRings.length - 1; i >= 0; i--) {
     const r = soulRings[i];
     if ((tnow - r.t0) / 2400 >= 1) soulRings.splice(i, 1);
-  }
-}
-
-function drawSoulRings(tnow) {
-  ageRings(tnow);
-  for (let i = soulRings.length - 1; i >= 0; i--) {
-    const r = soulRings[i];
-    const age = (tnow - r.t0) / 2400;
-    const rad = 14 + age * 210;
-    ctx.strokeStyle = "rgba(226,238,230," + ((1 - age) * 0.35).toFixed(3) + ")";
-    ctx.lineWidth = 2.2 * (1 - age) + 0.4;
-    ctx.beginPath();
-    ctx.ellipse(r.mx, r.my, rad, rad * 0.5, 0, 0, 6.3);
-    ctx.stroke();
   }
 }
 
@@ -1199,34 +907,6 @@ function paintEarth(oc, s, mapScale) {
   ctx = old;
 }
 
-function drawBaked(s, tsec) {
-  const key = [s.tick, s.season, s.weather, elevPx(),
-               Math.round(VIEW.dw), Math.round(VIEW.dh)].join("|");
-  if (ENGINE === "pixi") { engBaked(s, key); return; }
-  if (baked && baked.key === key) {
-    ctx.drawImage(baked.cv, 0, 0, CW, CH);
-    return;
-  }
-  if (!document.createElement) {         // no offscreen: the earth
-    drawSlab(s);                         // draws live, as it always did
-    const p = pal(), elevF = elevField(s);
-    for (let i = 0; i < s.cells.length; i++) {
-      const c = s.cells[i];
-      if (c[0] === "w") drawWaterCellStatic(s, i, p, elevF);
-      else drawLandCell(s, i, p, elevF);
-    }
-    for (const en of plantOrder(s)) drawPlant(en, tsec);
-    return;
-  }
-  const cv = document.createElement("canvas");
-  cv.width = cnv.width;
-  cv.height = cnv.height;
-  paintEarth(cv.getContext("2d"), s, VIEW.dw * DPR / CW);
-  baked = { key, cv };
-  ctx.drawImage(cv, 0, 0, CW, CH);
-}
-
-/* plants in painter order (they stood in the frame's sort before) */
 function plantOrder(s) {
   const ents = [];
   for (const t of s.plants) ents.push(t);
@@ -1240,55 +920,9 @@ function glideOf(tnow) {
   return glidePhase();
 }
 
-function drawScene(tnow) {
-  const s = ST.s;
-  if (!s || !s.cells) return;
-  fitCanvas(s.size);
-  const tsec = tnow / 1000;
-  const dt = Math.min(0.1, (tnow - (drawScene.last || tnow)) / 1000);
-  drawScene.last = tnow;
-  const glide = glidePhase();
-
-  drawBackdrop(tsec);
-  drawBaked(s, tsec);                      // the earth and its trees
-  drawWaterLive(s, tsec);                  // the water's light, live
-  drawCloudShadows(s, tsec);
-  drawReflections(s, tsec);
-  drawGlint(s, tsec);
-
-  /* the creatures: the only souls left to pay for, frame by frame —
-     the plants stand in the bake, at rest, in their painter order */
-  s.animals.forEach((a, i) => drawAnimal(a, glide, tsec, i));
-  trackFollow(glide);
-  checkSoulArrival(s, tnow);
-  spawnParticles(s, dt);
-  drawParticles(dt);
-  drawEffects(s, tsec);
-  drawSoulRings(tnow);
-
-  if (pal().wash) {
-    ctx.fillStyle = pal().wash;
-    ctx.fillRect(0, 0, CW, CH);
-  }
-  if (s.weather === "storm") {
-    ctx.fillStyle = "rgba(20,28,40,0.25)";
-    ctx.fillRect(0, 0, CW, CH);
-    if (Math.random() < 0.006) flash = 0.30;
-  }
-  drawMist();
-  drawVignette();
-  if (flash > 0) {
-    ctx.fillStyle = `rgba(240,245,255,${flash})`;
-    ctx.fillRect(0, 0, CW, CH);
-    flash -= dt * 1.8;
-  }
-}
-
 function loop(tnow) {
-  if (!document.body.classList.contains("plain")) {
-    if (ENGINE === "pixi") drawScenePixi(tnow);
-    else drawScene(tnow);
-  }
+  if (!document.body.classList.contains("plain"))
+    drawScenePixi(tnow);
   requestAnimationFrame(loop);
 }
 
@@ -1358,7 +992,6 @@ function bindSceneClick(target) {
     $("look").textContent = "Here: " + bits.join(" · ");
   });
 }
-if (ENGINE !== "pixi") bindSceneClick(cnv);
 
 /* zoom: fit / 1.5x / 2x — real levels; the scroller pans when zoomed */
 const zoomLevels = [["zoomFit", 1], ["zoom1x", 1.6], ["zoom2x", 2.2]];
