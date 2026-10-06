@@ -280,13 +280,20 @@ function drawWaterCellStatic(s, i, p, elevF) {
   ctx.closePath(); ctx.fill();
 }
 
+/* the water light's own clock — one truth for every engine */
+function waterLight(i, tsec) {
+  return { w1: Math.sin(tsec * 1.4 + i * 1.7) * 2,
+           w2: Math.sin(tsec * 0.9 + i * 2.3) * 3,
+           foam: Math.sin(tsec * 1.8 + i * 0.9) };
+}
+
 /* the water's life, per frame: caustics drifting, foam breathing */
 function drawWaterCellLive(s, i, tsec, p, elevF) {
   const size = s.size;
   const [sx, sy0] = iso(i % size, (i / size) | 0);
   const sy = sy0 - Math.max(0, elevF[i]) * elevPx();
-  const w1 = Math.sin(tsec * 1.4 + i * 1.7) * 2;
-  const w2 = Math.sin(tsec * 0.9 + i * 2.3) * 3;
+  const L = waterLight(i, tsec);
+  const w1 = L.w1, w2 = L.w2, ph = L.foam;
   ctx.strokeStyle = "rgba(200,225,240,0.20)";
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -310,7 +317,6 @@ function drawWaterCellLive(s, i, tsec, p, elevF) {
     const pt = pts[e];
     // the foam breathes with its own tide: brighter and dimmer,
     // and a second, quieter line laps just inside the rim
-    const ph = Math.sin(tsec * 1.8 + i * 0.9);
     ctx.strokeStyle = "rgba(205,228,238," +
         (0.28 + ph * 0.10).toFixed(3) + ")";
     ctx.lineWidth = 1.6;
@@ -552,7 +558,7 @@ function drawReflections(s, tsec) {
       diamondPath(ctx, sx, sy); ctx.clip();
       ctx.translate(sx + (nx - x) * TW / 4, sy - TH * 0.1);
       ctx.scale(1, -0.5);                 // lean, squash, quiet
-      ctx.globalAlpha = 0.09 + 0.03 * Math.sin(tsec * 1.3 + i * 0.7);
+      ctx.globalAlpha = reflectionAlpha(i, tsec);
       ctx.fillStyle = p.leaf || "#6f9f4a";
       if (shape === "pine") {
         ctx.beginPath();
@@ -577,15 +583,19 @@ function drawGlint(s, tsec) {
   if (!n) return;
   const [gx, gy] = iso(xi / n, yi / n);
   for (let k = 0; k < 4; k++) {
-    const ph = Math.sin(tsec * 1.1 + k * 1.9);
-    const lx = gx + (k - 1.5) * 9 + ph * 2.5,
-          ly = gy + (k - 1.5) * 5;
-    ctx.strokeStyle = "rgba(210,228,246," + (0.12 + 0.06 * ph).toFixed(3) + ")";
+    const d = glintDash(k, gx, gy, tsec);
+    ctx.strokeStyle = "rgba(210,228,246," + (0.12 + 0.06 * d.ph).toFixed(3) + ")";
     ctx.lineWidth = 1.4;
     ctx.beginPath();
-    ctx.moveTo(lx - 5 - ph, ly); ctx.lineTo(lx + 5 + ph, ly);
+    ctx.moveTo(d.lx - 5 - d.ph, d.ly); ctx.lineTo(d.lx + 5 + d.ph, d.ly);
     ctx.stroke();
   }
+}
+
+/* the moonlight's dashes — one truth for every engine */
+function glintDash(k, gx, gy, tsec) {
+  const ph = Math.sin(tsec * 1.1 + k * 1.9);
+  return { ph, lx: gx + (k - 1.5) * 9 + ph * 2.5, ly: gy + (k - 1.5) * 5 };
 }
 
 function drawPlant(t, tsec) {
@@ -1042,23 +1052,42 @@ function drawParticles(dt) {
 
 const REGIONS = { all: [0,0,1,1], NW: [0,0,.5,.5], NE: [.5,0,1,.5],
                   SW: [0,.5,.5,1], SE: [.5,.5,1,1] };
+/* the soul's touch — its geometry and its breath, one truth for
+   every engine */
+function effectFields(e, s, tsec) {
+  const reg = REGIONS[e.split(" over ")[1].split(" ")[0]] || REGIONS.all;
+  const x0 = reg[0] * s.size, xe = reg[2] * s.size;
+  const y0 = reg[1] * s.size, ye = reg[3] * s.size;
+  const [mx, my] = iso((x0 + xe) / 2 - 0.5, (y0 + ye) / 2 - 0.5);
+  const span = (Math.abs(xe - x0) + Math.abs(ye - y0)) * 0.5 * TW;
+  const kind = e.startsWith("blight") ? "blight"
+      : e.startsWith("drought") ? "drought" : "bloom";
+  const col = kind === "blight" ? "140,60,150"
+      : kind === "drought" ? "190,140,40" : "140,210,140";
+  const breathe = kind === "blight" ? 0.05 * Math.sin(tsec * 1.1)
+      : kind === "bloom" ? 0.03 * Math.sin(tsec * 0.7) : 0;
+  const core = (kind === "drought" ? 0.17 : kind === "blight" ? 0.14
+                : 0.11) + breathe;
+  return { x0, xe, y0, ye, mx, my, span, kind, col, core, x0y0: [x0, y0] };
+}
+
+function bloomSpark(k, ef, tsec) {
+  return { fx: ef.x0 + ((k * 7 + 3) % Math.max(1, ef.xe - ef.x0)) + 0.5,
+           fy: ef.y0 + ((k * 11 + 5) % Math.max(1, ef.ye - ef.y0)) + 0.5,
+           tw: Math.max(0, Math.sin(tsec * 2.2 + k * 2.6)) };
+}
+
+/* the mirror's breath — one truth for every engine */
+function reflectionAlpha(i, tsec) {
+  return 0.09 + 0.03 * Math.sin(tsec * 1.3 + i * 0.7);
+}
+
 function drawEffects(s, tsec) {
   // the soul's touches are felt, not outlined: soft feathered air,
   // breathing when the pressure breathes
   for (const e of s.effects || []) {
-    const reg = REGIONS[e.split(" over ")[1].split(" ")[0]] || REGIONS.all;
-    const x0 = reg[0] * s.size, xe = reg[2] * s.size;
-    const y0 = reg[1] * s.size, ye = reg[3] * s.size;
-    const [mx, my] = iso((x0 + xe) / 2 - 0.5, (y0 + ye) / 2 - 0.5);
-    const span = (Math.abs(xe - x0) + Math.abs(ye - y0)) * 0.5 * TW;
-    const kind = e.startsWith("blight") ? "blight"
-        : e.startsWith("drought") ? "drought" : "bloom";
-    const col = kind === "blight" ? "140,60,150"
-        : kind === "drought" ? "190,140,40" : "140,210,140";
-    const breathe = kind === "blight" ? 0.05 * Math.sin(tsec * 1.1)
-        : kind === "bloom" ? 0.03 * Math.sin(tsec * 0.7) : 0;
-    const core = (kind === "drought" ? 0.17 : kind === "blight" ? 0.14
-                  : 0.11) + breathe;
+    const ef = effectFields(e, s, tsec);
+    const { x0, xe, y0, ye, mx, my, span, kind, col, core } = ef;
     const g = ctx.createRadialGradient(mx, my, span * 0.15, mx, my, span);
     g.addColorStop(0, "rgba(" + col + "," + core.toFixed(3) + ")");
     g.addColorStop(0.65, "rgba(" + col + "," + (core * 0.45).toFixed(3) + ")");
@@ -1073,10 +1102,9 @@ function drawEffects(s, tsec) {
     ctx.fill();
     if (kind === "bloom") {           // the blessing sparkles
       for (let k = 0; k < 4; k++) {
-        const fx = x0 + ((k * 7 + 3) % Math.max(1, xe - x0)) + 0.5;
-        const fy = y0 + ((k * 11 + 5) % Math.max(1, ye - y0)) + 0.5;
-        const [fxs, fys] = iso(fx, fy);
-        const tw = Math.max(0, Math.sin(tsec * 2.2 + k * 2.6));
+        const sp = bloomSpark(k, ef, tsec);
+        const [fxs, fys] = iso(sp.fx, sp.fy);
+        const tw = sp.tw;
         ctx.fillStyle = "rgba(225,255,220," + (tw * 0.5).toFixed(3) + ")";
         ctx.fillRect(fxs - 1, fys - 7 - tw * 2, 2, 4 + tw * 3);
       }

@@ -91,6 +91,7 @@ class PixiNode {
     this.anchor = { set() {} };
   }
   addChild(...cs) { for (const c of cs) this.children.push(c); return cs[0]; }
+  removeChildren() { const c = this.children; this.children = []; return c; }
   w() { NODE_WRITES++; }
   get alpha() { return this._.alpha; }
   set alpha(v) { this._.alpha = v; this.w(); }
@@ -146,7 +147,19 @@ function makeFacade() {
         if (tex !== undefined) this.texture = tex; } },
     Text: class extends PixiNode { constructor(str) { super();
         this.text = str; } },
-    Graphics: class extends PixiNode {},
+    Graphics: class extends PixiNode {
+      constructor() { super(); this.paths = 0; this.strokes = 0; }
+      clear() { this.paths = 0; this.strokes = 0; return this; }
+      ellipse() { this.paths++; return this; }
+      circle() { this.paths++; return this; }
+      rect() { this.paths++; return this; }
+      moveTo() { return this; }
+      lineTo() { return this; }
+      closePath() { return this; }
+      beginPath() { return this; }
+      fill(o) { return this; }
+      stroke(o) { this.strokes++; return this; }
+    },
     FillGradient: class { constructor(opts) { this.opts = opts; }
                           addColorStop() {} },
     Texture: { from(src) {
@@ -263,6 +276,58 @@ const WORLD = `
   const w2 = frames(a.sandbox, a.rafQ, 1).writes;
   ok("frames write the same, frame for frame", w1 === w2,
      w1 + " vs " + w2);
+
+  // --- the living air -------------------------------------------------
+  const TSEC = 4.0;                       // the frozen clock's tsec
+  const water = vm.runInContext(
+      "({c: ENG.water.length, edges: ENG.water.map(w => w.edges.length)})",
+      a.sandbox);
+  ok("the pond's light stands ready", water.c === 2, water.c + " cells");
+  const wrm = vm.runInContext(
+      "ENG.water[0].edges[0].rim._ ? ENG.water[0].edges[0].rim._.alpha : 0",
+      a.sandbox);
+  const exp = 0.28 + 0.10 * vm.runInContext(
+      "waterLight(42, " + TSEC + ").foam", a.sandbox);
+  ok("the foam breathes by the shared clock",
+     Math.abs(wrm - exp) < 0.001, wrm.toFixed(3) + " vs " + exp.toFixed(3));
+  const mrm = vm.runInContext("ENG.mirror[0].sp._.alpha", a.sandbox);
+  ok("the mirror breathes by the shared clock",
+     Math.abs(mrm - (0.09 + 0.03 * Math.sin(TSEC * 1.3 + 42 * 0.7))) < 0.001,
+     mrm.toFixed(3));
+  ok("the moon leaves its dashes",
+     vm.runInContext("ENG.glint.length", a.sandbox) === 4, "4 dashes");
+  const aura = vm.runInContext(
+      "ENG.auras.length ? ENG.auras[0].spr.tint : 0", a.sandbox);
+  ok("the aura wears the bloom's tint", aura === 0x8cd28c,
+     "tint 0x" + Number(aura).toString(16) + " for bloom over SE");
+  ok("a warm frame still writes a bounded budget",
+     (frames(a.sandbox, a.rafQ, 1).writes) < 700,
+     "under the living-air budget");
+
+  // --- the rings' one honest exception ---------------------------------
+  vm.runInContext('soulRings.push({ mx: 100, my: 100, t0: 4000 });' +
+                  'soulRings.push({ mx: 120, my: 110, t0: 4000 });',
+                  a.sandbox);
+  const rb0 = vm.runInContext(
+      "ENG.ringGfx ? ENG.ringGfx.reduce((n, g) => n + g.paths, 0) : 0",
+      a.sandbox);
+  frames(a.sandbox, a.rafQ, 1);
+  ok("the rings rebuild tiny graphics, six at most",
+     vm.runInContext("ENG.ringGfx.length", a.sandbox) === 2 &&
+     vm.runInContext("ENG.ringGfx.reduce((n, g) => n + g.paths, 0)",
+                     a.sandbox) > rb0,
+     "2 rings rebuilt");
+
+  // --- the pool holds the air ------------------------------------------
+  vm.runInContext('ST.s.season = "spring"; ST.s.weather = "rain";',
+                  a.sandbox);
+  let grew = 0;
+  for (let i = 0; i < 20; i++) {
+    frames(a.sandbox, a.rafQ, 1);
+    grew = Math.max(grew, vm.runInContext("ENG.pool.length", a.sandbox));
+  }
+  ok("the pool holds every drop and no more",
+     grew > 0 && grew <= 260, grew + " sprites for the rain");
   ok("the click binds once to the engine's canvas",
      true, "bound at boot");
 
