@@ -196,6 +196,141 @@ function engCoverage(spr, w, h) {
   spr.position.set(0, 0);
 }
 
+/* -------- the creatures: caught once per pose, moved by properties ---
+   The recipe drew them; the capture grid quantizes the gait (~10
+   quanta a stride — sub-pixel at the world's scale); a frame never
+   rebuilds a creature's geometry. */
+
+/* a value → its bucket in [−amp, amp]; a bucket → its center */
+function engQuant(v, amp, n) {
+  if (!amp || v === undefined) return 0;
+  return Math.max(0, Math.min(n, Math.round((v / amp + 1) * n / 2)));
+}
+function engDequant(qn, amp, n) {
+  if (!qn) return 0;
+  return (qn / n * 2 - 1) * amp;
+}
+
+/* a family's own motion channel, and nothing else — the pose space
+   stays bounded: a deer is its trot, a fox its tail, a bird its wing */
+const POSE_CHAN = {
+  rabbit: ["flick", "flick", 1.2, 4],
+  fox: ["tail", "tail", 2.4, 8],
+  owl: ["flap", "flap", 1, 10],
+  robin: ["rf", "rf", 1, 10],
+  deer: ["dTrot", "trot", 1.2, 10],
+  stag: ["dTrot", "trot", 1.2, 10],
+  boar: ["bTrot", "trot", 1.2, 10],
+};
+function poseKeyFor(a, ph) {
+  const shape = A_SHAPES[a.sp] || a.sp;
+  const ch = POSE_CHAN[shape];
+  const q = ch ? ch[1] + ":" + engQuant(ph[ch[0]], ch[2], ch[3]) + ":"
+                + ch[2] + ":" + ch[3] : "still";
+  return [shape, a.sp, ph.winter ? "w" : "s", a.h ? "h" : "-", q]
+      .join("|");
+}
+
+/* the box the bodies live in, in local units; x −12..+12, y −13..+9 */
+const POSE_BOX = { w: 24, h: 22, ox: 12, oy: 13, ss: 8 };
+
+function engCapturePose(key) {
+  const [shape, sp, wi, hun, chan] = key.split("|");
+  const ph = { stride: 1, winter: wi === "w", dTrot: 0, bTrot: 0,
+               flap: 0, rf: 0, tail: 0, flick: 0 };
+  if (chan && chan !== "still") {
+    const [nm, q, amp, n] = chan.split(":");
+    ph[nm] = engDequant(+q, +amp, +n);
+  }
+  const a = { sp, h: hun === "h" ? 1 : 0 };
+  const SS = POSE_BOX.ss;
+  const cv = engCapture(POSE_BOX.w * SS, POSE_BOX.h * SS, oc => {
+    oc.setTransform(SS, 0, 0, SS, POSE_BOX.ox * SS, POSE_BOX.oy * SS);
+    animalBody(shape, a, ph);          // the recipe itself draws the pose
+  });
+  ENG.poseTex[key] = engTex(cv);
+  return ENG.poseTex[key];
+}
+
+function engBuildCreatures(s) {
+  if (!ENG_FX.shadowTex) {
+    const cv = engCapture(16, 8, oc => {
+      oc.fillStyle = "rgba(8,14,11,1)";
+      oc.beginPath();
+      oc.ellipse(8, 4, 7.5, 2.85, 0, 0, 6.3); oc.fill();
+    });
+    ENG_FX.shadowTex = engTex(cv);
+  }
+  // the pose epoch: winter's whiskers and the packs' colours change it
+  const sig = [!!(s.season === "winter"), JSON.stringify(ANIMAL_BODY),
+               DPR].join("|");
+  if (ENG.poseSig !== sig) {
+    ENG.poseSig = sig;
+    for (const k in ENG.poseTex) if (ENG.poseTex[k].destroy)
+      ENG.poseTex[k].destroy(true);
+    ENG.poseTex = {};
+  }
+  ENG.animalLayer.removeChildren();
+  ENG.creatures = [];
+  for (const a of s.animals) {
+    const root = new PIXI.Container();
+    const inner = new PIXI.Container();       // the scale and the flip
+    const shadow = new PIXI.Sprite(ENG_FX.shadowTex);
+    shadow.anchor && shadow.anchor.set && shadow.anchor.set(0.5, 0.5);
+    shadow.alpha = 0.20;
+    const flyer = a.sp === "owl" || a.sp === "robin";
+    const szc = a.ag !== undefined && a.ag < 6 ? 0.62 : 1;
+    const rx = (flyer ? 3 : 6) * szc;
+    shadow.width = rx * 2 / K * 1.08;         // local units (K rides below)
+    shadow.height = rx * 0.76 / K * 1.08;
+    const body = new PIXI.Sprite();
+    body.anchor && body.anchor.set &&
+        body.anchor.set(POSE_BOX.ox / POSE_BOX.w,
+                        POSE_BOX.oy / POSE_BOX.h);
+    body.width = POSE_BOX.w; body.height = POSE_BOX.h;
+    inner.addChild(shadow, body);
+    root.addChild(inner);
+    let labels = null;
+    if (a.n && a.n !== "-") {
+      const style = { fontFamily: "Georgia, serif", fontSize: 9,
+                      fontStyle: "italic" };
+      const dark = new PIXI.Text(a.n, { ...style, fill: "#101412" });
+      const light = new PIXI.Text(a.n, { ...style, fill: "#dfe9db" });
+      root.addChild(dark, light);
+      labels = { dark, light };
+    }
+    ENG.animalLayer.addChild(root);
+    ENG.creatures.push({ a, root, inner, shadow, body, labels, flyer,
+                         szc });
+  }
+}
+
+/* the creatures, per frame: the shared gait, the shared phases, a
+   pose texture, positions, the flip; the labels ride above */
+function engAnimalsLive(tsec, glide) {
+  const s = ST.s;
+  for (let i = 0; i < ENG.creatures.length; i++) {
+    const c = ENG.creatures[i];
+    if (!c) break;
+    const a = c.a;
+    const g = animalGait(a, glide, tsec, i);
+    const ph = gaitPhases(a, glide, tsec);
+    const key = poseKeyFor(a, ph);
+    c.body.texture = ENG.poseTex[key] || engCapturePose(key);
+    c.root.position.set(OX + g.gx + g.jx,
+                        OY + g.gy + g.lift * K + g.jy - g.eL);
+    c.inner.scale.set(g.flip * K * c.szc * g.js * g.sqx,
+                      K * c.szc * g.js * g.sqy);
+    c.shadow.position.set(0, 2 + 2 * K - g.lift * K - g.jy + g.eL);
+    if (c.labels) {
+      c.labels.dark.position.set(1 - g.jx, -10 * K);
+      c.labels.light.position.set(-g.jx, -11 * K);
+    }
+  }
+  if (ENG.creatures.length !== s.animals.length)
+    engBuildCreatures(s);          // a soul arrived mid-tick: rebuild
+}
+
 /* -------- the living air: the water's light, the sky's shadows on
    the ground, the mirror, the moon's glint, the particles, the soul's
    touches — captured once, moved by properties forever ------------ */
@@ -393,6 +528,7 @@ function engTickStatics(s) {
   engBuildGlint(s);
   engBuildAuras(s);
   engBuildGroundClouds(s);
+  engBuildCreatures(s);
 }
 
 /* the sky's clouds cross the ground too: three soft shadows that drift */
@@ -547,6 +683,7 @@ function drawScenePixi(tnow) {
   const dt = Math.min(0.1, (tnow - (drawScene.last || tnow)) / 1000);
   drawScene.last = tnow;
   if (!ENG.active) return;             // the engine is still waking
+  const glide = glideOf(tnow);         // the shared fraction
 
   const p = pal();
   // the sky
@@ -590,6 +727,7 @@ function drawScenePixi(tnow) {
   engMirrorLive(s, tsec);
   engGlintLive(s, tsec);
   spawnParticles(s, dt);
+  engAnimalsLive(tsec, glide);
   engParticles(dt);
   engAurasLive(s, tsec);
   engRings(tnow);

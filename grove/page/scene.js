@@ -814,23 +814,32 @@ function animalGait(a, f, tsec, idx) {
            hopP, sqx, sqy, eL };
 }
 
-function drawAnimal(a, f, tsec, idx) {
-  const g = animalGait(a, f, tsec, idx);
+/* the phases a body needs — one truth for frames and captured poses */
+function gaitPhases(a, f, tsec) {
+  return {
+    stride: f < 1 ? 1 : 0,
+    dTrot: f < 1 ? Math.sin(f * 14 + a.id * 2) * 1.2 : 0,
+    bTrot: f < 1 ? Math.sin(f * 14 + a.id) * 1.2 : 0,
+    flap: f < 1 ? Math.sin(f * 20 + a.id) : 0.3,
+    rf: f < 1 ? Math.sin(f * 24 + a.id) : 0.4,
+    flick: Math.pow(Math.max(0,
+        Math.sin(tsec * 0.9 + a.id * 2) - 0.94) / 0.06, 2),
+    tail: Math.sin(tsec * (f < 1 ? 5.5 : 3) + a.id) * (f < 1 ? 2.4 : 1.6),
+    winter: !!(ST.s && ST.s.season === "winter"),
+  };
+}
+
+/* the creature's body in local units — no shadow, no label, no
+   transform: the one truth every engine captures from */
+function animalBody(shape, a, ph) {
   const body = ANIMAL_BODY[a.sp] || "#999";
-  const cy = OY + g.gy + g.lift * K + g.jy - g.eL;
-  if (g.flyer) shadow(OX + g.gx + g.jx, OY + g.gy + 2, 3 * g.szc);
-  else shadow(OX + g.gx + g.jx, OY + g.gy, 6 * g.szc);
-  ctx.save();
-  ctx.translate(OX + g.gx + g.jx, cy);
-  ctx.scale(g.flip * K * g.szc * g.js * g.sqx, K * g.szc * g.js * g.sqy);
-  const winter = ST.s && ST.s.season === "winter";
-  switch (A_SHAPES[a.sp] || a.sp) {
+  const winter = ph.winter;
+  switch (shape) {
     case "rabbit":
       ctx.fillStyle = body;
       ctx.beginPath(); ctx.ellipse(0, 2, 5, 4, 0, 0, 6.3); ctx.fill();
       // ears: the far one flicks on its own quiet alarm
-      const flick = Math.pow(Math.max(0,
-          Math.sin(tsec * 0.9 + a.id * 2) - 0.94) / 0.06, 2);
+      const flick = ph.flick;
       ctx.beginPath(); ctx.ellipse(2, -3, 1.6, 4, 0.35, 0, 6.3); ctx.fill();
       ctx.beginPath(); ctx.ellipse(4.4, -3, 1.6, 4, 0.2 - flick * 0.4,
                                    0, 6.3); ctx.fill();
@@ -843,7 +852,7 @@ function drawAnimal(a, f, tsec, idx) {
       ctx.beginPath(); ctx.ellipse(0, 1, 7 * sz, 4 * sz, 0, 0, 6.3);
       ctx.fill();
       // a trot: each pair swings against the other, the far pair dimmer
-      const trot = g.stride * Math.sin(f * 14 + a.id * 2) * 1.2;
+      const trot = ph.dTrot;
       ctx.fillStyle = "#8a6a45";
       ctx.fillRect(-3.6 - trot, 4.2, 1.4, 3.6 * sz);
       ctx.fillRect(4.4 + trot, 4.2, 1.4, 3.6 * sz);
@@ -864,8 +873,7 @@ function drawAnimal(a, f, tsec, idx) {
       ctx.beginPath(); ctx.arc(5.4, 0, 2.1, 0, 6.3); ctx.fill();
       ctx.fillStyle = "#e8dccb";
       // the tail flicks quicker in flight
-      const tailSway = Math.sin(tsec * (f < 1 ? 5.5 : 3) + a.id) *
-          (f < 1 ? 2.4 : 1.6);
+      const tailSway = ph.tail;
       ctx.beginPath();
       ctx.moveTo(-4, 1.5);
       ctx.quadraticCurveTo(-9, -1 + tailSway, -8, -6 + tailSway * 1.4);
@@ -879,7 +887,7 @@ function drawAnimal(a, f, tsec, idx) {
       break;
     case "owl":
       // the wings beat behind the body, once or twice a glide
-      const flap = f < 1 ? Math.sin(f * 20 + a.id) : 0.3;
+      const flap = ph.flap;
       ctx.fillStyle = "rgba(0,0,0,0.16)";
       ctx.beginPath();
       ctx.ellipse(-4.8, -1.2 + flap * 2.1, 3.1, 1.15,
@@ -903,7 +911,7 @@ function drawAnimal(a, f, tsec, idx) {
       break;
     case "robin":
       // small wings, busy in flight
-      const rf = f < 1 ? Math.sin(f * 24 + a.id) : 0.4;
+      const rf = ph.rf;
       ctx.fillStyle = "rgba(0,0,0,0.15)";
       ctx.beginPath();
       ctx.ellipse(-3.3, -0.5 + rf * 1.4, 1.9, 0.85,
@@ -931,7 +939,7 @@ function drawAnimal(a, f, tsec, idx) {
       ctx.beginPath(); ctx.ellipse(0, 1.5, 6.4, 4.2, 0, 0, 6.3); ctx.fill();
       ctx.strokeStyle = "#4a3b35"; ctx.lineWidth = 1;
       // a trot, too, when the boar moves
-      const bt = g.stride * Math.sin(f * 14 + a.id) * 1.2;
+      const bt = ph.bTrot;
       ctx.beginPath();
       ctx.moveTo(-4 + bt, 5); ctx.lineTo(-4 + bt, 7);
       ctx.moveTo(3 - bt, 5); ctx.lineTo(3 - bt, 7);
@@ -957,6 +965,19 @@ function drawAnimal(a, f, tsec, idx) {
       }
       break;
   }
+}
+
+function drawAnimal(a, f, tsec, idx) {
+  const g = animalGait(a, f, tsec, idx);
+  const ph = gaitPhases(a, f, tsec);
+  const cy = OY + g.gy + g.lift * K + g.jy - g.eL;
+  if (g.flyer) shadow(OX + g.gx + g.jx, OY + g.gy + 2, 3 * g.szc);
+  else shadow(OX + g.gx + g.jx, OY + g.gy, 6 * g.szc);
+  ctx.save();
+  ctx.translate(OX + g.gx + g.jx, cy);
+  ctx.scale(g.flip * K * g.szc * g.js * g.sqx, K * g.szc * g.js * g.sqy);
+  animalBody(A_SHAPES[a.sp] || a.sp, a, ph);
+
   ctx.restore();
   if (a.n && a.n !== "-") {
     ctx.font = "italic 9px Georgia, serif";
@@ -1214,6 +1235,11 @@ function plantOrder(s) {
   return ents;
 }
 
+/* the glide's fraction, shared by every engine's creatures */
+function glideOf(tnow) {
+  return glidePhase();
+}
+
 function drawScene(tnow) {
   const s = ST.s;
   if (!s || !s.cells) return;
@@ -1221,7 +1247,6 @@ function drawScene(tnow) {
   const tsec = tnow / 1000;
   const dt = Math.min(0.1, (tnow - (drawScene.last || tnow)) / 1000);
   drawScene.last = tnow;
-  // fraction of the glide between weekly positions, from the true phase
   const glide = glidePhase();
 
   drawBackdrop(tsec);

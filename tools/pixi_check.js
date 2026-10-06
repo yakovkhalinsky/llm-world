@@ -328,6 +328,11 @@ const WORLD = `
   }
   ok("the pool holds every drop and no more",
      grew > 0 && grew <= 260, grew + " sprites for the rain");
+  vm.runInContext('ST.s.season = "winter"; ST.s.weather = "clear";',
+                  a.sandbox);          // the world returns to the frozen
+                                       // clock's winter for later tests
+  frames(a.sandbox, a.rafQ, 1);        // the pose epoch re-captures once
+  frames(a.sandbox, a.rafQ, 1);        // and the next frame rests warm
   ok("the click binds once to the engine's canvas",
      true, "bound at boot");
 
@@ -363,9 +368,41 @@ const WORLD = `
         bh = vm.runInContext("ENG.bakeCv.height", a.sandbox);
   ok("the bake honors the device's ceiling",
      bw <= 4096 && bh <= 4096, bw + "x" + bh + " under zoom at DPR 1.5");
-  const fZoom = frames(a.sandbox, a.rafQ, 2);
-  ok("zoomed warm frames capture nothing",
-     fZoom.trace === 0, fZoom.trace + " ctx writes");
+  const fZ1 = frames(a.sandbox, a.rafQ, 1);
+  const fZ2 = frames(a.sandbox, a.rafQ, 2);
+  ok("zoomed warm frames re-capture at most a pose, then rest",
+     fZ1.trace <= 60 && fZ2.trace === 0,
+     fZ1.trace + " then " + fZ2.trace + " ctx writes");
+
+  // the pose is caught by the recipe itself: catching a pose writes
+  // the body recipe's own ops, op for op, in the same transform
+  const KEY = vm.runInContext(
+      "poseKeyFor(ENG.creatures[0].a, " +
+      "gaitPhases(ENG.creatures[0].a, 0.25, 4.0))", a.sandbox);
+  TRACE.length = 0;
+  vm.runInContext("engCapturePose(" + JSON.stringify(KEY) + ")", a.sandbox);
+  const cap = TRACE.slice();
+  TRACE.length = 0;
+  vm.runInContext(
+    `engCapture(200, 200, oc => animalBody("deer", { sp: "deer", h: 0 },
+      (function () {
+        const p = { stride: 1, winter: true, dTrot: 0, bTrot: 0,
+                    flap: 0, rf: 0, tail: 0, flick: 0 };
+        const ch = ${JSON.stringify(KEY)}.split("|")[4];
+        if (ch && ch !== "still") {
+          const [nm, q, amp, n] = ch.split(":");
+          p[nm] = engDequant(+q, +amp, +n);
+        }
+        return p;
+      })()))`, a.sandbox);
+  const bod = TRACE.slice();
+  TRACE.length = 0;
+  const from = cap.findIndex(s2 => s2.startsWith("setTransform(8,")) + 1;
+  const after = cap.slice(from);
+  ok("the pose is caught by the recipe itself",
+     after.length === bod.length &&
+     JSON.stringify(after) === JSON.stringify(bod),
+     after.length + " ops, op for op of " + bod.length);
 
   /* --- an engine refused falls to words, once, honestly --- */
   FAIL_INIT = true;                    // before the boot, so the init
