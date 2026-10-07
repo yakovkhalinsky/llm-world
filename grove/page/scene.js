@@ -60,9 +60,11 @@ function elevPx() {
    own noise as data, but three diffusion passes make neighbours agree
    before it is drawn, so the ground rolls where once it stepped.
    Cached per tick; the world's own data is never rewritten. */
-const ELEV_CACHE = { tick: -1, field: null };
+const ELEV_CACHE = { key: "", field: null, corner: null };
+function elevKey(s) { return s.tick + "|" + s.size; }
+
 function elevField(s) {
-  if (ELEV_CACHE.tick === s.tick && ELEV_CACHE.field)
+  if (ELEV_CACHE.key === elevKey(s) && ELEV_CACHE.field)
     return ELEV_CACHE.field;
   const size = s.size, n = s.cells.length;
   let f = new Float32Array(n);
@@ -80,14 +82,68 @@ function elevField(s) {
     }
     f = g;
   }
-  ELEV_CACHE.tick = s.tick;
+  ELEV_CACHE.key = elevKey(s);
   ELEV_CACHE.field = f;
+  ELEV_CACHE.corner = null;         // the corners are derived from it
   return f;
 }
+
+/* The heights of the grid's VERTICES — the corners where cells meet.
+   Vertex (vx,vy) is the top corner of cell (vx,vy), at flat position
+   (OX + (vx-vy)*TW/2, OY + (vx+vy)*TH/2 - TH/2), and carries the mean of
+   the (up to four) gentled cells that meet there. Every tile draws its
+   four corners from this one grid, so two neighbours share those two
+   points exactly and no gap can open between them: the land is a single
+   surface, and no tile ever needs a face to cover a step. */
+function cornerField(s) {
+  const f = elevField(s);
+  if (ELEV_CACHE.corner) return ELEV_CACHE.corner;
+  const size = s.size, w = size + 1;
+  const c = new Float32Array(w * w);
+  for (let vy = 0; vy < w; vy++)
+    for (let vx = 0; vx < w; vx++) {
+      let tot = 0, cnt = 0;
+      const up = vy > 0, dn = vy < size, lf = vx > 0, rt = vx < size;
+      if (lf && up) { tot += Math.max(0, f[(vy - 1) * size + vx - 1]); cnt++; }
+      if (rt && up) { tot += Math.max(0, f[(vy - 1) * size + vx]); cnt++; }
+      if (lf && dn) { tot += Math.max(0, f[vy * size + vx - 1]); cnt++; }
+      if (rt && dn) { tot += Math.max(0, f[vy * size + vx]); cnt++; }
+      c[vy * w + vx] = cnt ? tot / cnt : 0;
+    }
+  ELEV_CACHE.corner = c;
+  return c;
+}
+
+/* where a vertex sits before the land rises — the top corner of cell
+   (vx,vy), which is the flat diamond's own top point */
+function vpos(vx, vy) {
+  return [OX + (vx - vy) * TW / 2, OY + (vx + vy) * TH / 2 - TH / 2];
+}
+
+/* the same point with the land under it: a vertex carries the mean of the
+   cells that meet there, so every tile touching it draws it at one place */
+function cornerAt(vx, vy) {
+  const s = ST.s, w = s.size + 1;
+  const [cx, cy] = vpos(vx, vy);
+  return [cx, cy - cornerField(s)[vy * w + vx] * elevPx()];
+}
+
+/* the corner heights of one cell, top/right/bottom/left — the same four
+   points the flat diamond had, each raised on its own */
+function cornerQuad(s, x, y) {
+  return [cornerAt(x, y), cornerAt(x + 1, y),
+          cornerAt(x + 1, y + 1), cornerAt(x, y + 1)];
+}
+
+/* the height of a cell's own middle: the mean of its four corners, which
+   is exactly where the drawn surface sits. Everything that stands on the
+   land — plants, creatures, their shadows, the click — asks for this. */
 function elevAt(x, y) {
   const s = ST.s;
   if (!s || !s.cells) return 0;
-  return Math.max(0, elevField(s)[y * s.size + x]) * elevPx();
+  const w = s.size + 1, c = cornerField(s);
+  return (c[y * w + x] + c[y * w + x + 1] +
+          c[(y + 1) * w + x] + c[(y + 1) * w + x + 1]) / 4 * elevPx();
 }
 
 /* a deterministic per-object nudge: the forest is not stamped on a
@@ -184,6 +240,28 @@ function diamondPath(c, cx, cy) {
   c.closePath();
 }
 
+/* a land tile's own face: its four corners, each raised on the vertex they
+   belong to, in order top/right/bottom/left. Stroked with the same colour
+   as it is filled — neighbours meet edge to edge exactly, and antialiasing
+   alone would leave a hairline of sky down every shared seam. */
+function quadPath(q, fill, soft) {
+  ctx.beginPath();
+  ctx.moveTo(q[0][0], q[0][1]);
+  ctx.lineTo(q[1][0], q[1][1]);
+  ctx.lineTo(q[2][0], q[2][1]);
+  ctx.lineTo(q[3][0], q[3][1]);
+  ctx.closePath();
+  if (fill) {
+    ctx.fillStyle = fill;
+    ctx.fill();
+    if (!soft) {          // a translucent overlay fills only: stroking it
+      ctx.strokeStyle = fill;   // would double-composite along the edge
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+}
+
 /* soft ellipse shadow that grounds a standing thing */
 function shadow(cx, cy, rx) {
   ctx.fillStyle = "rgba(8,14,11,0.20)";
@@ -206,21 +284,22 @@ const STARS = (() => {
 
 /* the water's body: the filled tile and its dark heart — these stand
    in the baked earth; only the light upon them breathes live */
-function drawWaterCellStatic(s, i, p, elevF) {
+function drawWaterCellStatic(s, i, p) {
   const size = s.size;
-  const [sx, sy0] = iso(i % size, (i / size) | 0);
-  const sy = sy0 - Math.max(0, elevF[i]) * elevPx();
-  ctx.fillStyle = p.water;
-  diamondPath(ctx, sx, sy); ctx.fill();
+  const x = i % size, y = (i / size) | 0;
+  /* water takes the same shared corners as the land, so the shore line is
+     one edge and not two. A pond's own middle stays level — every vertex
+     inside it averages only water, whose elev never rises above zero —
+     and only its shore climbs toward the bank. */
+  const q = cornerQuad(s, x, y);
+  const [sx, sy0] = iso(x, y);
+  const sy = sy0 - elevAt(x, y);
+  quadPath(q, p.water);
   // depth: a darker heart in the water, the shallows reading lighter
   const D = 0.62;
   ctx.fillStyle = "rgba(6,14,26,0.16)";
-  ctx.beginPath();
-  ctx.moveTo(sx, sy - TH / 2 * D);
-  ctx.lineTo(sx + TW / 2 * D, sy);
-  ctx.lineTo(sx, sy + TH / 2 * D);
-  ctx.lineTo(sx - TW / 2 * D, sy);
-  ctx.closePath(); ctx.fill();
+  quadPath(q.map(pt => [sx + (pt[0] - sx) * D, sy + (pt[1] - sy) * D]), null);
+  ctx.fill();
 }
 
 /* the water light's own clock — one truth for every engine */
@@ -232,21 +311,22 @@ function waterLight(i, tsec) {
 
 /* a land cell: soil, grass, tufts, stone, walls, shore, seams — the
    earth has no tide, so none of this depends on the frame */
-function drawLandCell(s, i, p, elevF) {
-  const size = s.size, px = elevPx();
+function drawLandCell(s, i, p) {
+  const size = s.size;
   const c = s.cells[i];
   const x = i % size, y = Math.floor(i / size);
-  const eMe = Math.max(0, elevF[i]);   // the tile and its walls agree
+  /* the tile is its four corners, each on the vertex it belongs to — the
+     same points the neighbour draws, so the two meet edge to edge. Their
+     mean is exactly where the tile's middle sits, which is where every
+     mark below is placed, so the marks need not move. */
+  const q = cornerQuad(s, x, y);
   const [sx, sy0] = iso(x, y);
-  const sy = sy0 - eMe * px;           // the land rises here
-  diamondPath(ctx, sx, sy);
-  ctx.fillStyle = p.soil;
-    ctx.fill();
+  const sy = sy0 - elevAt(x, y);       // the land rises here
+  quadPath(q, p.soil);
     const g = c[1];
     if (g > 0.06) {
       ctx.globalAlpha = Math.min(1, g * 0.9);
-      ctx.fillStyle = p.grass;
-      diamondPath(ctx, sx, sy); ctx.fill();
+      quadPath(q, p.grass, true);
       ctx.globalAlpha = 1;
     }
     if (g > 0.45) {              // tall grass carries tufts of its own
@@ -263,12 +343,10 @@ function drawLandCell(s, i, p, elevF) {
       }
     }
     if (c[2] > 0.75) {                             // soaked ground
-      ctx.fillStyle = "rgba(30,50,66,0.18)";
-      diamondPath(ctx, sx, sy); ctx.fill();
+      quadPath(q, "rgba(30,50,66,0.18)", true);
     }
     if (c[0] === "r") {
-      ctx.fillStyle = p.rock;
-      diamondPath(ctx, sx, sy); ctx.fill();
+      quadPath(q, p.rock);
       ctx.fillStyle = "rgba(255,255,255,0.07)";
       ctx.beginPath();
       ctx.moveTo(sx - 5, sy); ctx.lineTo(sx, sy - 5);
@@ -289,32 +367,14 @@ function drawLandCell(s, i, p, elevF) {
       ctx.stroke();
     }
 
-    /* the walls: the steps' own faces. A step's side exists whenever
-       the ground beside drops — tiny ones are contour lines, tall ones
-       are ledges — and nothing between is torn open. Sunlit to the SE,
-       shaded to the SW; at the island's rim the face falls to the plinth. */
-    const dX = (eMe - (x < size - 1 ?
-                       Math.max(0, elevF[i + 1]) : 0)) * px;
-    if (dX > (x === size - 1 ? 1 : 0.5)) {
-      ctx.fillStyle = "#4a392a";
-      ctx.beginPath();
-      ctx.moveTo(sx + TW / 2, sy);
-      ctx.lineTo(sx, sy + TH / 2);
-      ctx.lineTo(sx, sy + TH / 2 + dX);
-      ctx.lineTo(sx + TW / 2, sy + dX);
-      ctx.closePath(); ctx.fill();
-    }
-    const dY = (eMe - (y < size - 1 ?
-                       Math.max(0, elevF[i + size]) : 0)) * px;
-    if (dY > (y === size - 1 ? 1 : 0.5)) {
-      ctx.fillStyle = "#3a2d20";
-      ctx.beginPath();
-      ctx.moveTo(sx, sy + TH / 2);
-      ctx.lineTo(sx - TW / 2, sy);
-      ctx.lineTo(sx - TW / 2, sy + dY);
-      ctx.lineTo(sx, sy + TH / 2 + dY);
-      ctx.closePath(); ctx.fill();
-    }
+    /* There are no faces here any more. A tile used to sit at one height
+       with all four corners, so its neighbour stood at another and the two
+       shared no edge: every step opened a gap that had to be covered with
+       a dark quad, one per drop, which is what made the land read as a
+       floor of tiles. The corners are shared now, so the two tiles meet to
+       the pixel and nothing needs covering. The island's own rim, which
+       falls away to the plinth, is drawn once for the whole perimeter in
+       rimSkirt. */
 
     /* the shore: ground that touches water wears a wet rim, and the
        quiet edges grow reeds and hold stones */
@@ -328,8 +388,7 @@ function drawLandCell(s, i, p, elevF) {
           s.cells[j][0] === "w") wet = true;
     }
     if (wet) {
-      ctx.fillStyle = "rgba(24,20,12,0.16)";
-      diamondPath(ctx, sx, sy); ctx.fill();
+      quadPath(q, "rgba(24,20,12,0.16)", true);
       if (c[1] < 0.5 && i * 13 % 3 !== 2) {          // reeds at the shore
         ctx.strokeStyle = p.under; ctx.lineWidth = 1.1;
         for (let u = 0; u < 3; u++) {
@@ -352,10 +411,10 @@ function drawLandCell(s, i, p, elevF) {
       }
     }
 
-    /* faint diamond seams so the grid reads */
+    /* faint seams so the grid still reads */
     ctx.strokeStyle = "rgba(0,0,0,0.055)";
     ctx.lineWidth = 1;
-    diamondPath(ctx, sx, sy); ctx.stroke();
+    quadPath(q, null); ctx.stroke();
 
     if (c[3]) {                                    // mushrooms
       ctx.fillStyle = "rgba(8,14,11,0.10)";
@@ -399,6 +458,32 @@ function drawSlab(s) {
   ctx.ellipse(OX, OY + (size - 1) * TH + SIDE + 8,
               (size - 1) * TW / 2 + 30, 20, 0, 0, 6.3);
   ctx.fill();
+}
+
+/* The island's rim: its two viewer-facing sides fall from the raised
+   ground of the edge tiles down to the plinth, whose top lies at the flat
+   plane vpos() gives. Drawn for every edge cell, however small the fall,
+   so the silhouette is closed the whole way round and the count is fixed. */
+function rimSkirt(s, x, y) {
+  const size = s.size;
+  if (x === size - 1) {                             // SE, sunlit
+    const R = cornerAt(x + 1, y), B = cornerAt(x + 1, y + 1);
+    const r = vpos(x + 1, y), b = vpos(x + 1, y + 1);
+    ctx.fillStyle = "#4a392a";
+    ctx.beginPath();
+    ctx.moveTo(R[0], R[1]); ctx.lineTo(B[0], B[1]);
+    ctx.lineTo(b[0], b[1]); ctx.lineTo(r[0], r[1]);
+    ctx.closePath(); ctx.fill();
+  }
+  if (y === size - 1) {                             // SW, shaded
+    const B = cornerAt(x + 1, y + 1), L = cornerAt(x, y + 1);
+    const b = vpos(x + 1, y + 1), l = vpos(x, y + 1);
+    ctx.fillStyle = "#3a2d20";
+    ctx.beginPath();
+    ctx.moveTo(B[0], B[1]); ctx.lineTo(L[0], L[1]);
+    ctx.lineTo(l[0], l[1]); ctx.lineTo(b[0], b[1]);
+    ctx.closePath(); ctx.fill();
+  }
 }
 
 /* the moonlight's dashes — one truth for every engine */
@@ -917,11 +1002,11 @@ function paintEarth(oc, s, mapScale) {
   ctx.setTransform(mapScale, 0, 0, mapScale, 0, 0);
   drawSlab(s);
   const p = pal();
-  const elevF = elevField(s);
   for (let i = 0; i < s.cells.length; i++) {
     const c = s.cells[i];
-    if (c[0] === "w") drawWaterCellStatic(s, i, p, elevF);
-    else drawLandCell(s, i, p, elevF);
+    if (c[0] === "w") drawWaterCellStatic(s, i, p);
+    else drawLandCell(s, i, p);
+    rimSkirt(s, i % s.size, (i / s.size) | 0);   // the edge falls to the slab
   }
   for (const en of plantOrder(s)) drawPlant(en, 0);   // trees at rest
   ctx = old;

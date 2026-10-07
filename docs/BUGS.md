@@ -889,3 +889,47 @@ constitution) changes a value the engine never consults.
   both, accepts both, moves `rabbit.cap` 24 → 30 and `birch.seed_prob`
   0.28 → 0.2 in the live ruleset, writes them to `world_rules.json`, and
   marks both rows `applied`.
+
+- [x] **b47** the land read as a floor of tiles, and it was geometry, not a
+  bad constant. `iso()` puts each tile's centre at `sy0 - elev*px` and the
+  tile was drawn as a flat diamond whose four corners were **all at that
+  one height**, so two neighbours at different heights shared no corner at
+  all: every step opened a vertical gap of `dX = (e - neighbour)*px`. The
+  only remedy available was to cover it with a dark quad, drawn whenever
+  `dX > 0.5px` (`scene.js:298,309` by then). Measured on live seed 200:
+  after the 3-pass gentling 83% of edges still dropped further than that,
+  so a facet was painted on roughly half of all edges — the tiles read as
+  blocks and the gentling, which really does remove 72% of the mean step
+  (7.33px → 2.02px), was invisible underneath. b25 chose the gentling and
+  b28 dropped the threshold to 0.5px to close the cracks; the two together
+  gave the floor. Every threshold value fails: raise it and the hairline
+  cracks return, lower it and more edges get a facet. Fix: the corners come
+  from a **vertex grid** — vertex `(vx,vy)` is the top corner of cell
+  `(vx,vy)` and carries the mean of the (up to four) gentled cells meeting
+  there — so a tile's four corners are the same four points its neighbours
+  draw, and the two meet edge to edge. Every interior face is gone; only
+  the island's rim falls to the plinth now, drawn once round the perimeter
+  by `rimSkirt`. `elevAt` became the mean of a cell's four corners — which
+  is exactly the centre of the drawn quad, so plants, creatures, shadows
+  and the click still sit on the surface. Tiles are stroked with their own
+  fill colour as well as filled, because two polygons sharing an exact edge
+  still show a hairline of sky from antialiasing. The server payload is
+  untouched: the vertex grid is derived client-side from the same per-cell
+  `elev`, as the gentling already was. The twin carries the same recipe
+  (`vertex_heights`/`vpos`/`corner`), which also closes a latent mismatch —
+  its old wall block sat outside the terrain `if/elif` and so ran for water
+  cells too. Check: the harness's new assertion — "the land is one surface:
+  a shared corner is one drawn point" — reads the bake's own scale from its
+  `setTransform` and finds all 49 interior vertices of the synthetic world
+  drawn by all four tiles that meet there (the old "walls close every step"
+  assertion asserted the old model and is gone); the step-face count is now
+  exactly one per rim cell plus the slab's two, with no interior face;
+  `tools/render_svg.py` renders byte-stably with 24 sunlit and 24 shaded
+  faces and the ground counts unchanged; both page harnesses pass.
+
+> *A note on the harness named above.* b23, b25 and b28 credit
+> `tools/scene_check.js` for their checks. That file is not in the tree —
+> the transform-following harness they describe was later folded into
+> `tools/pixi_check.js`, which is the one that exists and runs today
+> (`node tools/pixi_check.js`). The entries are left as written: they are
+> the record of what was done then, not a map of the tree now.

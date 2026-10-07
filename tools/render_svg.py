@@ -71,6 +71,8 @@ def animal_body():
 
 EPX = 26                       # the pack's relief scale, read in main()
 SMOOTHED = None                # the landform, gentled; built in main()
+SIZE = 0                       # the world's side, read in main()
+VH = None                      # the vertex heights; built in main()
 
 
 def elev_px_of():
@@ -98,12 +100,53 @@ def smooth_elev(world):
     return f
 
 
+def vertex_heights(world):
+    """The heights of the grid's VERTICES — the corners where cells meet.
+    Vertex (vx,vy) is the top corner of cell (vx,vy) and carries the mean of
+    the (up to four) gentled cells that meet there. Every tile draws its
+    four corners from this one grid, so two neighbours share those two
+    points exactly and no gap can open between them. The page's
+    cornerField in scene.js carries the same recipe."""
+    size = world["size"]
+    f = SMOOTHED if SMOOTHED is not None else smooth_elev(world)
+    n = size + 1
+    v = [0.0] * (n * n)
+    for vy in range(n):
+        for vx in range(n):
+            tot, cnt = 0.0, 0
+            for cx, cy in ((vx - 1, vy - 1), (vx, vy - 1),
+                           (vx - 1, vy), (vx, vy)):
+                if 0 <= cx < size and 0 <= cy < size:
+                    tot += max(0.0, f[cy * size + cx]); cnt += 1
+            v[vy * n + vx] = tot / cnt if cnt else 0.0
+    return v
+
+
+def vpos(vx, vy):
+    """Where a vertex sits before the land rises — the flat diamond's top."""
+    return (OX + (vx - vy) * TW / 2, OY + (vx + vy) * TH / 2 - TH / 2)
+
+
+def corner(vx, vy):
+    """The same point with the land under it."""
+    cx, cy = vpos(vx, vy)
+    return cx, cy - VH[vy * (SIZE + 1) + vx] * EPX
+
+
+def cell_quad(x, y):
+    return [corner(x, y), corner(x + 1, y), corner(x + 1, y + 1),
+            corner(x, y + 1)]
+
+
 def iso_e(world, x, y):
-    """iso with the land raised: the gentled elev, drawn."""
+    """iso with the land raised. The tile's middle is the mean of its four
+    corners' lifts — the flat corners already average to the flat centre —
+    which is exactly where the drawn surface sits."""
     cx, cy = iso(x, y)
-    e = max(0, SMOOTHED[y * world["size"] + x] if SMOOTHED is not None
-            else (world["cells"][y][x].get("elev", 0) or 0))
-    return cx, cy - e * EPX
+    lift = sum(vpos(vx, vy)[1] - corner(vx, vy)[1]
+               for vx, vy in ((x, y), (x + 1, y),
+                              (x + 1, y + 1), (x, y + 1))) / 4
+    return cx, cy - lift
 
 
 def iso(x, y):
@@ -293,27 +336,29 @@ def main(out):
     span_w = (size - 1) * TW + TW + PADX * 2
     span_h = (size - 1) * TH + TH + PADY * 2
     OX, OY = span_w / 2, PADY
-    global EPX, SMOOTHED
+    global EPX, SMOOTHED, SIZE, VH
     EPX = elev_px_of()
     SMOOTHED = smooth_elev(world)
+    SIZE = size
+    VH = vertex_heights(world)
     global ANIMAL_FILL
     ANIMAL_FILL = animal_body()
     pal = palettes()[W.season_name(world["tick"])]
 
     parts = [f'<rect width="{span_w}" height="{span_h}" fill="#0c1210"/>']
 
-    # terrain — the living ground on its own landform: tufts, pebbles,
-    # wet rims, reeds, and the walls where the land steps down
+    # terrain — the living ground on its own landform: tufts, pebbles and
+    # wet rims over one continuous surface. Each tile is its four shared
+    # corners, so neighbours meet edge to edge and no step needs a face.
     for y, row in enumerate(world["cells"]):
         for x, c in enumerate(row):
             i = y * size + x
             cx, cy = iso_e(world, x, y)
-            eMe = max(0, SMOOTHED[i] if SMOOTHED is not None
-                      else (c.get("elev", 0) or 0))
+            q = cell_quad(x, y)
             if c["terrain"] == "water":
-                parts.append(diamond(cx, cy, pal["water"]))
+                parts.append(poly(q, pal["water"], stroke=pal["water"]))
             elif c["terrain"] == "rock":
-                parts.append(diamond(cx, cy, pal["rock"]))
+                parts.append(poly(q, pal["rock"], stroke=pal["rock"]))
                 for u in range(3):              # pebbles, and a crack
                     parts.append(blob(cx + ((i * 23 + u * 41) % 17 - 8) * 0.9,
                                       cy + ((i * 37 + u * 19) % 11 - 5) * 0.6,
@@ -322,11 +367,11 @@ def main(out):
                                   f"L {cx+3-(i%5):.1f},{cy-2-(i%3):.1f}",
                                   "rgba(0,0,0,0.14)"))
             else:
-                parts.append(diamond(cx, cy, pal["soil"]))
+                parts.append(poly(q, pal["soil"], stroke=pal["soil"]))
                 g = c["grass"]
                 if g > 0.06:
-                    parts.append(diamond(cx, cy, pal["grass"],
-                                         opacity=min(1, g * 0.9)))
+                    parts.append(poly(q, pal["grass"],
+                                      opacity=min(1, g * 0.9)))
                 if g > 0.45:                    # tufts of tall grass
                     for u in range(2 + i * 7 % 3):
                         parts.append(quad(cx + ((i * 31 + u * 13) % 21 - 10)
@@ -334,29 +379,23 @@ def main(out):
                                           cy + ((i * 17 + u * 29) % 13 - 6)
                                           * 0.5,
                                           5 + u * 1.6, pal["grass"]))
-            walls = []                          # SE in sun, SW in shade
-            nbX = max(0, SMOOTHED[i + 1]) if x < size - 1 else 0
-            dX = (eMe - nbX) * EPX              # every step's own face:
-            if dX > (0.5 if x < size - 1 else 1):        # nothing torn
-                walls.append(poly(
-                    [(cx + TW / 2, cy), (cx, cy + TH / 2),
-                     (cx, cy + TH / 2 + dX), (cx + TW / 2, cy + dX)],
-                    "#4a392a"))
-            nbY = max(0, SMOOTHED[i + size]) if y < size - 1 else 0
-            dY = (eMe - nbY) * EPX
-            if dY > (0.5 if y < size - 1 else 1):
-                walls.append(poly(
-                    [(cx, cy + TH / 2), (cx - TW / 2, cy),
-                     (cx - TW / 2, cy + dY), (cx, cy + TH / 2 + dY)],
-                    "#3a2d20"))
-            parts += walls
+            # the island's rim: its two viewer-facing sides fall from the
+            # raised edge to the plinth, whose top lies on the flat plane
+            if x == size - 1:                   # SE, sunlit
+                parts.append(poly(
+                    [corner(x + 1, y), corner(x + 1, y + 1),
+                     vpos(x + 1, y + 1), vpos(x + 1, y)], "#4a392a"))
+            if y == size - 1:                   # SW, shaded
+                parts.append(poly(
+                    [corner(x + 1, y + 1), corner(x, y + 1),
+                     vpos(x, y + 1), vpos(x + 1, y + 1)], "#3a2d20"))
             if c["terrain"] != "water":
                 nbrs = [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
                 wet = any(0 <= nx < size and 0 <= ny < size and
                           world["cells"][ny][nx]["terrain"] == "water"
                           for nx, ny in nbrs)
                 if wet:
-                    parts.append(diamond(cx, cy, "rgba(24,20,12,0.16)"))
+                    parts.append(poly(q, "rgba(24,20,12,0.16)"))
                     if c["grass"] < 0.5 and i * 13 % 3 != 2:
                         for u in range(3):      # reeds at the shore
                             ux = cx + ((i * 23 + u * 41) % 17 - 8) * 0.75

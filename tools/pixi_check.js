@@ -462,19 +462,50 @@ const WORLD = `
       nearB(s2, "moveTo", hillB[0], hillB[1] - 10, 1.5)).length;
   ok("the hill rises in the bake", riseB >= 2,
      riseB + " corners at the height");
+  /* --- the land is one surface -----------------------------------------
+     Each tile draws its four corners from the shared vertex grid, so a
+     vertex inside the island is drawn by ALL FOUR tiles that meet there,
+     at one and the same point: two neighbours cannot part, and no face is
+     needed to cover a step. This is the property the wall count used to
+     stand in for. Read the scale from the bake's own setTransform rather
+     than recomputing it — bkS is a rounded ratio, and a 0.003 difference
+     over 380 units is a whole pixel of mismatch. */
+  const stOp = bakeTr.find(s2 => s2.startsWith("setTransform("));
+  const s0 = parseFloat(stOp.slice("setTransform(".length));
+  const occ = new Map();
+  for (const s2 of bakeTr) {
+    const xy = num2(s2, "moveTo") || num2(s2, "lineTo");
+    if (!xy) continue;
+    const k = fmt(xy[0]) + "," + fmt(xy[1]);
+    occ.set(k, (occ.get(k) || 0) + 1);
+  }
+  const pts = [];
+  for (const s2 of bakeTr) {
+    const xy = num2(s2, "moveTo") || num2(s2, "lineTo");
+    if (xy) pts.push(xy);
+  }
+  const szB = vm.runInContext("ST.s.size", a.sandbox);
+  let heldB = 0, vertB = 0;
+  for (let vy = 1; vy < szB; vy++)
+    for (let vx = 1; vx < szB; vx++) {
+      vertB++;
+      const p2 = vm.runInContext(`cornerAt(${vx},${vy})`, a.sandbox);
+      const px2 = p2[0] * s0, py2 = p2[1] * s0;
+      let n = 0;
+      for (const q of pts)
+        if (Math.abs(q[0] - px2) < 1 && Math.abs(q[1] - py2) < 1) n++;
+      if (n >= 4) heldB++;
+    }
+  ok("the land is one surface: a shared corner is one drawn point",
+     heldB === vertB,
+     heldB + "/" + vertB + " interior vertices held by all four tiles");
+
   const sunlB = bakeTr.filter(s2 => s2 === "fillStyle=#4a392a").length;
   const shadB = bakeTr.filter(s2 => s2 === "fillStyle=#3a2d20").length;
-  const drops = vm.runInContext(
-      "(() => { const f = elevField(ST.s); let n = 0;" +
-      " for (let i = 0; i < size * size; i++) {" +
-      "  const x = i % size, y = (i / size) | 0;" +
-      "  if (x < size - 1 && (Math.max(0, f[i]) - Math.max(0, f[i + 1]))" +
-      "      * elevPx() > 0.5) n++;" +
-      "  if (y < size - 1 && (Math.max(0, f[i]) - Math.max(0, f[i + size]))" +
-      "      * elevPx() > 0.5) n++; } return n; })()", a.sandbox);
-  ok("the walls close every step the ground makes",
-     sunlB + shadB >= drops && sunlB >= 4 && shadB >= 4,
-     drops + " drops, " + (sunlB + shadB) + " faces");
+  ok("the step faces are gone: only the island's rim stands",
+     sunlB === 1 + szB && shadB === 1 + szB,
+     (sunlB - 1) + " sunlit + " + (shadB - 1) + " shaded rim faces, " +
+     "and the slab's own two");
   const tuftB = bakeTr.filter(s2 => s2.startsWith("quadraticCurveTo(") &&
       nearB(s2, "quadraticCurveTo", hillB[0], hillB[1], 8)).length;
   ok("the tall grass stands in tufts", tuftB >= 3, tuftB + " strokes");

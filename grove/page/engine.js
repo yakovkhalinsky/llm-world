@@ -384,15 +384,15 @@ function engInitWaterTex() {
 /* the water light: per cell its caustics' pair and its shore edges,
    captured once per neighbor-mask, alpha the only live thing */
 function engBuildWater(s) {
-  const size = s.size, elevF = elevField(s), p = pal();
+  const size = s.size, p = pal();
   ENG.liveA.removeChildren();
   ENG.water = [];
   const foamRim = ENG_FX.foamRim, foamIn = ENG_FX.foamIn;
-  const edgeAngle = Math.atan2(-TH / 2, TW / 2);
   for (let i = 0; i < s.cells.length; i++) {
     if (s.cells[i][0] !== "w") continue;
-    const [sx, sy0] = iso(i % size, (i / size) | 0);
-    const sy = sy0 - Math.max(0, elevF[i]) * elevPx();
+    const x = i % size, y = (i / size) | 0;
+    const [sx, sy0] = iso(x, y);
+    const sy = sy0 - elevAt(x, y);
     const ca = new PIXI.Sprite(ENG_FX.dashA);
     const cb = new PIXI.Sprite(ENG_FX.dashB);
     ENG.liveA.addChild(ca, cb);
@@ -401,16 +401,20 @@ function engBuildWater(s) {
     for (let e = 0; e < 4; e++) {
       const j = nbrs[e];
       if (j < 0 || j >= s.cells.length || s.cells[j][0] === "w" ||
-          (e === 0 && (i % size) === size - 1) ||
-          (e === 1 && (i % size) === 0))
+          (e === 0 && x === size - 1) || (e === 1 && x === 0))
         continue;
-      const pt = { 0: [sx, sy + TH / 2, sx + TW / 2, sy],
-                   1: [sx - TW / 2, sy, sx, sy - TH / 2],
-                   2: [sx - TW / 2, sy, sx, sy + TH / 2],
-                   3: [sx, sy - TH / 2, sx + TW / 2, sy] }[e];
+      /* the shore is a real edge now: its two ends are the shared corners
+         the water and the bank both draw, not a flat diamond's points.
+         The order below keeps P0→P1 the way the flat diamond had it, so a
+         level shore puts the foam exactly where it has always been. */
+      const seg = { 0: [cornerAt(x + 1, y + 1), cornerAt(x + 1, y)],
+                    1: [cornerAt(x, y + 1), cornerAt(x, y)],
+                    2: [cornerAt(x, y + 1), cornerAt(x + 1, y + 1)],
+                    3: [cornerAt(x, y), cornerAt(x + 1, y)] }[e];
+      const pt = [seg[0][0], seg[0][1], seg[1][0], seg[1][1]];
       const midx = (pt[0] + pt[2]) / 2, midy = (pt[1] + pt[3]) / 2;
       const len = Math.hypot(pt[2] - pt[0], pt[3] - pt[1]);
-      const rot = e < 2 ? edgeAngle : -edgeAngle;
+      const rot = Math.atan2(pt[3] - pt[1], pt[2] - pt[0]);
       const rim = new PIXI.Sprite(foamRim);
       rim.width = len + 2; rim.rotation = rot;
       rim.position.set(midx - (len + 2) / 2 * Math.cos(rot),
