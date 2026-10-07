@@ -91,6 +91,64 @@ def cmd_step(args):
           f"in {time.time() - t0:.1f}s")
 
 
+def _readch(timeout):
+    """One keypress, or nothing. A tty only — a pipe gets no termios."""
+    import select
+    import termios
+    import tty
+    old = termios.tcgetattr(sys.stdin)
+    try:
+        tty.setcbreak(sys.stdin.fileno())
+        r, _w, _e = select.select([sys.stdin], [], [], timeout)
+        if not r:
+            return ""
+        ch = sys.stdin.read(1)
+        return "q" if ch == "\x1b" else ch
+    finally:
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old)
+
+
+def cmd_run(args):
+    """Watch the estate live. space pauses, s steps a day, q quits."""
+    db, world = _open(args)
+    paused = False
+    tty = sys.stdin.isatty() and sys.stdout.isatty()
+    clear = "\033[2J\033[H" if tty else ""
+    try:
+        while True:
+            if not paused:
+                sim.tick(world)
+                db.save_world(world)
+                db.add_stats(world["day"], _census(world))
+            if tty:
+                sys.stdout.write(clear + render.full(_frame(world, paused)))
+                sys.stdout.flush()
+            else:
+                print(render.full(_frame(world, paused)), flush=True)
+                print("---", flush=True)
+            wait = 0.15 if paused else args.tick_seconds
+            ch = _readch(wait) if tty else (time.sleep(wait) or "")
+            if ch == "q":
+                break
+            if ch == " ":
+                paused = not paused
+            elif ch == "s" and paused:
+                sim.tick(world)
+                db.save_world(world)
+    finally:
+        db.close()
+        print(f"stopped at day {world['day']} — nothing is lost")
+
+
+def _frame(world, paused):
+    day = world["day"]
+    return {"world": world,
+            "status": ("paused · " if paused else "") +
+                      f"{W.weekday_name(day)} · no watcher yet",
+            "watcher_line": None,
+            "chronicle": []}
+
+
 def cmd_map(args):
     _db, world = _open(args)
     print(render.header(world))
@@ -130,6 +188,10 @@ def build_parser():
     sp.add_argument("--size", default=None, help="WxH, e.g. 40x30")
     sp.add_argument("--force", action="store_true")
     sp.set_defaults(func=cmd_new)
+    sp = sub.add_parser("run", help="watch the estate live")
+    sp.add_argument("--tick-seconds", type=float, default=3.0,
+                    help="wall seconds per day")
+    sp.set_defaults(func=cmd_run)
     sp = sub.add_parser("step", help="advance N days")
     sp.add_argument("n", type=int, nargs="?", default=7)
     sp.set_defaults(func=cmd_step)
