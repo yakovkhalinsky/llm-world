@@ -90,8 +90,13 @@ function updateDom() {
                blocks[Math.min(7, Math.floor(x * 8 / peak))]).join("")
            }</span></div>`;
   }).join("");
+  const f = s.llm.fail;
   $("status").textContent = (s.paused ? "paused · " : "") + s.llm.status +
-      (s.llm.reason ? " — last stumble: " + s.llm.reason : "");
+      (s.llm.reason ? " — last stumble: " + s.llm.reason : "") +
+      (f ? ` [the ${f.job} job, on ${f.model}]` : "");
+  // hover the status line to see exactly what the model sent back
+  $("status").title = f ? `the ${f.job} job could not be read — ${f.why}` +
+                          (f.raw ? `\n\n${f.raw}` : "") : "";
   $("pauseBtn").textContent = s.paused ? "▶ resume" : "⏸ pause";
   for (const id of ["stepBtn", "soulBtn"]) $(id).disabled = !s.paused;
 }

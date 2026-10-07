@@ -151,6 +151,9 @@ def snapshot(grove, runner, lock):
             "ok": bool(g.llm and g.llm.enabled),
             "reason": str(getattr(g.llm, "reason", "") or ""),
             "fails": dict(getattr(g.llm, "job_fails", {})),
+            # which job stumbled, and what it actually sent back — a
+            # voice that cannot be read must not look like silence
+            "fail": getattr(g.llm, "last_fail", None),
         }
         if g.worker is not None:
             llm_bits["jobs"] = dict(g.jobs)

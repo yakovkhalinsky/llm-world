@@ -824,3 +824,43 @@ constitution) changes a value the engine never consults.
   canvas, and `tools/pixi_check.js` asserts it — "the rain is spawned in
   the world's box, not the canvas's" — which fails on the old code at
   exactly x 300.
+
+## The model's answers, and reading them
+
+- [x] **b44** the grove could not read an answer it had been given, and
+  could not say so. Sampling the real client against the real model: the
+  steward's review came back **wrapped in a ```json fence in 3 of 4
+  calls**, every one of them `done_reason 'stop'` at 2,100–3,200 tokens —
+  not truncation, a habit. The only salvage was one greedy regex,
+  `re.search(r"\{[\s\S]*\}", content)`, which takes everything from the
+  first `{` to the **last** `}` in the reply, and so works only while
+  nothing after the answer contains a brace. A model that explains itself
+  afterwards — `{"name":…}\n\nkept under the {cap} range` — produced an
+  unreadable answer, and two objects in one reply defeated it too; both
+  were verified against the old code. Worse, the failure was mute: an
+  empty stream and a garbled one were both reported as `"unparseable
+  JSON"`, `last_reject` existed for the chronicler alone, and a voice that
+  could not be read simply fell back to the name list with no trace at
+  all — which is why this could be happening "with the voice" for a long
+  while without anything to point at. Fix: `_json_from` tries the reply as
+  given and then the first `{` in it that starts a *complete* object, by
+  `raw_decode`, so fences, leading chatter and trailing prose all survive
+  (the bare/fenced/brace-after/two-object cases all parse now and the
+  first two are unchanged); the reason distinguishes "the model answered
+  nothing" from "unparseable JSON"; and `LLM.last_fail` keeps the job, the
+  model, the why and the raw reply, which `web.py` sends and the status
+  line shows as `[the voice job, on glm-5.2:cloud]` with the text itself
+  on hover. Check: an end-to-end `chat_json` over a fenced answer trailing
+  a brace-bearing sentence returns the object and records no failure,
+  an empty reply reports "the model answered nothing", a prose reply
+  reports "unparseable JSON" with the raw text kept, and a clean reply
+  clears it; both page harnesses pass.
+
+- [ ] **b45** the diary a model never wrote read as the word "None".
+  `voice.parse` guards the *name* against a model's `null` — b11 put that
+  there, with the comment "a model's null/None is no name" — but the line
+  below it did `str(result.get("diary", ""))`, so a `null`, a number or a
+  list became the literal text of its own Python repr, and the chronicle
+  read `"A newborn rabbit was named X. None"`. Fix: only a string is a
+  diary. Check: `null`, `123`, `["a"]` and `{"b": 1}` all yield no diary
+  while a real sentence is kept, and a missing key still yields none.

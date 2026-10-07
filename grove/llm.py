@@ -12,7 +12,6 @@ Chains keep the model resident: keep_alive 30m. chat_json NEVER raises.
 """
 
 import json
-import re
 import time
 import urllib.error
 import urllib.request
@@ -32,6 +31,31 @@ LOCAL_FALLBACK_ORDER = ["llama3.2:3b", "llama3.2:1b"]
 TIE_JOB_ORDER = ("soul", "chron", "voice", "op", "ask", "review")
 
 
+def _json_from(text):
+    """The one object in a model's reply, or None.
+
+    Ollama is asked for a `format` schema and the models mostly honour it,
+    but not always: a flash answer turns up wrapped in a ```json fence often
+    enough to matter, and a long one can trail its explanation after the
+    object. Parsing the whole reply is too strict for that, and the single
+    greedy `{...}` retry this replaces would swallow any brace that came
+    after the answer — `{"a":1}\n\n... the {cap} range ...` has no parse.
+    So take the reply as given if it parses, and otherwise the first `{`
+    that starts a complete object, wherever in the text it sits."""
+    dec = json.JSONDecoder()
+    text = text.strip()
+    for i, ch in enumerate(text):
+        if ch != "{":
+            continue
+        try:
+            out, _end = dec.raw_decode(text[i:])
+        except ValueError:
+            continue
+        if isinstance(out, dict):
+            return out
+    return None
+
+
 class LLM:
     def __init__(self, model="auto", tier="cloud", host=DEFAULT_HOST,
                  timeout=240.0):
@@ -42,6 +66,7 @@ class LLM:
         self.reason = ""
         self.latency = 0.0
         self.last_raw = None
+        self.last_fail = None          # the last job that could not be read
         self.notes = []
         self.job_fails = {}               # job -> consecutive failures
         self.job_chains = {}              # job -> [models to try, in order]
@@ -196,24 +221,22 @@ class LLM:
             content = self._stream_chat(payload, deadline)
             self.latency = time.time() - t0
             if content:
-                try:
-                    out = json.loads(content)
+                out = _json_from(content)
+                if out is not None:
                     self.job_fails[job] = 0
                     self.reason = ""
+                    self.last_fail = None
                     self._settled()
                     return out
-                except json.JSONDecodeError:
-                    m = re.search(r"\{[\s\S]*\}", content)
-                    if m:
-                        try:
-                            out = json.loads(m.group(0))
-                            self.job_fails[job] = 0
-                            self.reason = ""
-                            self._settled()
-                            return out
-                        except json.JSONDecodeError:
-                            pass
-            self.reason = self.reason or "unparseable JSON"
+            # say which failure this was: a model that answered nothing is
+            # not the same as one that answered something unreadable, and
+            # until now both were reported as "unparseable JSON"
+            why = "the model answered nothing" if not content \
+                else "unparseable JSON"
+            self.reason = self.reason or why
+            self.last_fail = {"job": job, "why": why,
+                              "model": payload["model"],
+                              "raw": (content or "")[:300]}
             self.job_fails[job] = self.job_fails.get(job, 0) + 1
             if self.job_fails[job] >= 2:
                 self._swap_job_model(job)
