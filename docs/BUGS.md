@@ -670,3 +670,23 @@ constitution) changes a value the engine never consults.
   waive the roster law with `species_all_present: false`; the desert's
   chronicler brief and the grove's each come back from their own pack,
   and a pack stripped of one still gets the shared body.
+
+- [ ] **b37** *found by looking at the map* — **the fruit never rots.**
+  `plants.py:131` sets `p["berries"] = True` in the bush's fruit week
+  and nothing but a robin ever clears it (`animals.py:198`): the flag is
+  never aged. Measured over 120 weeks on seed 42, a bush that fruits
+  stays fruiting for a median of **17 weeks** and up to **27**, against
+  a `fruit_season` of spring and a `fruit_week` of 1 — the intended
+  spring bonanza is a standing larder. The dashboard has been drawing
+  those berries year-round all along (`web.py:105` sends the flag); the
+  word-map now shows them as 🫐 (b32), which is what made it visible.
+  **Deliberately not fixed in this sweep**: it is an engine change on
+  the tuned ecology — `diet: "glean"` hunts fruit first, so a permanent
+  larder feeds the robins all year and any fix moves the grove's
+  trajectories. The seed-bank note (b19) is the precedent: reopening
+  the balance tuning is a work item of its own, and it should be gated.
+  The shape of the fix is small — age the flag in `_update_plants`, so
+  fruit the flock does not take falls within a week or three — and it
+  was tried and **rejected**: with fruit lasting three weeks the run is
+  otherwise healthy but seed 6 loses its boars at the end, the same
+  signature as b19. The fix is a retuning job, not a one-liner.
