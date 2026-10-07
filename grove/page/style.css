@@ -2,7 +2,7 @@
     --bg: #0c1210; --panel: #131c17; --panel-2: #0f1713;
     --line: #223329; --text: #d7e3d3; --dim: #7d9285;
     --moss: #7fc98f; --soul: #b9a7e0; --warn: #d8b471;
-    --glass: rgba(12, 19, 15, 0.74);
+    --glass: rgba(12, 19, 15, 0.62);
     --glass-line: rgba(46, 68, 54, 0.45);
   }
   * { box-sizing: border-box; }
@@ -46,13 +46,13 @@
          max-height: 50vh; overflow: auto; z-index: 6; display: none;
          box-shadow: 0 10px 34px rgba(0,0,0,0.55); }
   #bio.on { display: block; }
-  /* the HUD persists; only the chronicle/census fades when the viewer
-     is still; 'c' (calm) hides everything once more */
+  /* the HUD simply persists: the chronicle, census and tuning are there
+     to be read, and there is room for them beside the world. 'c' (calm)
+     is the one thing that clears the view. */
   .hud { position: absolute; inset: 0; z-index: 4;
-         pointer-events: none; opacity: 1; }
+         pointer-events: none; opacity: 1;
+         transition: opacity .5s ease; }
   .hud > * { pointer-events: auto; }
-  .feed { transition: opacity .6s ease; }
-  body:not(.hud-on) .feed { opacity: 0; pointer-events: none; }
   body.calm .hud { opacity: 0; }
   body.calm .hud > * { pointer-events: none; }
   .map-scroll { position: absolute; inset: 0; overflow: auto;

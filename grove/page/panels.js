@@ -3,6 +3,7 @@ let bioTarget = null;               // the soul the follow-cam would keep
 function openBio(oid, kind, sp, name) {
   bioTarget = { oid, kind };
   $("bio").classList.add("on");
+  setHudVisibility();
   $("bioName").textContent = (name || "a wild " + sp) + " · " + sp;
   $("bioState").textContent = "consulting the ledger…";
   $("bioRows").innerHTML = "";
@@ -21,6 +22,7 @@ function openBio(oid, kind, sp, name) {
 $("bioClose").onclick = () => {
   $("bio").classList.remove("on");
   setFollow(null);
+  setHudVisibility();
 };
 $("followBtn").onclick = () =>
   setFollow($("followBtn").classList.contains("on") ? null : bioTarget);
@@ -52,17 +54,11 @@ function trackFollow() {
   sc.scrollTop += (py - sc.clientHeight / 2 - sc.scrollTop) * 0.14;
 }
 
-/* ============ the HUD's life: waking, calm, fullscreen, tabs ============ */
-const WAKE_MS = 4200;
-let wakeAt = performance.now();
-function wakeHud() {
-  wakeAt = performance.now();
-  document.body.classList.add("hud-on");
-}
-for (const ev of ["mousemove", "mousedown", "wheel", "keydown",
-                  "touchstart"])
-  window.addEventListener(ev, wakeHud, { passive: true });
-document.body.classList.add("hud-on");
+/* ============ the HUD's life: calm, fullscreen, tabs ============ */
+/* The panels are always here now. They used to fade out after a few still
+   seconds and leave only the world, on the theory that the chronicle was
+   something you woke; there is room on the screen for both, so they stay,
+   and 'c' (calm) is the one thing that clears the view. */
 
 $("tabChron").onclick = () => {
   $("chron").hidden = false; $("sparks").hidden = true;
@@ -115,14 +111,11 @@ $("tabTune").onclick = async () => {
 
 let calm = false;
 function setHudVisibility() {
-  const idle = performance.now() - wakeAt > WAKE_MS;
   const reading = document.getElementById("bio") &&
       document.getElementById("bio").classList.contains("on");
-  // panels always stay; the feed alone follows stillness or calm
-  document.body.classList.toggle("hud-on", !calm && !idle || !!reading);
+  // 'c' clears the HUD; an open biography holds it on screen regardless
   document.body.classList.toggle("calm", calm && !reading);
 }
-setInterval(setHudVisibility, 400);
 window.addEventListener("keydown", e => {
   if (e.target && e.target.tagName === "INPUT") return;
   if (e.code === "Space") { e.preventDefault(); $("pauseBtn").onclick(); }

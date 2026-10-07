@@ -46,8 +46,10 @@ offline, one hand-written page, rendered by **PixiJS** (vendored, served at
 `/pixi.js`): the ground and its trees captured as textures when the week
 changes, creatures caught once per pose, every frame only moves light and
 souls. It is a **full-screen HUD**: the isometric
-map fills the window and the controls float as translucent panels that
-**fade away after a few still seconds** — only the grove remains. The
+map fills the window and the controls float as translucent panels over it
+— the chronicle, the census and the tuning tab **stay open**, because
+there is room for them beside the world; `c` clears them when you want the
+grove alone. The
 scene: a floating earth slab, diamonds shaded by season and moisture,
 procedural pines/birches/willows swaying and occluding each other
 depth-sorted, creatures gliding to their weekly cells with soft shadows
