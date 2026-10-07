@@ -1,4 +1,8 @@
+# python
 .venv/
 __pycache__/
-grove_data/
 *.pyc
+
+# each app's own data — worlds, archives, constitutions
+apps/grove/grove_data/
+apps/estate/estate_data/

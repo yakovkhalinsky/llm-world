@@ -1,0 +1,203 @@
+# Grove — a self-contained forest, given one voice by Ollama
+
+<p align="center"><img src="docs/grove.svg" alt="the grove, week by week"
+ width="700"></p>
+
+A living forest biome that runs on your machine: ponds, pines, willows,
+berry glades, grass, mushrooms — and rabbits, deer, foxes, owls, robins
+and boars living, hunting, starving and being born through the seasons.
+A language model is the **World Soul**: roughly every minute it decides
+which fate befalls the woods (a storm, a drought, a blight, a bloom, a
+passing wolf...), its words become the chronicle, and it names the
+newborns — by default `glm-5.3-flash:cloud` through your own Ollama,
+with `--tier local` pinning the whole forest on-box.
+
+No API keys, ever — even the cloud voice comes through your own Ollama.
+State lives in one SQLite file. Zero pip dependencies — the engine is
+pure Python stdlib, the model runs in Ollama.
+
+```
+WEEK 41 · SPRING · 🌧 rain   🐇38 🦌16 🦊9 🦉4 🐦22 🐗6
+🌲 🌲 🌱 🟫 🌲 🟨 🌲 🌱 🌳 🌳 ... [24×24 emoji map] ...
+ ☾ SOUL ▸ storm NW — "A cold wind is gathering over the western pines."
+   ▸ A fox took a wild rabbit at the pond's edge.  (1wk ago)
+   ▸ 2 boar slipped in from beyond the forest edge.  (5wk ago)
+```
+
+## Requirements
+
+- Python 3.11+ (stdlib only)
+- [Ollama](https://ollama.com) running locally
+
+## Quick start
+
+```sh
+./grove.sh new --seed 42        # plant a grove (deterministic, no LLM)
+./grove.sh run                  # watch it live (LLM in the background)
+```
+
+Keys in watch mode: `space` pause · `s` step · `n` invite the soul now ·
+`q` quit. Nothing is ever lost — every week is saved to SQLite.
+
+## Viewing it from another device
+
+`grove web` serves a live dashboard over plain HTTP — no build step, works
+offline, one hand-written page, rendered by **PixiJS** (vendored, served at
+`/pixi.js`): the ground and its trees captured as textures when the week
+changes, creatures caught once per pose, every frame only moves light and
+souls. It is a **full-screen HUD**: the isometric
+map fills the window and the controls float as translucent panels over it
+— the chronicle, the census and the tuning tab **stay open**, because
+there is room for them beside the world; `c` clears them when you want the
+grove alone. The
+scene: a floating earth slab, diamonds shaded by season and moisture,
+procedural pines/birches/willows swaying and occluding each other
+depth-sorted, creatures gliding to their weekly cells with soft shadows
+(birds hover above theirs), rain and snowfall, lightning in storms,
+autumn leaf-drift, name tags over named souls, and Diamond washes where
+the soul's effects are active. Click a named creature for its biography
+(born → named → hunted → remembered) with a follow-cam; ask the grove
+questions and it answers from the world's own history. Keys: `space`
+pause · `s` step · `n` invite the soul · `f` fullscreen · `c` calm.
+`?plain` (or no WebGL) falls back to the emoji page. The scene's headless
+checks: `node tools/pixi_check.js`.
+
+```sh
+./grove.sh web                  # loopback only (for an ssh tunnel)
+./grove.sh web --public         # reachable from any device on the LAN
+```
+
+- **Same network (LAN):** with `--public`, open `http://<this-box-ip>:8787`
+  on a phone or laptop. (`hostname -I` shows the address.)
+- **Anywhere, if you use Tailscale:** with `--public`, the box's
+  Tailscale address (`tailscale ip -4`) works from any tailnet device.
+- **Or tunnel, without opening the port:** plain `grove web` (loopback),
+  then `ssh -N -L 8787:localhost:8787 yakov@<this-box>` and open
+  `http://localhost:8787` on the other machine.
+- **No browser at all:** `ssh` in and run `./grove.sh run` inside
+  `tmux` (or `nohup ./grove.sh web > grove-web.log 2>&1 &`) — the
+  terminal view is the same world, and detach/reattach as you like.
+
+Leave it running detached with `tmux` (recommended), or `nohup` a
+server: `nohup ./grove.sh web --public > grove-web.log 2>&1 &`; use
+`cron`/`systemd` if you want the grove to wake up on boot.
+
+```sh
+./grove.sh step 200 --offline   # simulate 8+ years headless, fast
+./grove.sh new --seed 42 --biome desert    # another nature entirely
+./grove.sh map                  # render the current map
+./grove.sh status               # population history with sparklines
+./grove.sh chronicle --all      # the whole chronicle (☾ = LLM-written)
+```
+
+`grove.sh` is just `python3 -m grove`; run it from the repo root instead
+if you prefer.
+
+## The model
+
+Small-model reality: on a ~2 GHz 4-core CPU there is no GPU and inference
+is CPU-bound — ~1.9 tok/s generation on Llama-3.2-3B. The local tier is
+tuned for slow silicon:
+
+- **the default tier: one cloud voice with local fallback.** Every
+  job — the World Soul's decisions, the chronicle, naming and diaries,
+  the asks, the steward — speaks with ONE model and moves as one down
+  its chain. The default is `glm-5.3-flash:cloud` (a few seconds per
+  call through the same Ollama); two failed calls step down the chain, and
+  when no cloud model is reachable the forest falls back onto the local
+  llama.
+- **`--tier local`**: fully offline and spend-free: the same one voice
+  pinned to `llama3.2:3b` across every job.
+- The world never waits on the model: the sim ticks happily while the
+  soul ponders, and results land at the next week boundary.
+
+`grove run --offline` (or a missing/unreachable model) gives the same
+world with deterministic template prose instead of LLM prose.
+
+## The ecology
+
+A layered forest: **one tree per cell** (a grove, not a wall) with an
+understory pocket beneath it — ferns and berry bushes live in the
+canopy's shade. The food web is small and legible by design: ~24 rabbits,
+14 robins, 10 deer, 6 foxes, 3 owls, 5 boars — each one a character you
+can name, follow and lose.
+
+- **Seed bank**: every seed that fails to land sleeps in the soil
+  instead of dying; when a species dwindles, autumn lets the bank speak
+  into genuinely suitable spots (light, water, crowding aware). The soil
+  is memory, not a ledger — the forest can never lose a species forever.
+- **Succession**: birches are pioneers that open up ground, pines slow
+  and shade-tolerant, willows tied to the pond's edge, ferns shade-loving,
+  berry bushes fruiting in spring and rooting clones next door. Dead
+  trunks decay into **humus** that feeds mushrooms (the boars' winter
+  food) and tree recovery.
+- **The robin migration**: at the frost, every robin flies south; come
+  spring three of four springs they return. Winter is a season without
+  song, and the owls then live on rabbits alone.
+- **Density-dependent predation**: foxes and owls hunt less efficiently
+  when the warren is thin — the boom-bust loop that keeps collapse away.
+- `tools/balance.py` is the gate: 8 seeded worlds × 19 years must keep
+  every species alive or the change doesn't ship.
+
+## How it stays robust (the one design rule)
+
+> The simulation engine owns ALL state. The LLM never holds the world in
+> context and never writes world state. It gets small, bounded jobs with
+> schema-validated outputs and deterministic fallbacks.
+
+- **World Soul** — roughly one decision every minute (wall time; the
+  cloud soul every 40–80 s, the offline llama every 60–120 s):
+  a ≤ 400-token digest → one JSON decision from an enumerated menu
+  (`storm, drought, blight, bloom, migration, visitor, destiny, quiet`),
+  applied by validated, deterministic rules. Nonsense in → `quiet` out.
+  Ollama down → `quiet`.
+- **Chronicler** — notable events are described by template lines the
+  instant they happen; a background call rewrites them when the model is
+  ready (☾), rejecting lines that hallucinate off-event, restate the
+  data, or echo recent lines. Same-week stories fold into one counted
+  line ("5 pines are fallen — great age"). Every line is cached by
+  event signature, so replays and
+  `--offline` runs cost nothing.
+- **Voice** — newborns and elder trees get names (one-word JSON, charset
+  validated, list fallback), sometimes with a one-line diary.
+
+The engine (`grove/sim.py`) is fully deterministic per seed: same seed +
+same actions ⇒ same world. Tuning constants sit at the top of that file;
+the food web is gated by `tools/balance.py` (many seeded worlds × years,
+all species must persist).
+
+## Layout
+
+| path | role |
+|---|---|
+| `grove/engine/` | the tick's domains: weather/soil, plants, animals, the population's nets, the operator's fates |
+| `grove/biomes/` | a world's nature as packs: `grove.py`, `desert.py` (species, recipes, words, colours, shapes) |
+| `grove/page/` | the dashboard's hand-written files (style, boot, scene, panels), joined at import |
+| `grove/world.py` | state containers, species-table aliases, helpers |
+| `grove/gen.py` | seeded worldgen (no LLM) |
+| `grove/sim.py` | the tick engine + validated operator effects |
+| `grove/events.py` | which events are chronicle-worthy |
+| `grove/operator.py` | World Soul: digest, menu schema, validation |
+| `grove/chronicler.py` | narration prompts + template fallbacks |
+| `grove/voice.py` | naming |
+| `grove/memory.py` | ask-the-grove: chronicle retrieval + answer |
+| `grove/llm.py` | Ollama client (schema chats, the one-voice model chain) |
+| `grove/render.py` | the emoji map + header + chronicle feed |
+| `grove/db.py` | SQLite: world, stats, events, chronicle, cache, biographies |
+| `grove/app.py` | shared runner (used by CLI and web) |
+| `grove/web.py` | the full-screen isometric dashboard (one HTML page) |
+| `grove/__main__.py` | CLI + run loop |
+| `tools/balance.py` | the ecologist's gate: seeded worlds × years, all must pass |
+| `tools/check_page.py` | headless verification of the served page |
+| `tools/render_svg.py` | the README's scene, rendered from the live world |
+| `docs/ARCHITECTURE.md` | how it all works: tick order, contracts, threads |
+| `docs/ECOLOGY.md` | the field guide: how the biome's mechanics work |
+| `docs/TUNING.md` | the honest numbers: species knobs, tempo, the gate |
+
+## Ideas on the shelf
+
+- playable character mode (walk in and talk to the animals)
+- the time-travel scrubber (replay any stretch of the world's past)
+- an offline soundscape: procedural wind, rain and a distant wolf
+- the book of grove: seasonal reflections + a saga export
+- seasons' effect on names ("the winter fox"), wolf packs, bear dens

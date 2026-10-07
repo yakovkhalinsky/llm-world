@@ -1,0 +1,12 @@
+[project]
+name = "estate"
+version = "0.1.0"
+description = "A housing estate that lives — a deterministic world with an LLM watcher"
+requires-python = ">=3.11"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["estate", "estate.engine", "estate.biomes"]
