@@ -79,11 +79,18 @@ $("tabTune").onclick = async () => {
   $("tabCensus").classList.remove("on");
   const r = await fetch("/api/tuning");
   const s = await r.json();
+  /* The steward takes its own first amendment, so under auto-tune the rest
+     are only a record of what it also asked for — there is nothing for the
+     keeper to press, and the accept/leave buttons belong to the
+     offers-only flow (`--no-auto-tune`). */
+  const auto = !!s.auto_tune;
   const rows = (s.pending || []).map(p =>
     `<li><b>${p.rule}</b> → ${p.value}` +
     `<div class="when">wk${p.week} — ${p.why}</div>` +
-    `<div><button class="mini" data-a="accept" data-id="${p.id}">⚔ accept</button> ` +
-    `<button class="mini" data-a="dismiss" data-id="${p.id}">leave it</button></div></li>`);
+    (auto ? "" :
+      `<div><button class="mini" data-a="accept" data-id="${p.id}">⚔ accept</button> ` +
+      `<button class="mini" data-a="dismiss" data-id="${p.id}">leave it</button></div>`) +
+    `</li>`);
   const last = s.last
       ? `<div class="when" style="margin-bottom:8px">the steward read the ` +
         `ledger at wk${s.last.week} — ` +
@@ -92,7 +99,10 @@ $("tabTune").onclick = async () => {
           : "nothing to change") +
         (s.last.verdict ? `<br><i>“${s.last.verdict}”</i>` : "") + `</div>`
       : "";
-  $("tune").innerHTML = last + (rows.join("") ||
+  const head = rows.length && auto
+      ? `<div class="when" style="margin:2px 0 5px">also asked for, and kept ` +
+        `for the record — one rule is taken a year:</div>` : "";
+  $("tune").innerHTML = last + head + (rows.join("") ||
       "<div class='when'>the steward offers nothing at the moment.</div>");
   const hrows = (s.history || []).slice(0, 8).map(h =>
     `<li style="opacity:.75"><b>${h.rule}</b> → ${h.value}` +
