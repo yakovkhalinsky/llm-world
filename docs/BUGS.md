@@ -782,3 +782,45 @@ constitution) changes a value the engine never consults.
   leaves the ruleset untouched with no constitution file, `--auto-tune`
   moves `animals.rabbit.cap` 24 → 33, marks the row `applied` and writes
   `world_rules.json`; both page harnesses still pass.
+
+## Found with an eye on a long-running dashboard (the frame's own books)
+
+- [x] **b42** the dashboard made six textures every week and released
+  none. `engTickStatics` runs on every new bake key — that is, every
+  simulated week — and four of the things it rebuilt there are fixed
+  images: the water's two caustic dashes and two foam lines
+  (`engBuildWater`, each freshly `engCapture`d), the moon's glint
+  (`engBuildGlint`), and the sky's 8×256 gradient, whose key was
+  `String(s.tick) + "|" + nightT` — the tick made it recapture every week
+  although the sky only changes with the season and the two-week blend.
+  Nothing was ever `destroy()`ed; the earth bake was the only capture
+  that cleaned up after itself. Measured by booting the page against a
+  recording PIXI facade and walking 40 weeks: **240 textures created, 0
+  destroyed — 6 a week, 1,800 an hour at a 12-second week**, ~35,000
+  across the 19 h 44 m session this was found on. Fix: the five water
+  captures are made once for the life of the page (`engInitWaterTex`,
+  guarded, beside the auras and the mirror that already did this); the
+  sky keys on its own colours and repaints its kept canvas in place with
+  one `source.update()`, the same way the earth bake does; and
+  `engInitSky` no longer throws away the texture of the canvas it just
+  built. Check: the same 40-week walk now creates **zero** textures, and
+  `tools/pixi_check.js` grew the assertion — "a run of weeks captures no
+  new textures" — which fails on the old code with "144 made over 24
+  weeks" (6 × 24).
+
+- [ ] **b43** the rain fell in the wrong space. Every particle's sprite
+  is a child of `ENG.poolLayer`, which lives inside `ENG.worldGroup` —
+  placed at `(PX, PY)` and scaled by `FIT` — but `spawnParticles` made
+  the drops over `Math.random() * CW` and `updateParticles` culled them
+  at `d.y > CH - 4`: canvas pixels. The two agree only at `FIT` 1. On a
+  390×700 phone the 24×24 island fits at `FIT` 0.382, so the drops were
+  spawned over world-local x 0..390 while the window shows 0..1020 —
+  rain could reach **at most the left 38% of the screen, ever** (measured
+  14% for the drops present at a given moment). Fix: an `airBox()` names
+  the visible span in world units — `x0/x1/y0/y1` from `PX`, `PY`, `FIT`,
+  `CW`, `CH` — and both the spawning and the culling work in it, so the
+  air covers whatever the fit transform actually shows. Check: at the
+  phone viewport the far edge of the air is x 380 past the 300-wide
+  canvas, and `tools/pixi_check.js` asserts it — "the rain is spawned in
+  the world's box, not the canvas's" — which fails on the old code at
+  exactly x 300.

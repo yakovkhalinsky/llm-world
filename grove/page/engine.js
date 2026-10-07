@@ -151,8 +151,9 @@ function engInitSky() {
     g.addColorStop(1, String(p.nightB));
     oc.fillStyle = g; oc.fillRect(0, 0, 8, 256);
   });
-  const sky = new PIXI.Sprite(engTex(ENG.skyCv));
-  ENG.skyLayer.addChild(sky);
+  ENG.skyTex = engTex(ENG.skyCv);       // kept, so the frame repaints this
+  const sky = new PIXI.Sprite(ENG.skyTex);  // canvas in place instead of
+  ENG.skyLayer.addChild(sky);               // capturing a new one
   ENG.skySpr = sky;
   for (const st of STARS) {
     const sp = new PIXI.Sprite(engTex(starCv));
@@ -363,29 +364,37 @@ function engLineTex(len, rotDeg) {
   return engTex(cv);
 }
 
+/* the water's five fixed captures — the caustics' two dashes, the shore's
+   two foam lines and the moon's glint. Their content never depends on the
+   world, so they are made once for the life of the page; rebuilding them
+   every week orphaned five canvas-backed textures every twelve seconds the
+   dashboard ran, and none of them was ever released. */
+function engInitWaterTex() {
+  const dash = (len, w) => engTex(engCapture(len + 1, 3, oc => {
+    oc.strokeStyle = "rgba(200,225,240,0.20)"; oc.lineWidth = 1;
+    oc.beginPath(); oc.moveTo(0, 1.5); oc.lineTo(len, 1.5); oc.stroke();
+  }));
+  ENG_FX.dashA = dash(12, 13);
+  ENG_FX.dashB = dash(11, 12);
+  ENG_FX.foamRim = engLineTex(23, 0);
+  ENG_FX.foamIn = engLineTex(21, 0);
+  ENG_FX.glintLine = engLineTex(11, 0);
+}
+
 /* the water light: per cell its caustics' pair and its shore edges,
    captured once per neighbor-mask, alpha the only live thing */
 function engBuildWater(s) {
   const size = s.size, elevF = elevField(s), p = pal();
   ENG.liveA.removeChildren();
   ENG.water = [];
-  const dashACv = engCapture(13, 3, oc => {
-    oc.strokeStyle = "rgba(200,225,240,0.20)"; oc.lineWidth = 1;
-    oc.beginPath(); oc.moveTo(0, 1.5); oc.lineTo(12, 1.5); oc.stroke();
-  });
-  const dashBCv = engCapture(12, 3, oc => {
-    oc.strokeStyle = "rgba(200,225,240,0.20)"; oc.lineWidth = 1;
-    oc.beginPath(); oc.moveTo(0, 1.5); oc.lineTo(11, 1.5); oc.stroke();
-  });
-  const foamRim = engLineTex(23, 0);
-  const foamIn = engLineTex(21, 0);
+  const foamRim = ENG_FX.foamRim, foamIn = ENG_FX.foamIn;
   const edgeAngle = Math.atan2(-TH / 2, TW / 2);
   for (let i = 0; i < s.cells.length; i++) {
     if (s.cells[i][0] !== "w") continue;
     const [sx, sy0] = iso(i % size, (i / size) | 0);
     const sy = sy0 - Math.max(0, elevF[i]) * elevPx();
-    const ca = new PIXI.Sprite(engTex(dashACv));
-    const cb = new PIXI.Sprite(engTex(dashBCv));
+    const ca = new PIXI.Sprite(ENG_FX.dashA);
+    const cb = new PIXI.Sprite(ENG_FX.dashB);
     ENG.liveA.addChild(ca, cb);
     const edges = [];
     const nbrs = [i + 1, i - 1, i + size, i - size];
@@ -481,7 +490,7 @@ function engBuildGlint(s) {
     if (s.cells[i][0] === "w") { xi += i % s.size; yi += (i / s.size) | 0; n++; }
   if (!n) { ENG.glint = []; return; }
   const [gx, gy] = iso(xi / n, yi / n);
-  const line = engLineTex(11, 0);
+  const line = ENG_FX.glintLine;
   ENG.glint = [];
   for (let k = 0; k < 4; k++) {
     const sp = new PIXI.Sprite(line);
@@ -539,6 +548,7 @@ function engTickStatics(s) {
   const key = ENG.bakeKey;
   if (ENG.staticsKey === key) return;
   ENG.staticsKey = key;
+  if (!ENG_FX.dashA) engInitWaterTex();
   engBuildWater(s);
   engBuildMirror(s);
   engBuildGlint(s);
@@ -709,16 +719,27 @@ function drawScenePixi(tnow) {
 
   const p = pal();
   // the sky
-  const skyKey = String(s.tick) + "|" + String(p.nightT);
+  // the sky is one gradient in a canvas we keep: the key follows the
+  // colours it is made of, never the week. Keying it on `s.tick` recaptured
+  // a 8x256 texture every simulated week — the sky only changes with the
+  // season and the two-week blend — and dropped the old one unreleased.
+  const skyKey = String(p.nightT) + "|" + String(p.nightB);
   if (ENG.skyKey !== skyKey) {
     ENG.skyKey = skyKey;
-    ENG.skyCv = engCapture(8, 256, oc => {
+    const paintSky = oc => {
       const g = oc.createLinearGradient(0, 0, 0, 256);
       g.addColorStop(0, String(p.nightT));
       g.addColorStop(1, String(p.nightB));
       oc.fillStyle = g; oc.fillRect(0, 0, 8, 256);
-    });
-    ENG.skySpr.texture = engTex(ENG.skyCv);
+    };
+    if (ENG.skyTex) {                 // the same canvas, repainted in place
+      paintSky(ENG.skyCv.getContext("2d"));
+      ENG.skyTex.source.update();
+    } else {
+      ENG.skyCv = engCapture(8, 256, paintSky);
+      ENG.skyTex = engTex(ENG.skyCv);
+      ENG.skySpr.texture = ENG.skyTex;
+    }
   }
   engCoverage(ENG.skySpr, CW, CH);
   const box = CW + "|" + CH;

@@ -322,6 +322,24 @@ const WORLD = `
   frames(a.sandbox, a.rafQ, 1);
   ok("a warm week rebakes nothing more",
      rec.updates === u0 + 1, "the key only moves with the world's weeks");
+
+  /* --- nothing the world keeps is captured twice ---------------------
+     The water's dashes and foam lines, the glint and the sky are fixed
+     images: they are made once for the life of the page. They used to be
+     rebuilt every simulated week — six canvas-backed textures an hour at
+     a twelve-second week, none of them ever released — so walk a stretch
+     of weeks, far enough to cross a season turn and repaint the sky, and
+     hold the count still. */
+  const texBase = rec.textures;
+  for (let w = 0; w < 24; w++) {
+    vm.runInContext(`ST.s.tick = ${476 + w}; fitCanvas.key = null;`, a.sandbox);
+    frames(a.sandbox, a.rafQ, 1);
+  }
+  ok("a run of weeks captures no new textures",
+     rec.textures === texBase,
+     (rec.textures - texBase) + " made over 24 weeks");
+
+  frames(a.sandbox, a.rafQ, 1);
   vm.runInContext("VIEW.zoom = 2.2; fitCanvas.key = null; ST.s.tick = 475;",
                   a.sandbox);
   frames(a.sandbox, a.rafQ, 1);
