@@ -639,7 +639,7 @@ constitution) changes a value the engine never consults.
   grows no mushrooms at all against 63; a three-event week yields three
   lines with `chron_max_per_tick: 3`.
 
-- [ ] **b35** the generator ignored its own recipe. `gen.noise_octaves`
+- [x] **b35** the generator ignored its own recipe. `gen.noise_octaves`
   and `gen.coarse_grid` rode in both packs while `gen.py` used the
   module constants `_OCTAVES`/`_COARSE`; `gen.founder_names` and
   `gen.founder_prob` were bare literals in the founding loop;

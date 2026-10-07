@@ -38,10 +38,13 @@ def _sample(coarse: list, size: int, rng: random.Random, jitter: float) -> list:
 
 
 def _octaves(size: int, rng: random.Random, base_jitter: float) -> list:
+    gr = rules.R["gen"]
+    octaves = gr.get("noise_octaves", _OCTAVES)   # the pack's own hand
+    grid0 = gr.get("coarse_grid", _COARSE)
     total = [[0.0] * size for _ in range(size)]
     amp_total = 0.0
-    for o in range(_OCTAVES):
-        n = _COARSE + o * 3
+    for o in range(octaves):
+        n = grid0 + o * 3
         coarse = [[rng.random() for _ in range(n)] for _ in range(n)]
         amp = 1.0 / (o + 1)
         layer = _sample(coarse, size, rng, base_jitter * amp)
@@ -69,7 +72,6 @@ def generate(seed: int, size: int = None, biome: str = None) -> dict:
     wet = _octaves(size, rng, gr["wet_sigma"])
 
     # --- terrain ---------------------------------------------------------
-    lo, hi = 8.4, 9.0  # elev quantiles (value noise lives roughly in 0.15..0.85)
     water_cells, rock_cells = [], []
     cells = []
     for y in range(size):
@@ -200,12 +202,14 @@ def generate(seed: int, size: int = None, biome: str = None) -> dict:
 
     # the founding souls: the grove starts already known to its voice
     from . import voice as V
+    limit = gr.get("founder_names", 6)
+    prob = gr.get("founder_prob", 0.22)
     named = 0
     for aid, a in sorted(animals.items(), key=lambda kv: int(kv[0])):
-        if named >= 6:
+        if named >= limit:
             break
         rng2 = W.rng_for(seed, 0, f"founder:{aid}")
-        if rng2.random() < 0.22 and named < 6:
+        if rng2.random() < prob and named < limit:
             st["names"][aid] = V.fallback_name(list(st["names"].values()),
                                                seed, int(aid))
             named += 1
