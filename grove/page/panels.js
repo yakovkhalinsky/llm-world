@@ -143,4 +143,10 @@ requestAnimationFrame(loop);
 if (typeof globalThis !== "undefined" && !("groveDebug" in globalThis))
   Object.defineProperty(globalThis, "groveDebug", {
     value: { ST, ENG, drawScenePixi, glideOf, pickCell, updateDom,
-             poll }, configurable: true });
+             poll, CW: () => CW, CH: () => CH,
+             // where a cell's ground lands on the canvas: a harness needs
+             // this to click a tile wherever the framing has put it
+             cellPoint: (x, y) => {
+               const [ix, iy] = iso(x, y);
+               return [PX + ix * FIT, PY + (iy - elevAt(x, y)) * FIT];
+             } }, configurable: true });

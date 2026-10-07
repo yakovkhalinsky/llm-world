@@ -107,7 +107,13 @@ setTimeout(() => {
                   globalThis.groveDebug.ENG.canvas) || els.scene;
   const fns = (target.listeners && target.listeners.click) ||
       (els.scene.listeners && els.scene.listeners.click) || [];
-  fns[fns.length - 1]({ clientX: 208, clientY: 308 });
+  /* aim at a real tile rather than a fixed pixel: the island is framed
+     from its own top corner now, so a hardcoded point can fall on sky */
+  const box = target.getBoundingClientRect();
+  const cw = dbg.CW(), ch = dbg.CH();
+  const at = dbg.cellPoint(6, 1);
+  fns[fns.length - 1]({ clientX: box.left + at[0] / cw * box.width,
+                        clientY: box.top + at[1] / ch * box.height });
   if (!els.look.textContent.trim()) throw new Error("click produced nothing");
   console.log("click OK:", els.look.textContent.slice(0, 90));
   if (!els.chron.innerHTML && state.chronicle && state.chronicle.length)
