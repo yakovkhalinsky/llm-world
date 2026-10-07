@@ -112,14 +112,22 @@ def digest(world, db, weeks=48):
 
 
 def rules_current():
-    """The lawful paths' current values (what a steward may propose on)."""
+    """The lawful paths' current values — what a steward may propose on.
+
+    These must be the very dotted paths `validate` accepts and
+    `apply_amendment` walks, section and all. They were not: the list read
+    `boar.cap=5` while the law demands `animals.boar.cap`, and since this
+    digest is the concrete data the steward actually reads — its system
+    prompt's example is fully qualified, this list was not — it proposed
+    exactly what it was shown and every amendment it ever offered was
+    refused as an unlawful path."""
     out = []
     for sp, t in sorted(rules.R["animals"].items()):
         if t.get("visitor"):
             continue
-        out.append(f"{sp}.cap={t.get('cap')}")
+        out.append(f"animals.{sp}.cap={t.get('cap')}")
     for sp, t in sorted(rules.R["plants"].items()):
-        out.append(f"{sp}.seed_prob={t.get('seed_prob')}")
+        out.append(f"plants.{sp}.seed_prob={t.get('seed_prob')}")
     return out
 
 
@@ -141,8 +149,13 @@ def validate(proposal):
     if not isinstance(proposal, dict):
         return False, None, "not a proposal"
     path = str(proposal.get("rule", "")).strip()
+    # `_` belongs in this class. Every declared bound but `cap` and
+    # `lifespan` carries one — seed_prob, light_need, hunger_drain,
+    # recolonize_after — so without it the law named two of the eleven and
+    # refused the other nine as an "unlawful path", whatever the steward
+    # proposed.
     if not path or not re.match(r"^(animals|plants|pop|weather|cells)\."
-                                r"[A-Za-z0-9*]+(\.[A-Za-z0-9*]+)?$",
+                                r"[A-Za-z0-9_*]+(\.[A-Za-z0-9_*]+)?$",
                                 path):
         return False, None, f"unlawful path: {path!r}"
     band = _bounds_for(path)

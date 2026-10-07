@@ -864,3 +864,28 @@ constitution) changes a value the engine never consults.
   read `"A newborn rabbit was named X. None"`. Fix: only a string is a
   diary. Check: `null`, `123`, `["a"]` and `{"b": 1}` all yield no diary
   while a real sentence is kept, and a missing key still yields none.
+
+- [x] **b46** the steward could not name a single rule it was shown. Two
+  faults on one surface: the lawful paths the steward is **given** were
+  not the lawful paths the law **accepts**.
+  `rules_current()` built its list as `boar.cap=5`, `pine.seed_prob=0.16`
+  — section-less — while `validate` demands a section and the system
+  prompt's own worked example is `animals.rabbit.cap`. The digest is the
+  concrete data the steward actually reads, so it proposed exactly what
+  it was shown: **the grove's first two readings under b41 offered
+  `boar.cap` → 7 and `deer.cap` → 12, and both were refused** as unlawful.
+  And the validator's path class, `[A-Za-z0-9*]`, forbids the underscore
+  that every real knob carries: of the eleven bounds in `rules.bounds`
+  only `animals.*.cap` and `animals.*.lifespan` could be named at all. The
+  other nine — `seed_prob`, `light_need`, `hunger_drain`, `hunt_prob`,
+  `lit_prob`, `storm_fall_old`, `rain_prob.2`, `recolonize_after`,
+  `robins_return_prob` — were thrown out before their value was ever
+  looked at, so `_bounds_for` never got to find their band. Fix:
+  `rules_current()` names the paths as the law names them, and the class
+  admits `_`. Check: all eleven bounds now resolve to their declared
+  band; `animals.rabbit.cap`, `plants.birch.seed_prob`,
+  `animals.rabbit.hunger_drain`, `pop.recolonize_after` and
+  `weather.rain_prob.2` all validate; and a two-amendment reading offers
+  both, accepts both, moves `rabbit.cap` 24 → 30 and `birch.seed_prob`
+  0.28 → 0.2 in the live ruleset, writes them to `world_rules.json`, and
+  marks both rows `applied`.
