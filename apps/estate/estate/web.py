@@ -358,6 +358,12 @@ def cmd_web(args):
     est = Estate(args)
     lock = threading.Lock()
     runner = SimRunner(est, lock, args.tick_seconds, est.llm)
+    # the record the estate already has. Without this the dashboard showed
+    # an empty chronicle on every restart while the database held a year of
+    # it — the write path and the read path each worked, and nothing joined
+    # them. (The patch that was supposed to add this line silently matched
+    # nothing, which is why it is asserted now.)
+    runner.chronicle = list(est.history)
     runner.start()
 
     class Handler(BaseHTTPRequestHandler):

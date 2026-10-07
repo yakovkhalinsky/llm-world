@@ -294,3 +294,24 @@ about unread keys applies to the person writing them too.
   reason. Its affordances are now empty, exactly as the lamp's are: a lamp
   lights and a tree shades, and neither is somewhere you go. Check: the
   gate's fixture-use rule, which is what found it.
+
+---
+
+## After the phases — found by looking at the running estate
+
+- [x] **h21** *class 1 & 5 — and my own fault, twice over* — **the write
+  path and the read path each worked and nothing joined them.** The
+  chronicle was written faithfully — a year of it, 120 entries in the
+  database — and the dashboard served **zero**, because the running server
+  never loaded the history it already had. `Estate` read it into
+  `self.history` and `cmd_web` was supposed to hand it to the runner; the
+  patch that did that *silently matched nothing*, so the line was never
+  there and nothing failed. Two faults in one: a join nobody made, and a
+  replacement I did not assert. It is the second one that matters — the
+  same shape as the steward's `add_amendment` patch, which silently failed
+  to apply and made every amendment raise a TypeError into a swallowing
+  loop. **A patch that does not match must be an error, not a no-op**: every
+  edit in this session now asserts that its target was found and its
+  result is present. Found by curling the running estate and comparing what
+  it served against what was on disk, which is the only way this class is
+  ever found.
