@@ -76,8 +76,10 @@ def judge(report, weeks):
            if sp in RL.R["plants"]) < RL.R["gate"].get(
         "plants_min", CHECKS["plants_min"]):
         fails.append("the forest lost its canopy")
+    # a pack may waive the roster law; the grove's own gate keeps it
     rosters = [sp for sp in RL.R["pop"]["base_residents"]
-                if end.get(sp, 0) == 0]
+                if end.get(sp, 0) == 0] \
+        if RL.R["gate"].get("species_all_present", True) else []
     # the migratory read as gone only if the run doesn't END in their
     # away-season, when they are legitimately south
     migrants = [sp for sp, spec in RL.R["animals"].items()
@@ -108,8 +110,10 @@ def _worker(args):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--seeds", type=int, default=10)
-    ap.add_argument("--weeks", type=int, default=900)
+    ap.add_argument("--seeds", type=int, default=None,
+                    help="worlds to run (the pack's gate law when unset)")
+    ap.add_argument("--weeks", type=int, default=None,
+                    help="weeks per world (the pack's gate law when unset)")
     ap.add_argument("--jobs", type=int, default=mp.cpu_count() or 2)
     ap.add_argument("--start-seed", type=int, default=1)
     ap.add_argument("--biome", default=None,
@@ -117,8 +121,15 @@ def main():
     a = ap.parse_args()
 
     if a.biome:
-        from grove import rules as RL
         RL.select_biome(a.biome)
+    # the gate's law travels with the pack, so it is read only once the
+    # pack is folded in: `balance.py` with no arguments runs the gate the
+    # world's own constitution describes
+    law = RL.R["gate"]
+    if a.seeds is None:
+        a.seeds = law.get("seeds", 10)
+    if a.weeks is None:
+        a.weeks = law.get("weeks", 900)
     seeds = [(a.start_seed + i, a.weeks) for i in range(a.seeds)]
     print(f"balance: {a.seeds} worlds × {a.weeks} weeks ({a.weeks // 48:.0f} yrs) "
           f"({a.jobs} processes)")

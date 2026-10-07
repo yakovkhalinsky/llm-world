@@ -68,9 +68,11 @@ _SYSTEM_BODY = (
 
 
 def system():
-    """The chronicler's breath, in the pack's own words."""
-    return _SYSTEM_BODY.replace(
-        "{role}", rules.R["presentation"]["chronicler_role"])
+    """The chronicler's breath, in the pack's own words — the pack's
+    verbatim brief when it carries one, the shared body when it does not."""
+    pres = rules.R["presentation"]
+    return pres.get("chronicler_system") or _SYSTEM_BODY.replace(
+        "{role}", pres["chronicler_role"])
 
 
 def _stable(*vals):

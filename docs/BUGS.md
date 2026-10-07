@@ -652,7 +652,7 @@ constitution) changes a value the engine never consults.
   reproduce seed 42's world exactly (286 plants, 60 animals, 6
   founders).
 
-- [ ] **b36** the gate would not read its own law, and the pack's
+- [x] **b36** the gate would not read its own law, and the pack's
   chronicler brief was dead. `tools/balance.py` defaulted to **10**
   seeds while `gate.seeds` said 8 and `TUNING.md` tells you to run
   `--seeds 8`; `gate.weeks` and `gate.species_all_present` were never
