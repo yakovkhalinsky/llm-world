@@ -231,10 +231,14 @@ def _go_to(w, r, c):
         unit = _unit_of(w, r)
         if unit is None:
             return False
-        budget -= unit["floor"] * rules.R["engine"]["stair_step"]
+        b = w["buildings"][str(unit["building"])]
+        # the stairs, priced by whatever the estate is doing today: a
+        # power cut is the lift going out, and a sixth floor with no lift
+        # is a longer walk than a sixth floor (the plan's own rider)
+        budget -= (unit["floor"] * rules.R["engine"]["stair_step"]
+                   * W.stair_mult(w, b))
         if budget <= 0:
             return False                   # the stairs took the whole phase
-        b = w["buildings"][str(unit["building"])]
         r["where"] = {"mode": "at", "unit": unit["id"], "x": b["door"][0],
                       "y": b["door"][1], "fixture": None}
     arrived = _walk(w, r, c["x"], c["y"], max(1, int(budget)))

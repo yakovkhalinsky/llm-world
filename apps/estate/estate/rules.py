@@ -28,6 +28,7 @@ R = {
     "sites": {}, "needs": {}, "fixtures": {},
     "households": {}, "people": {}, "gen": {},
     "presentation": {}, "pop": {}, "weather": {}, "gate": {},
+    "fates": {}, "regions": {},
 
     # what the engine itself owns: the numbers that are the machinery
     # rather than the world, and that no pack should have to restate

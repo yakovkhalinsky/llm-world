@@ -63,12 +63,53 @@ def cell_at(world, x, y):
     return world["cells"][y][x] if in_bounds(world, x, y) else None
 
 
+def in_region(world, region, x, y):
+    """Is this cell inside a named region? A region is a rectangle of the
+    plan — the estate's own geography, shipped by the pack — so that a
+    watcher's fate can be about *somewhere* rather than everywhere."""
+    spec = rules.R["regions"].get(region)
+    if spec is None:
+        return region == "all"
+    xr, yr = spec.get("x"), spec.get("y")
+    return ((xr is None or xr[0] <= x < xr[1]) and
+            (yr is None or yr[0] <= y < yr[1]))
+
+
+def fate_mult(world, key, x, y):
+    """What the fates in force multiply a quantity by at this cell. One
+    reader for every fate that acts on a place, so a fate cannot be
+    declared and do nothing (b34) — if it is in the menu it is read here
+    or it is not in the menu."""
+    m = 1.0
+    for f in world["fates"]:
+        v = f.get(key)
+        if v is None:
+            continue
+        if in_region(world, f.get("region", "all"), x, y):
+            m *= v
+    return m
+
+
 def walk_cost(world, x, y):
     """What it costs to step onto a cell, or None where nobody may walk.
     A road is cheap, a lawn dear, water and a building wall impassable —
-    a building is entered at its door, never crossed."""
+    a building is entered at its door, never crossed. Roadworks make a
+    road dearer without ever closing it: a walk that cannot go anywhere
+    is a resident who cannot eat (h10's shape, and not one to repeat)."""
     c = cell_at(world, x, y)
-    return None if c is None else rules.R["sites"][c["site"]]["walk"]
+    if c is None:
+        return None
+    base = rules.R["sites"][c["site"]]["walk"]
+    if base is None:
+        return None
+    return base * fate_mult(world, "walk_mult", x, y)
+
+
+def stair_mult(world, building):
+    """What the stairs cost here — a power cut is the lift going out, and
+    a sixth floor with no lift is a longer walk than a sixth floor."""
+    return fate_mult(world, "stair_mult",
+                     building["door"][0], building["door"][1])
 
 
 def passable(world, x, y) -> bool:
@@ -98,6 +139,8 @@ def new_state(seed: int, width: int, height: int) -> dict:
         "next_id": 1,
         "weather": "clear", "weather_left": 0, "wet_days": 0,
         "waiting": [],               # households outside, queued to move in
+        "fates": [],                 # the watcher's effects, in force now
+        "pending": [],               # sent, and landing tomorrow
         "biome": None,
     }
 

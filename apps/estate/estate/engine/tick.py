@@ -9,6 +9,7 @@ refilled the same evening.
 """
 
 from .. import world as W
+from . import effects
 from . import places
 from . import residents
 from . import trees
@@ -26,22 +27,34 @@ def tick(w) -> list:
     if now != prev:
         evs.append({"day": t, "kind": "turn", "season": now})
 
-    # 2. the sky, and the estate's memory of it
+    # 2. the fates that are already in force lose a day — before the new
+    #    one lands, so each gets the span it was sent for
+    effects.age(w)
+
+    # 3. the sky rolls, and THEN one queued fate lands. The order is the
+    #    plan's, inverted, and deliberately: a fate that is the sky must
+    #    overwrite the day it lands on, or `roll_weather` takes the first
+    #    day of its span out of the count as it decrements, and a storm
+    #    sent for two days is over before anyone has seen it.
     roll_weather(w, evs)
+    effects.land(w, evs)
+
+    # 4. the estate's memory of the sky it actually got, not the one that
+    #    was rolled for it
     update_wet_streak(w)
 
-    # 3. the trees grow and can come down; their shade is built with them
+    # 5. the trees grow and can come down; their shade is built with them
     trees.update_trees(w, evs)
 
-    # 4. whoever is out and about is making noise, so the field is rebuilt
+    # 6. whoever is out and about is making noise, so the field is rebuilt
     #    now — before anyone decides where to be, not after
     places.build_noise(w)
     places.build_light(w)
 
-    # 5. the day's living: five phases, everyone choosing once in each
+    # 7. the day's living: five phases, everyone choosing once in each
     residents.update_residents(w, evs)
 
-    # 6. the day's wear: fixtures are used up, and some of them break
+    # 8. the day's wear: fixtures are used up, and some of them break
     places.update_fixtures(w, evs)
 
     return evs

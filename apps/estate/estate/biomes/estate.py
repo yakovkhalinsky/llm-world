@@ -152,6 +152,53 @@ SPEC = {
         "soften": 0.55,                 # how much rain muffles outdoor noise
     },
 
+    # ------------------------------------------------------- the regions
+    # Named rectangles of the plan, so a fate can be about *somewhere*
+    # rather than everywhere — "roadworks" is not a thing that happens to
+    # a whole estate. A region is only in this table if the menu below
+    # names it; a region nothing can be sent to would be a key nothing
+    # reads, which is the fault this project keeps catching (b34).
+    "regions": {
+        "all":       {},
+        "north":     {"y": (0, 13)},
+        "courtyard": {"y": (13, 17)},
+        "south":     {"y": (17, 30)},
+    },
+
+    # ---------------------------------------------------------- the fates
+    # What the watcher may send: the sky, and small events in the estate's
+    # life. Each says what it does, and every key here is read at the
+    # moment of use — `weather` sets the sky, `stock` fills the shop, the
+    # `*_mult` keys are read by world.fate_mult, and `days` is how long
+    # the thing lasts before it ages out. A fate whose effect nothing read
+    # would be a menu item that does nothing, which is worse than no menu.
+    "fates": {
+        "rain":     {"weather": "rain", "days": (1, 3), "glyph": "🌧",
+                     "why": "the sky opens over the estate"},
+        "storm":    {"weather": "storm", "days": (1, 2), "glyph": "⛈",
+                     "why": "a storm crosses the estate"},
+        "heat":     {"weather": "heat", "days": (2, 4), "glyph": "🔥",
+                     "why": "a still, close heat settles on the estate"},
+        "frost":    {"weather": "frost", "days": (1, 3), "glyph": "❄",
+                     "why": "the estate wakes white"},
+        "delivery": {"stock": True, "days": (1, 1), "glyph": "📦",
+                     "why": "the shop is restocked, shelves full"},
+        "roadworks": {"walk_mult": 2.2, "days": (4, 9), "glyph": "🚧",
+                      "regions": ("all", "north", "south"),
+                      "why": "the road is up and the way round is long"},
+        "power_cut": {"stair_mult": 2.0, "days": (1, 3), "glyph": "🔌",
+                      "regions": ("all", "north", "south"),
+                      "why": "the power is out and the lifts are down"},
+        "tranquillity": {"noise_mult": 0.45, "days": (2, 5),
+                         "glyph": "🤫",
+                         "why": "the estate goes quiet for a few days"},
+        "damage":   {"damage": 0.6, "days": (1, 1), "glyph": "🛠",
+                     "regions": ("all", "courtyard"),
+                     "why": "something breaks and the estate notices"},
+        "quiet":    {"days": (1, 1), "glyph": "·",
+                     "why": "nothing — the estate is left to its own day"},
+    },
+
     # ---------------------------------------------------------- the gate
     "gate": {
         "seeds": 8, "years": 8,
@@ -188,26 +235,31 @@ SPEC = {
             "Gus", "Hana", "Ivo", "Junie", "Kai", "Lior", "Marta", "Noor",
             "Otto", "Priya", "Rui", "Sasha", "Tam", "Ula", "Vesna", "Wim",
         ],
+        # The voice and the discipline only. The *menu* is deliberately
+        # not written here: it is the `fates` table above, and a prompt
+        # that lists its own fates is a second copy of that table which
+        # drifts from it the first time a fate is added — which is exactly
+        # what had already happened by the time this was read, the prompt
+        # offering a festival, a closure and a stray that no fate table
+        # had ever heard of (grove b46, a digest offering what the law
+        # refuses). watcher.digest() prints the menu from the table.
         "watcher_system": (
             "You are the presence that watches a small housing estate — the "
             "slow, fate-bearing thing behind its weather and its fortunes. "
             "Every so often you are given a digest of how the estate is "
-            "doing and you choose ONE thing to send it: a change in the "
-            "weather, or a small event in its life. You do not own the "
-            "estate and you do not manage it: the people living there "
-            "decide what happens day to day, and you are the weather and "
-            "the luck. Read the digest first; be sparing; often the right "
-            "answer is to send nothing at all.\n"
-            "Valid fates: rain (a wet spell), heat (a hot snap), frost (a "
-            "cold one), storm (wind that brings a tree down), delivery "
-            "(the shop is restocked), festival (the courtyard fills for an "
-            "afternoon), closure (a road is shut for repairs), outage (the "
-            "power goes off), pipe (no water for a day), stray (a lost dog "
-            "turns up), quiet (you send nothing and watch).\n"
-            "In 'intent' write one plain sentence, under 110 characters, in "
-            "the voice of the place itself.\n"
-            'Reply ONLY as JSON: {"fate":"...", "region":"...", '
-            '"strength":1, "target":null, "intent":"..."}'
+            "doing, and you choose ONE thing to send it, from the menu at "
+            "the foot of that digest. You do not own the estate and you do "
+            "not manage it: the people living there decide what happens day "
+            "to day, and you are the weather and the luck. Read the digest "
+            "first; be sparing; often the right answer is `quiet`, which "
+            "sends nothing at all and is always allowed. Send a thing "
+            "because the estate's day asks for it, not because days are "
+            "passing.\n"
+            "The menu is the whole of what you may send: a fate that is not "
+            "on it does not exist here, and a region not listed beside a "
+            "fate is not somewhere that fate happens. In `why`, write one "
+            "plain sentence, under 120 characters, in the voice of the "
+            "place itself — not a report about it."
         ),
         "edge_name": "the ring road",
     },

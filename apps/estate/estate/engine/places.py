@@ -65,7 +65,11 @@ def build_noise(w):
                     grid[y][x] += emit * (1.0 if not (dx or dy) else 0.45)
     for y in range(hh):
         for x in range(ww):
-            w["cells"][y][x]["noise"] = max(0.0, grid[y][x] - soft)
+            # a fate can quieten a place without closing it: tranquillity
+            # is the estate being *quieter*, not the noise being deleted
+            w["cells"][y][x]["noise"] = max(
+                0.0, (grid[y][x] - soft)
+                * W.fate_mult(w, "noise_mult", x, y))
     return w["cells"]
 
 

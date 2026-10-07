@@ -34,6 +34,13 @@ const Panels = (() => {
       glyphOf('weather', st.weather) + ' ' +
       (WEATHER_WORD[st.weather] || st.weather);
 
+    /* the watcher, in its own words, and the voice that carried them */
+    const w = st.watcher || {};
+    $('watch').innerHTML = w.fate
+      ? '<span class="d">☾</span> ' + esc(w.why || w.fate)
+      : '<span class="dim">☾ no watcher has come yet</span>';
+    $('voice').textContent = st.llm || '';
+
     const bits = [];
     bits.push('<b>' + st.residents + '</b> people');
     bits.push('<b>' + (st.buildings || []).length + '</b> blocks');
@@ -62,18 +69,18 @@ const Panels = (() => {
 
   /* --------------------------------------------------------- the feed */
 
-  function seasonName(i) {
-    const s = (S.ground && S.ground.words && S.ground.words.seasons) || [];
-    return s[i] || 'another season';
+  function feed(st) {
+    /* The sentence comes from the server (render.say) — the page does not
+     * spell its own. Two wordings for one event is two copies of a fact,
+     * and the estate would end up telling a person and the watcher
+     * different stories about the same day. */
+    const seen = (st.events || []).slice(-40).reverse();
+    const rows = seen.map(e =>
+      '<li><span class="d">d' + e.day + '</span> ' +
+      esc(e.say || e.kind) + '</li>');
+    $('chron').innerHTML = rows.length ? rows.join('') :
+      '<li>nothing has happened yet. it is early.</li>';
   }
-
-  const SAY = {
-    turn: e => 'the season turns to ' + seasonName(e.season),
-    broke: e => 'a ' + e.what + ' broke',
-    tree_down: e => 'a tree came down',
-    storm: e => 'a storm crossed the estate',
-    frost: e => 'ice on the pond',
-  };
 
   function feed(st) {
     const seen = (st.events || []).slice(-40).reverse();

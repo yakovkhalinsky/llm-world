@@ -98,7 +98,7 @@ function El(id) {
 ['scene', 'scroller', 'engine', 'when', 'weather', 'pops', 'chron', 'look',
  'pauseBtn', 'stepBtn', 'fsBtn', 'zoomFit', 'zoom1x', 'zoom2x', 'hint',
  'tabChron', 'tabCensus', 'tabWatch', 'card', 'cardName', 'cardState',
- 'cardRows', 'cardClose', 'plain'].forEach(id => { els[id] = new El(id); });
+ 'cardRows', 'cardClose', 'plain', 'watch', 'voice'].forEach(id => { els[id] = new El(id); });
 
 const document = {
   body: new El('body'), documentElement: new El('html'),

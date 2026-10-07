@@ -213,7 +213,11 @@ def build_parser():
     sp.add_argument("--public", action="store_true",
                     help="bind the LAN, not just loopback")
     sp.add_argument("--offline", action="store_true",
-                    help="no model, no chronicler — the estate alone")
+                    help="no model, no watcher — the estate alone")
+    sp.add_argument("--model", default="auto",
+                    help="pin one model instead of the chain")
+    sp.add_argument("--tier", default="cloud", choices=("cloud", "local"),
+                    help="cloud-first with local fallback, or all local")
     sp.set_defaults(func=cmd_web)
     sp = sub.add_parser("rules", help="print the live ruleset")
     sp.add_argument("--template", metavar="FILE")

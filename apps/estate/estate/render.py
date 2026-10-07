@@ -22,6 +22,30 @@ def fixture_glyph(kind):
     return rules.R["fixtures"][kind]["glyph"]
 
 
+def say(ev) -> str:
+    """An event as a sentence. This is the ONE home of that wording: the
+    digest the watcher reads and the page's feed both take the sentence
+    from here, so the estate cannot end up telling a person and a model
+    two different stories about the same day."""
+    k = ev.get("kind")
+    if k == "turn":
+        seasons = rules.R["presentation"].get("seasons", ())
+        s = seasons[ev["season"]] if ev.get("season") is not None \
+            and ev["season"] < len(seasons) else "another season"
+        return f"the season turns to {s}"
+    if k == "broke":
+        return f"a {ev.get('what', 'thing')} broke"
+    if k == "tree_down":
+        return "a tree came down"
+    if k == "storm":
+        return "a storm crossed the estate"
+    if k == "frost":
+        return "ice on the pond"
+    if k == "fate":
+        return ev.get("say") or f"the watcher sent {ev.get('what')}"
+    return str(k)
+
+
 def header(world) -> str:
     day = world["day"]
     wd = W.weekday_name(day)

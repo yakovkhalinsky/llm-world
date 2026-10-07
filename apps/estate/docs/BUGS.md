@@ -162,3 +162,34 @@ needs actually get met?* They did not, five times over.
   used past what the estate can keep up with still fails, which keeps the
   attrition loop the design wanted. Check: the busiest fixture's condition
   settles above zero, and the estate's food does not alternate.
+
+---
+
+## Phase 5 — the watcher and its fates
+
+- [x] **h13** *class 3, caught before it could run* — **the prompt listed a
+  different menu from the law.** `presentation.watcher_system` — written
+  at phase 0, long before any fate existed — enumerated the fates it
+  expected: rain, heat, frost, storm, delivery, *festival, closure, outage,
+  pipe, stray*, quiet. The `fates` table, written now, holds rain, storm,
+  heat, frost, delivery, *roadworks, power_cut, tranquillity, damage*,
+  quiet. Five of the prompt's fates had no law behind them and four of the
+  law's were invisible to the model — grove b46 exactly, a digest offering
+  what the validator refuses, and the reason the validator exists. Found by
+  reading the two side by side while wiring them, which is the only way
+  this class is ever found. Fix: the prompt keeps the voice and the
+  discipline and **names no fates at all**; `watcher.digest` prints the
+  menu from the table, so there is one home for it and nothing left to
+  drift. Check: every fate the digest offers validates, and every fate the
+  law has appears in the digest.
+
+- [x] **h14** *class 4, in miniature* — **the sky a fate sent was spent
+  before it was seen.** The tick landed the fate and *then* rolled the
+  weather, and `roll_weather` takes the day it is called on out of a
+  span's count as it decrements — so a storm sent for two days was clear
+  by the following morning: `weather_left` went 2 → 1 → 0 in one tick.
+  Found by sending a storm and watching the sky for a week. Fix: the sky
+  rolls first and the fate overwrites it, which is also the truer order —
+  the watcher is the weather, and what it sends for today is what today
+  is. The wet streak is now read from the sky the estate actually got.
+  Check: a fate sent for N days is in force for N days.

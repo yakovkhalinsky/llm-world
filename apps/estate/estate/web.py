@@ -19,6 +19,7 @@ Default bind is loopback only (viewable through an ssh tunnel); pass
 
 import json
 import os
+import random
 import socket
 import threading
 import time
@@ -26,10 +27,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 from . import db as dbm
-from . import gen
+from . import llm as llmm
 from . import render
 from . import rules
 from . import sim
+from . import watcher
 from . import world as W
 
 POLL_MS = 700          # what the page is told to wait between polls
@@ -45,15 +47,19 @@ class SimRunner(threading.Thread):
     five-phase day is visible in a one-day tick.
     """
 
-    def __init__(self, est, lock, tick_seconds):
+    def __init__(self, est, lock, tick_seconds, llm=None):
         super().__init__(daemon=True)
         self.est = est
         self.lock = lock
         self.tick_seconds = tick_seconds
+        self.llm = llm
         self.paused = False
         self.step_once = 0
         self.prev = {}
         self.events = []
+        self.last_watch = {"fate": None, "region": None, "why": None,
+                           "day": None}
+        self.next_watch = 0.0
         self.stop = threading.Event()
 
     def snapshot_prev(self):
@@ -74,8 +80,38 @@ class SimRunner(threading.Thread):
                     self.est.save()
                 if self.step_once:
                     self.step_once -= 1
+                self._maybe_watch()
             self.stop.wait(0.1 if (self.paused and self.step_once) else
                            self.tick_seconds)
+
+    def _maybe_watch(self):
+        """Invite the watcher on its cadence, if there is one and it is
+        due.
+
+        The world lock is taken to read the digest and taken again to land
+        the answer, and is NEVER held across the call: the estate must keep
+        living while the model thinks. Grove lost a world to that (b9/b17)
+        and it is not repeated here.
+        """
+        if self.llm is None or not self.llm.enabled:
+            return
+        now = time.time()
+        if now < self.next_watch:
+            return
+        lo, hi = self.llm.watch_gap()
+        self.next_watch = now + lo + random.random() * (hi - lo)
+        with self.lock:
+            recent = [render.say(e) for e in self.events[-8:]]
+            text = watcher.digest(self.est.world, recent)
+        raw = self.llm.chat_json(watcher.system(), text, watcher.schema(),
+                                 max_tokens=220, job="watch")
+        intent = watcher._quiet(why="the watcher did not answer") \
+            if raw is None else watcher.validate(raw)
+        with self.lock:
+            watcher.queue(self.est.world, intent)
+            self.est.save()
+        intent["day"] = self.est.world["day"]
+        self.last_watch = intent
 
 
 class Estate:
@@ -83,6 +119,7 @@ class Estate:
 
     def __init__(self, args):
         self.args = args
+        self.llm = None
         self.path = os.path.join(args.data, "estate.db")
         self.db = dbm.DB(self.path)
         self.world = self.db.load_world()
@@ -92,6 +129,12 @@ class Estate:
         if self.world.get("biome"):
             rules.select_biome(self.world["biome"])
         self.save_every = 1
+        # the watcher is optional in the only sense that matters: with no
+        # model the estate still runs, because the model never owned any of
+        # it. `invite` returns quiet and the days go on.
+        if not getattr(args, "offline", False):
+            self.llm = llmm.LLM(model=getattr(args, "model", "auto") or "auto",
+                                tier=getattr(args, "tier", "cloud"))
 
     def save(self):
         self.db.save_world(self.world)
@@ -219,7 +262,9 @@ def snapshot(est, runner, lock):
             "people": people, "fixtures": fixtures,
             "buildings": buildings,
             "shade": shade, "light": light,
-            "events": evs,
+            "events": [dict(e, say=render.say(e)) for e in evs],
+            "watcher": dict(runner.last_watch),
+            "llm": llmm.status_line(runner.llm),
         }
 
 
@@ -277,7 +322,7 @@ def cmd_web(args):
     page = _load_page()          # loaded once, so a broken script fails here
     est = Estate(args)
     lock = threading.Lock()
-    runner = SimRunner(est, lock, args.tick_seconds)
+    runner = SimRunner(est, lock, args.tick_seconds, est.llm)
     runner.start()
 
     class Handler(BaseHTTPRequestHandler):
@@ -347,7 +392,7 @@ def cmd_web(args):
     print(f"estate web — {_ip_hint(host).format(args.port)}")
     print(f"  day {est.world['day']} · {rules.active_biome()} · "
           f"{est.world['width']}×{est.world['height']} · "
-          f"{'offline' if args.offline else 'no watcher yet'}")
+          f"{llmm.status_line(est.llm)}")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

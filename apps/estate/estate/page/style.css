@@ -88,6 +88,15 @@ body.plain #scene { display: none; }
 .poplines { margin-top: 6px; font-size: 12px; color: var(--dim); }
 .poplines b { color: var(--ink); font-weight: 600; }
 
+.watchline {
+  margin-top: 7px; padding-top: 7px; font-size: 12.5px;
+  border-top: 1px solid var(--edge);
+  color: var(--ink);
+}
+.watchline .d { color: var(--lamp); }
+.watchline .dim, .voiceline { color: var(--dim); }
+.voiceline { font-size: 11px; margin-top: 3px; }
+
 .feed {
   align-self: flex-start;
   margin-top: auto;
@@ -186,7 +195,16 @@ button.on { background: rgba(255, 202, 122, 0.18); border-color: var(--lamp); }
 
 @media (max-width: 720px) {
   .panel { max-width: none; }
-  .feed { max-height: 30vh; min-width: 0; }
+  .watchline {
+  margin-top: 7px; padding-top: 7px; font-size: 12.5px;
+  border-top: 1px solid var(--edge);
+  color: var(--ink);
+}
+.watchline .d { color: var(--lamp); }
+.watchline .dim, .voiceline { color: var(--dim); }
+.voiceline { font-size: 11px; margin-top: 3px; }
+
+.feed { max-height: 30vh; min-width: 0; }
   .card { left: 10px; right: 10px; width: auto; }
   .hud { padding: 8px; gap: 6px; }
 }
