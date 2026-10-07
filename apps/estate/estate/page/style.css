@@ -1,0 +1,192 @@
+/* Highfield — the estate's page. An architectural palette: slate, paper,
+   and the one warm colour the estate actually has, which is lamplight. */
+
+:root {
+  --ink: #e9e5dc;
+  --dim: #9aa0a6;
+  --glass: rgba(16, 20, 26, 0.72);
+  --edge: rgba(233, 229, 220, 0.14);
+  --lamp: #ffca7a;
+  --road: #2b3138;
+  --paper: #d9d4c8;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #0b0e12;
+  color: var(--ink);
+  font: 14px/1.45 ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden;
+}
+
+.wrap { position: fixed; inset: 0; }
+
+.map-scroll {
+  position: absolute; inset: 0;
+  overflow: auto;
+  display: block;
+  touch-action: none;
+}
+
+#scene { display: block; }
+
+pre.map {
+  display: none;
+  margin: 0; padding: 16px;
+  font: 12px/1.15 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--paper);
+  white-space: pre;
+}
+body.plain pre.map { display: block; }
+body.plain #scene { display: none; }
+
+/* ------------------------------------------------------------------ hud */
+
+.hud {
+  position: fixed; inset: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 14px 16px;
+  gap: 10px;
+}
+
+.hud .panel { pointer-events: auto; }
+
+.panel {
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  padding: 10px 12px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  max-width: 320px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+.title {
+  align-self: flex-start;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.title .mark { color: var(--lamp); }
+.engine-mark { font-size: 11px; color: var(--dim); letter-spacing: 0; }
+
+.idbox { align-self: flex-start; }
+.idrow {
+  display: flex; justify-content: space-between; gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.poplines { margin-top: 6px; font-size: 12px; color: var(--dim); }
+.poplines b { color: var(--ink); font-weight: 600; }
+
+.feed {
+  align-self: flex-start;
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  max-height: 42vh;
+  min-width: 280px;
+}
+
+.chron {
+  list-style: none; margin: 0; padding: 0;
+  overflow-y: auto;
+  font-size: 12.5px;
+}
+.chron li {
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(233, 229, 220, 0.06);
+  color: var(--dim);
+}
+.chron li:first-child { color: var(--ink); }
+.chron li .d { color: var(--lamp); font-variant-numeric: tabular-nums; }
+
+.tabs {
+  display: flex; gap: 6px;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--edge);
+}
+.tabs button { flex: 1; }
+
+.ctl { align-self: flex-start; }
+.row { display: flex; gap: 6px; flex-wrap: wrap; }
+.zoomrow { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+.zoomrow .hint { font-size: 11px; color: var(--dim); margin-left: 4px; }
+
+button {
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: rgba(233, 229, 220, 0.06);
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+button:hover { background: rgba(233, 229, 220, 0.13); }
+button.on { background: rgba(255, 202, 122, 0.18); border-color: var(--lamp); }
+
+.status { margin-top: 8px; font-size: 12px; color: var(--dim); }
+.status:empty { display: none; }
+
+/* ----------------------------------------------------------------- card */
+
+.card {
+  position: fixed;
+  right: 16px; bottom: 16px;
+  width: 320px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  padding: 12px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  display: none;
+}
+.card.on { display: block; }
+.cardhead {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 8px;
+}
+.cardhead h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.cardhead .x { padding: 1px 7px; }
+
+.timeline { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12.5px; }
+.timeline li {
+  display: flex; justify-content: space-between; gap: 10px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(233, 229, 220, 0.06);
+}
+.timeline li span:last-child { color: var(--dim); font-variant-numeric: tabular-nums; }
+
+/* a bar for a need, drawn rather than described */
+.bar {
+  display: inline-block;
+  width: 74px; height: 6px;
+  background: rgba(233, 229, 220, 0.12);
+  border-radius: 3px;
+  overflow: hidden;
+  vertical-align: middle;
+}
+.bar i { display: block; height: 100%; background: var(--lamp); }
+
+/* ----------------------------------------------------------- narrow view */
+
+@media (max-width: 720px) {
+  .panel { max-width: none; }
+  .feed { max-height: 30vh; min-width: 0; }
+  .card { left: 10px; right: 10px; width: auto; }
+  .hud { padding: 8px; gap: 6px; }
+}

@@ -69,6 +69,28 @@ reason.
 ./estate.sh map                # draw the plan
 ./estate.sh status             # census history
 ./estate.sh rules              # the live ruleset
+./estate.sh web                # the dashboard, drawn with PixiJS
+```
+
+The dashboard is one hand-written page and no build step: a background
+thread ticks the estate and the page draws it, gliding each resident from
+where they were yesterday to where they are today, and turning the light
+across the plan as the five phases pass. PixiJS is **vendored** beside the
+page (`estate/page/vendor/pixi.min.js`), so the file is never fetched from
+a CDN at runtime and the whole thing works offline. If PixiJS will not
+load, the page falls back to the plain glyph map rather than showing a
+blank rectangle.
+
+Check the page without a browser — it is the page's own scripts against a
+stub PixiJS, asserting the layer order (the tint under the lamplight, or
+a lamp the night darkens is not a lamp), that a warm frame draws nothing,
+and that the weather falls in the plan's box and not the window's:
+
+```sh
+python3 -m estate web &            # in one shell
+curl -s localhost:8790/api/ground > /tmp/g.json
+curl -s localhost:8790/api/state  > /tmp/s.json
+node tools/pixi_check.js /tmp/g.json /tmp/s.json
 ```
 
 ## The world
@@ -83,7 +105,17 @@ reason.
 - **Five needs** — food, rest, company, play (children only), and quiet —
   met at the places that afford them, and interfering by design.
 - **Fixtures** are the placed things: benches, the playground, tables, the
-  shop, lamps, bins, and trees. They are used, they wear, and they break.
+  shop, lamps and trees. They are used, they wear, and they break. A lamp
+  affords nothing by itself — it *lights*, and what it lights is worth more
+  in the evening, which is the whole reason a courtyard has them.
+- **A need is chosen before a place.** The resident picks what presses
+  hardest and *then* the best place for it, falling to the next need down
+  when the first has nowhere to go. Scored the other way round, the nearest
+  bench beats a meal merely by being nearest.
+- **A walk goes round a wall.** Movement is a greedy step toward the
+  target, priced by the ground — but a building is impassable, so when
+  every step forward is a wall the walk commits to a side and holds it
+  until the way opens.
 
 ### What keeps it from settling into a metronome
 
@@ -106,12 +138,24 @@ A world of met needs is a dead world. Three loops prevent it:
 | `estate/world.py` | state containers, the calendar, the one rng |
 | `estate/gen.py` | seeded estate generation (no LLM) |
 | `estate/render.py` | the terminal view: the plan and the day's lines |
+| `estate/web.py` | the dashboard's server: the page, the state API, the tick thread |
+| `estate/page/` | the dashboard: PixiJS scene, panels, and the vendored engine |
+| `tools/pixi_check.js` | the page's headless check: the layer order, a warm frame, the weather's box |
 | `estate/db.py` | SQLite: the estate as one blob, plus its census |
 | `tools/balance.py` | the gate: seeded estates × years, every law must hold |
 
 ## Status
 
-Phase 0 — the skeleton, the pack, seeded generation and the day's turn.
-The estate plants, steps and draws, and is deterministic per seed. The
-people do not yet act: needs, places, fixtures and households arrive in
-the phases after, each with its readers rather than ahead of them.
+**Phases 0–2 and the graphics page.** The estate plants, steps, draws and
+is deterministic per seed; its people choose, walk and are satisfied; its
+fixtures fill, wear and break; and the dashboard shows all of it.
+
+Phases 1 and 2 took eleven recorded faults to get right (**h6–h11** in
+`docs/BUGS.md`), and ten of them were found by one act: *measuring a
+simulated year and asking whether the needs were actually met.* They were
+not, five different ways. The needs now come out in a band, and the
+faults are kept in the ledger because the way they hid is the useful part.
+
+Still to come, each with its readers rather than ahead of them: the
+households (ageing, births, the letting office), the watcher and its
+fates, the gate, and the dashboard's narration.

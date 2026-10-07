@@ -3,6 +3,7 @@
   estate new [--seed 42] [--size 40x30]     plant an estate (no LLM)
   estate step N                             advance N days in batch
   estate map                                draw the plan once
+  estate web [--port 8790]                  serve the dashboard (pixijs)
   estate status                             census history
   estate rules [--template FILE]            the live ruleset
 
@@ -21,6 +22,7 @@ from . import gen
 from . import render
 from . import rules
 from . import sim
+from . import web as webm
 from . import world as W
 
 
@@ -169,6 +171,10 @@ def cmd_status(args):
     db.close()
 
 
+def cmd_web(args):
+    webm.cmd_web(args)
+
+
 def cmd_rules(args):
     if args.template:
         print("wrote", rules.dump_template(args.template))
@@ -201,6 +207,14 @@ def build_parser():
     sp.add_argument("--days", type=int, default=64)
     sp.add_argument("--width", type=int, default=20)
     sp.set_defaults(func=cmd_status)
+    sp = sub.add_parser("web", help="serve the dashboard")
+    sp.add_argument("--port", type=int, default=8790)
+    sp.add_argument("--tick-seconds", type=float, default=6.0)
+    sp.add_argument("--public", action="store_true",
+                    help="bind the LAN, not just loopback")
+    sp.add_argument("--offline", action="store_true",
+                    help="no model, no chronicler — the estate alone")
+    sp.set_defaults(func=cmd_web)
     sp = sub.add_parser("rules", help="print the live ruleset")
     sp.add_argument("--template", metavar="FILE")
     sp.set_defaults(func=cmd_rules)

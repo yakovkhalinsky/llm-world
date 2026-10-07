@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Highfield</title>
+<style>{{STYLE}}</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="map-scroll" id="scroller">
+    <canvas id="scene"></canvas>
+    <pre class="map" id="plain">…</pre>
+  </div>
+
+  <div class="hud" id="hud">
+    <div class="panel title">
+      <span class="mark">▤</span> highfield
+      <span class="engine-mark" id="engine"></span>
+    </div>
+
+    <div class="panel idbox">
+      <div class="idrow">
+        <span id="when">…</span>
+        <span id="weather">…</span>
+      </div>
+      <div class="poplines" id="pops"></div>
+    </div>
+
+    <div class="panel feed">
+      <ul class="chron" id="chron"></ul>
+      <div class="status" id="look"></div>
+      <div class="tabs">
+        <button class="on" id="tabChron">the day</button>
+        <button id="tabCensus">who lives here</button>
+        <button id="tabWatch" hidden>☾ watcher</button>
+      </div>
+    </div>
+
+    <div class="panel ctl">
+      <div class="row">
+        <button id="pauseBtn">⏸ pause</button>
+        <button id="stepBtn">+ day</button>
+        <button id="fsBtn">⛶ full</button>
+      </div>
+      <div class="zoomrow">
+        <button id="zoomFit" class="on">fit</button>
+        <button id="zoom1x">1×</button>
+        <button id="zoom2x">2×</button>
+        <span class="hint" id="hint">click a place to look at it</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="card" class="card">
+    <div class="cardhead">
+      <h3 id="cardName">…</h3>
+      <span><button class="x" id="cardClose">✕</button></span>
+    </div>
+    <div class="status" id="cardState"></div>
+    <ul class="timeline" id="cardRows"></ul>
+  </div>
+</div>
+<script src="/pixi.js"></script>
+<script>{{SCRIPT}}</script>
+</body>
+</html>
