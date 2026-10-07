@@ -26,7 +26,7 @@ def _update_animals(w, evs):
             a["transient"] -= 1
             if a["transient"] <= 0:
                 evs.append({"tick": t, "kind": "departure", "sp": a["sp"],
-                            "x": a["x"], "y": a["y"], "who": a["sp"]})
+                            "x": a["x"], "y": a["y"], "who": a["id"]})
                 del w["animals"][aid]
                 continue
 

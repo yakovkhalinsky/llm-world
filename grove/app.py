@@ -165,7 +165,11 @@ class Grove:
             elif e.get("plant"):
                 ids.append(e["plant"])
             for oid in dict.fromkeys(ids):
-                self.db.add_bio(int(oid), key, e["tick"])
+                try:
+                    oid = int(oid)
+                except (TypeError, ValueError):
+                    continue     # a story about nobody in particular
+                self.db.add_bio(oid, key, e["tick"])
         return evs, notable
 
     # -- scheduling (run mode) ----------------------------------------------
