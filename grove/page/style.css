@@ -68,7 +68,8 @@
   body.plain { overflow: auto; }
   body.plain .wrap { position: static; padding: 16px; max-width: 1160px;
                      margin: 0 auto; }
-  body.plain .panel, body.plain .bio { position: static; margin: 12px 0; }
+  body.plain .panel, body.plain #bio { position: static; margin: 12px 0;
+                                       max-height: none; width: auto; }
   body.plain .hud { position: static; opacity: 1; }
   body.plain .map, body.plain { display: block; }
   .map { font-size: 12px; line-height: 1.1; letter-spacing: .06em;

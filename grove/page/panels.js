@@ -33,18 +33,21 @@ function setFollow(b) {
   if (!b && sc)
     sc.scrollTo({ left: 0, top: 0, behavior: "smooth" });
 }
-function trackFollow(glide) {
+function trackFollow() {
   const s = ST.s, f = ST.follow;
   if (!s || !f) return;
   const list = f.kind === "animal" ? s.animals : s.plants;
   let ent = null;
-  for (const q of list || []) if (q.id === f.oid && !q.log) { ent = q; break; }
+  // a fallen tree stays findable; the ledger keeps it, the cam lets it lie
+  for (const q of list || [])
+    if (q.id === f.oid && q.st !== "log") { ent = q; break; }
   if (!ent) return;
   const sc = document.querySelector(".map-scroll");
   if (!sc) return;
-  const scale = VIEW.dw / CW;
-  const px = iso(ent.x, ent.y)[0] * scale,
-        py = iso(ent.x, ent.y)[1] * scale;
+  // iso() is world-local; the scroller counts canvas pixels, where the
+  // point lands at (PX, PY) + the world unit scaled by FIT
+  const u = iso(ent.x, ent.y);
+  const px = PX + u[0] * FIT, py = PY + u[1] * FIT;
   sc.scrollLeft += (px - sc.clientWidth / 2 - sc.scrollLeft) * 0.14;
   sc.scrollTop += (py - sc.clientHeight / 2 - sc.scrollTop) * 0.14;
 }
@@ -63,7 +66,9 @@ document.body.classList.add("hud-on");
 
 $("tabChron").onclick = () => {
   $("chron").hidden = false; $("sparks").hidden = true;
+  $("tune").hidden = true;
   $("tabChron").classList.add("on"); $("tabCensus").classList.remove("on");
+  $("tabTune").classList.remove("on");
 };
 $("tabCensus").onclick = () => {
   $("chron").hidden = true; $("sparks").hidden = false;
@@ -114,7 +119,7 @@ window.addEventListener("keydown", e => {
   if (e.target && e.target.tagName === "INPUT") return;
   if (e.code === "Space") { e.preventDefault(); $("pauseBtn").onclick(); }
   else if (e.key === "s") { if (!$("stepBtn").disabled) $("stepBtn").onclick(); }
-  else if (e.key === "n") $("soulBtn").onclick();
+  else if (e.key === "n") { if (!$("soulBtn").disabled) $("soulBtn").onclick(); }
   else if (e.key === "f") $("fsBtn").onclick();
   else if (e.key === "c") { calm = !calm; setHudVisibility(); }
 });

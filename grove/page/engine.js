@@ -236,7 +236,7 @@ const POSE_CHAN = {
   boar: ["bTrot", "trot", 1.2, 10],
 };
 function poseKeyFor(a, ph) {
-  const shape = A_SHAPES[a.sp] || a.sp;
+  const shape = shapeOf(a);
   const ch = POSE_CHAN[shape];
   const q = ch ? ch[1] + ":" + engQuant(ph[ch[0]], ch[2], ch[3]) + ":"
                 + ch[2] + ":" + ch[3] : "still";
@@ -291,7 +291,10 @@ function engBuildCreatures(s) {
     const shadow = new PIXI.Sprite(ENG_FX.shadowTex);
     shadow.anchor && shadow.anchor.set && shadow.anchor.set(0.5, 0.5);
     shadow.alpha = 0.20;
-    const flyer = a.sp === "owl" || a.sp === "robin";
+    // flying is a property of the shape drawn: the pack routes its own
+    // birds (a desert's shrike, its sandgrouse) onto the wings that fly
+    const fl = shapeOf(a);
+    const flyer = fl === "owl" || fl === "robin";
     const szc = a.ag !== undefined && a.ag < 6 ? 0.62 : 1;
     const rx = (flyer ? 3 : 6) * szc;
     shadow.width = rx * 2 / K * 1.08;         // local units (K rides below)

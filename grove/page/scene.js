@@ -153,10 +153,11 @@ function pal() {
   return mixPal(prev, cur, weekIn / 3);
 }
 
-/* species -> drawn shape; the pack may set its own map */
+/* species -> drawn shape; the pack may set its own map, and it carries
+   the guests' half too (a desert's shrike rides the robin's shape) */
 let SHAPES = { pine: "pine", birch: "deciduous", willow: "deciduous",
                fern: "fronds", berry: "bush" };
-let A_SHAPES = {};                    // guests' shapes, by species
+function shapeOf(a) { return SHAPES[a.sp] || a.sp; }
 const ANIMAL_BODY = {
   rabbit: "#9b8d90", deer: "#a8834f", fox: "#c26a35", owl: "#8d7358",
   robin: "#7d8ba0", boar: "#5c4a42", stag: "#9a7546", wolf: "#8a8f94",
@@ -597,17 +598,18 @@ function animalGait(a, f, tsec, idx) {
   const dx = cx1 - cx0;
   if (Math.abs(dx) > 0.9) FACING[idx] = dx < 0 ? -1 : 1;
   const flip = FACING[idx] || 1;
-  const flyer = a.sp === "owl" || a.sp === "robin";
+  const shape = shapeOf(a);
+  const flyer = shape === "owl" || shape === "robin";
   // children are children: little for their first six weeks
   const szc = a.ag !== undefined && a.ag < 6 ? 0.62 : 1;
   const lift =
       flyer ? -9 + (f < 1 ? Math.sin(tsec * 14 + a.id) * 1.1 : 0)
-      : (a.sp === "rabbit" && f < 1
+      : (shape === "rabbit" && f < 1
          ? -Math.abs(Math.sin(f * 12 + a.id)) * 5   // rabbits hop with the glide
          : Math.sin(tsec * 5 + a.x) * 0.8) * szc;
   /* landing: the hop's own phase tells when a rabbit touches ground —
      mid-air they stretch, on the landing they squash */
-  const hopP = a.sp === "rabbit" && f < 1 ?
+  const hopP = shape === "rabbit" && f < 1 ?
       Math.abs(Math.sin(f * 12 + a.id)) : 0;
   const sqx = hopP && hopP < 0.3 ? 1.08 : 1,
         sqy = hopP && hopP < 0.3 ? 0.88 : 1;
@@ -922,8 +924,10 @@ function glideOf(tnow) {
 }
 
 function loop(tnow) {
-  if (!document.body.classList.contains("plain"))
+  if (!document.body.classList.contains("plain")) {
     drawScenePixi(tnow);
+    trackFollow();               // the follow-cam eases after the world moves
+  }
   requestAnimationFrame(loop);
 }
 

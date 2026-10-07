@@ -587,3 +587,34 @@ fates. Everything below lives on the path the gate cannot walk.
   reads 🫐 and a bare one 🍀, a log 🪵, a robin over a canopy 🐦, a
   desert shrike over a saguaro 🐦 too; and the gate is unmoved (the
   engine never reads `plants.*.emoji`).
+
+- [x] **b33** the guests drew as wolves, the follow-cam followed
+  nothing, and two panels kept promises they never made.
+  - `scene.js:159` declared `A_SHAPES` (`guests' shapes, by species`)
+    and `engine.js:239` read it — but `boot.js:40` pushed the pack's
+    map into `SHAPES`, so `A_SHAPES[a.sp]` was always `undefined` and
+    every desert animal fell through `animalBody`'s switch to the wolf
+    default, and found no `POSE_CHAN` entry, so it stood frozen. There
+    was never a reason for two maps: the halves don't collide, so
+    `shapeOf()` reads the one the pack fills.
+  - The same `a.sp === "owl" || a.sp === "robin"` decided flying and
+    `a.sp === "rabbit"` the hop, in two files — the desert's birds
+    never took off and its jackrabbit never hopped. Both now ask the
+    shape being drawn, which is where the page keeps the wings.
+  - `trackFollow` (`panels.js:36`) was never called from anywhere: the
+    `◎ follow` button toggled a class and moved nothing. It also
+    dropped the fit transform (`iso()` is world-local, the scroller
+    counts canvas pixels at `PX + u*FIT`) behind a `VIEW.dw / CW` that
+    is 1 by construction, and filtered plants on `q.log`, a field the
+    snapshot never sends (plants carry `st`). Now called from the
+    frame loop, with the transform and the filter right.
+  - `#chron`'s tab handler never hid `#tune`, so switching back from
+    ⚖ tuning stacked both panes and left the tab lit; and `body.plain
+    .bio` matched nothing — the card is `#bio` — so a no-GPU page kept
+    its `position: fixed`. The `n` key also fired the soul button
+    while unpaused, where the `s` key and the button itself check
+    `disabled`.
+  Check: `tools/pixi_check.js` ALL PASS (36410 draw calls over 30
+  frames, the rabbit still squashes on landing, the bake and the walls
+  unmoved) and the real page over a throwaway world passes
+  `tools/page_harness.js`.
