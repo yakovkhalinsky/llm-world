@@ -933,3 +933,37 @@ constitution) changes a value the engine never consults.
 > `tools/pixi_check.js`, which is the one that exists and runs today
 > (`node tools/pixi_check.js`). The entries are left as written: they are
 > the record of what was done then, not a map of the tree now.
+
+## The creatures, looked at for the first time
+
+Rendered every shape the page can draw — each species at rest, mid-stride,
+full-stride, and hungry-winter — by running the page's own `animalBody`
+into a recording surface and replaying it. Three of them were broken, not
+merely plain, and all of them were the same animal in another colour.
+
+- [x] **b48** the fox's brush was a sliver. Its tail was a *filled* path
+  whose two `quadraticCurveTo` bulges the eye never saw: the shape closed
+  straight from one control point to the next, so a fox wore a thin white
+  blade across its flank. Same fault, worse, on the wolf — its tail was
+  never filled at all, only stroked at `lineWidth 1.4` with the body
+  colour, so the animal trailed a bare outline; the deer's antlers were
+  the same hairline. And the rabbit's tail was drawn at (-4.5, 1), which
+  is *inside* its own body ellipse, so it read as a white dot on the hip
+  rather than a scut at the back. Fix: every tail is now a closed filled
+  path placed clear of the body, and the stag's antlers are filled tines
+  rather than a stroke. Check: rendered and looked at, all four species.
+
+- [x] **b49** every creature was one body ellipse in a different colour.
+  The deer, stag, boar and wolf were near-identical blobs; only the owl and
+  the robin read as themselves at a glance, and only the deer, stag and
+  boar had legs at all — the rabbit, fox and wolf floated. At half a tile
+  across, a creature is read by its silhouette and nothing else, so the
+  shapes are now built on anatomy: the rabbit crouches with a haunch and a
+  scut, the deer and stag stand on a long neck and four legs (the stag
+  carrying filled antlers that go pale with the frost), the fox is a
+  pointed snout and ears with a brush, the wolf is rangier with a heavy
+  hanging tail, the boar is a barrel with a bristled back and tusks, the
+  tortoise gets a plated dome and stumpy legs, and the owl and robin —
+  which already worked — gained tufts and a beak. Check: the rendered sheet,
+  and `tools/pixi_check.js` ALL PASS (the pose channels, the rabbit's
+  landing squash and "creatures ride the land" all unchanged).

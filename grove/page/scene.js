@@ -735,139 +735,280 @@ function gaitPhases(a, f, tsec) {
   };
 }
 
-/* the creature's body in local units — no shadow, no label, no
-   transform: the one truth every engine captures from */
+/* The creature's body in local units — no shadow, no label, no transform:
+   the one truth every engine captures from. The origin is the creature's
+   footing and it faces +x. At half a tile across a creature is read by its
+   silhouette and nothing else, so each species is built on a shape of its
+   own rather than on the same body ellipse in another colour: the rabbit
+   crouches, the deer is neck and legs, the fox is a snout and a brush, the
+   boar is a barrel. */
 function animalBody(shape, a, ph) {
   const body = ANIMAL_BODY[a.sp] || "#999";
   const winter = ph.winter;
+  const FAR = "rgba(0,0,0,0.26)";        // the side turned away from us
+  const SUN = "rgba(255,255,255,0.12)";  // the lit side
+  /* a leg: a tapered stalk from the belly to the footing */
+  const leg = (x, y, h, w, far) => {
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(x - w, y); ctx.lineTo(x + w, y);
+    ctx.lineTo(x + w * 0.6, y + h); ctx.lineTo(x - w * 0.6, y + h);
+    ctx.closePath(); ctx.fill();
+    if (far) { ctx.fillStyle = FAR; ctx.fill(); }
+  };
+  /* an ear: a leaf off the skull, leaning back, free to sway */
+  const ear = (x, y, len, w, lean) => {
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(x - w, y);
+    ctx.lineTo(x - w * 0.7 + lean, y - len);
+    ctx.lineTo(x + w * 0.8 + lean, y - len * 0.85);
+    ctx.lineTo(x + w, y);
+    ctx.closePath(); ctx.fill();
+  };
+  /* a snout: the muzzle that says which animal this is */
+  const muzzle = (x, y, len, h) => {
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(x, y - h); ctx.lineTo(x + len, y - h * 0.35);
+    ctx.lineTo(x + len, y + h * 0.35); ctx.lineTo(x, y + h);
+    ctx.closePath(); ctx.fill();
+  };
   switch (shape) {
-    case "rabbit":
-      ctx.fillStyle = body;
-      ctx.beginPath(); ctx.ellipse(0, 2, 5, 4, 0, 0, 6.3); ctx.fill();
-      // ears: the far one flicks on its own quiet alarm
+    case "rabbit": {
       const flick = ph.flick;
-      ctx.beginPath(); ctx.ellipse(2, -3, 1.6, 4, 0.35, 0, 6.3); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(4.4, -3, 1.6, 4, 0.2 - flick * 0.4,
-                                   0, 6.3); ctx.fill();
-      ctx.fillStyle = "#fff";
-      ctx.beginPath(); ctx.arc(-4.5, 1, 2.2, 0, 6.3); ctx.fill();
-      break;
-    case "deer": case "stag": {
-      const sz = a.sp === "stag" ? 1.2 : 1;
-      ctx.fillStyle = body;
-      ctx.beginPath(); ctx.ellipse(0, 1, 7 * sz, 4 * sz, 0, 0, 6.3);
-      ctx.fill();
-      // a trot: each pair swings against the other, the far pair dimmer
-      const trot = ph.dTrot;
-      ctx.fillStyle = "#8a6a45";
-      ctx.fillRect(-3.6 - trot, 4.2, 1.4, 3.6 * sz);
-      ctx.fillRect(4.4 + trot, 4.2, 1.4, 3.6 * sz);
-      ctx.fillStyle = body;
-      ctx.fillRect(-5 + trot, 4, 1.6, 4 * sz);
-      ctx.fillRect(3 - trot, 4, 1.6, 4 * sz);
-      ctx.beginPath(); ctx.arc(6, -2 * sz, 2.4, 0, 6.3); ctx.fill();
-      ctx.strokeStyle = winter ? "#d9d4c9" : "#775f38"; ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.moveTo(6.5, -4); ctx.lineTo(7.5, -8); ctx.lineTo(9.5, -9);
-      ctx.moveTo(5.5, -4); ctx.lineTo(4.5, -8); ctx.lineTo(2.5, -9);
-      ctx.stroke();
+      ctx.fillStyle = body;              // the crouch is most of a rabbit
+      ctx.beginPath(); ctx.ellipse(-3.2, 1.4, 4.6, 4.0, 0, 0, 6.3); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(1.4, 1.0, 4.4, 3.1, 0, 0, 6.3); ctx.fill();
+      ctx.fillStyle = FAR;               // the haunch's shadowed side
+      ctx.beginPath(); ctx.ellipse(-4.6, 2.2, 2.6, 2.6, 0, 0, 6.3); ctx.fill();
+      ctx.fillStyle = "#f4f1ea";         // the tail, clear of the body
+      ctx.beginPath(); ctx.arc(-7.4, 0.2, 2.3, 0, 6.3); ctx.fill();
+      ctx.fillStyle = body;              // head
+      ctx.beginPath(); ctx.ellipse(5.4, -0.6, 2.9, 2.5, 0, 0, 6.3); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(7.4, 0.2, 1.5, 1.2, 0, 0, 6.3); ctx.fill();
+      ear(4.4, -2.4, 6.8, 1.5, 0.2);     // one ear still, one that flicks
+      ear(6.2, -2.6, 6.4, 1.5, 0.2 - flick * 1.8);
+      leg(3.4, 2.8, 2.6, 1.1, false);    // a front paw
+      ctx.fillStyle = "#20242a";
+      ctx.beginPath(); ctx.arc(6.6, -1.0, 0.8, 0, 6.3); ctx.fill();
       break;
     }
-    case "fox":
-      ctx.fillStyle = body;
-      ctx.beginPath(); ctx.ellipse(0, 2, 6, 3.2, 0, 0, 6.3); ctx.fill();
-      ctx.beginPath(); ctx.arc(5.4, 0, 2.1, 0, 6.3); ctx.fill();
-      ctx.fillStyle = "#e8dccb";
-      // the tail flicks quicker in flight
-      const tailSway = ph.tail;
+    case "deer": case "stag": {
+      const sz = a.sp === "stag" ? 1.16 : 1;
+      const trot = ph.dTrot;
+      leg(-4.6 + trot, 2.4, 5.2 * sz, 1.0, true);     // the far pair
+      leg(3.4 - trot, 2.4, 5.0 * sz, 1.0, true);
+      ctx.fillStyle = body;              // a barrel with a high rump
+      ctx.beginPath(); ctx.ellipse(-1.0, 0.4 * sz, 6.4 * sz, 3.4 * sz, 0, 0, 6.3);
+      ctx.fill();
+      ctx.beginPath(); ctx.ellipse(-4.4, -0.6 * sz, 3.6 * sz, 3.2 * sz, 0, 0, 6.3);
+      ctx.fill();
+      ctx.fillStyle = SUN;
+      ctx.beginPath(); ctx.ellipse(0.4, -1.6 * sz, 4.6 * sz, 1.3 * sz, 0, 0, 6.3);
+      ctx.fill();
+      leg(-5.4 - trot, 2.4, 5.6 * sz, 1.1, false);    // the near pair
+      leg(4.2 + trot, 2.4, 5.4 * sz, 1.1, false);
+      ctx.fillStyle = body;              // the neck carries the animal
       ctx.beginPath();
-      ctx.moveTo(-4, 1.5);
-      ctx.quadraticCurveTo(-9, -1 + tailSway, -8, -6 + tailSway * 1.4);
-      ctx.lineTo(-6, -2); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = "#fff";
-      ctx.beginPath(); ctx.arc(-5, 2.5, 1.7, 0, 6.3); ctx.fill();
-      if (a.h) {                       // the hungry eye glints
+      ctx.moveTo(2.6, -1.4 * sz); ctx.lineTo(5.2, -6.2 * sz);
+      ctx.lineTo(7.4, -5.4 * sz); ctx.lineTo(5.6, -0.4 * sz);
+      ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(7.6, -6.4 * sz, 2.2, 1.9, 0.3, 0, 6.3);
+      ctx.fill();
+      muzzle(8.6, -5.6 * sz, 2.0, 1.1);
+      ear(6.6, -7.6 * sz, 2.6, 1.0, -0.6);
+      ctx.strokeStyle = winter ? "#d9d4c9" : "#775f38";
+      ctx.lineWidth = 1.3;
+      if (shape === "stag") {            // antlers: filled, not a hairline
+        ctx.fillStyle = winter ? "#d9d4c9" : "#775f38";
+        for (const s2 of [-1, 1]) {
+          ctx.beginPath();
+          ctx.moveTo(7.2, -7.6 * sz);
+          ctx.lineTo(7.6 + s2 * 2.4, -12.2 * sz);
+          ctx.lineTo(8.2 + s2 * 2.8, -11.6 * sz);
+          ctx.lineTo(8.2, -7.4 * sz);
+          ctx.closePath(); ctx.fill();
+          ctx.beginPath();
+          ctx.moveTo(7.5 + s2 * 1.7, -10.4 * sz);
+          ctx.lineTo(7.9 + s2 * 4.0, -11.6 * sz);
+          ctx.lineTo(8.1 + s2 * 3.9, -10.6 * sz);
+          ctx.closePath(); ctx.fill();
+        }
+      } else {
+        ctx.beginPath();                 // a doe keeps only the ear
+        ctx.moveTo(6.6, -7.6); ctx.lineTo(5.4, -10.2);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#20242a";
+      ctx.beginPath(); ctx.arc(8.2, -6.8 * sz, 0.75, 0, 6.3); ctx.fill();
+      break;
+    }
+    case "fox": {
+      const tailSway = ph.tail;
+      leg(-3.6, 2.2, 3.6, 1.0, true);
+      leg(2.8, 2.2, 3.4, 1.0, true);
+      ctx.fillStyle = body;
+      ctx.beginPath(); ctx.ellipse(0, 0.6, 5.8, 3.0, 0, 0, 6.3); ctx.fill();
+      leg(-4.4, 2.2, 3.8, 1.1, false);
+      leg(3.6, 2.2, 3.6, 1.1, false);
+      ctx.fillStyle = "#efe3d2";         // the brush, filled, sweeping back
+      ctx.beginPath();
+      ctx.moveTo(-4.4, 0.6);
+      ctx.quadraticCurveTo(-11.0, -1.4 + tailSway, -9.6, -7.0 + tailSway * 1.3);
+      ctx.quadraticCurveTo(-7.4, -3.6 + tailSway * 0.6, -5.0, -0.2);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = body;
+      ctx.beginPath(); ctx.ellipse(5.4, -1.4, 2.7, 2.4, 0, 0, 6.3); ctx.fill();
+      ear(4.2, -3.0, 3.4, 1.4, 0.3);     // the pointed ears
+      ear(6.6, -3.0, 3.2, 1.4, 0.3);
+      muzzle(6.0, -0.6, 3.2, 1.1);
+      ctx.fillStyle = "#efe3d2";         // the white cheek and chest
+      ctx.beginPath(); ctx.ellipse(6.2, 0.4, 1.5, 0.9, 0, 0, 6.3); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(2.6, 2.0, 1.5, 1.1, 0, 0, 6.3); ctx.fill();
+      ctx.fillStyle = "#20242a";
+      ctx.beginPath(); ctx.arc(6.2, -1.8, 0.75, 0, 6.3); ctx.fill();
+      if (a.h) {                        // the hungry eye glints
         ctx.fillStyle = "#f2c96a";
-        ctx.beginPath(); ctx.arc(5.8, -0.5, 0.7, 0, 6.3); ctx.fill();
+        ctx.beginPath(); ctx.arc(6.3, -1.9, 0.42, 0, 6.3); ctx.fill();
       }
       break;
-    case "owl":
-      // the wings beat behind the body, once or twice a glide
+    }
+    case "boar": {
+      const bt = ph.bTrot;
+      leg(-3.6 + bt, 3.4, 3.0, 1.2, true);      // short, and four of them
+      leg(3.0 - bt, 3.4, 2.8, 1.2, true);
+      ctx.fillStyle = body;
+      ctx.beginPath(); ctx.ellipse(0, 1.4, 6.6, 4.4, 0, 0, 6.3); ctx.fill();
+      ctx.fillStyle = FAR;               // the bristly back is darker
+      ctx.beginPath(); ctx.ellipse(-0.4, -1.0, 5.4, 2.0, 0, 0, 6.3); ctx.fill();
+      leg(-4.4 - bt, 3.4, 3.2, 1.3, false);
+      leg(3.8 + bt, 3.4, 3.0, 1.3, false);
+      ctx.fillStyle = body;
+      ctx.beginPath(); ctx.ellipse(6.0, 1.0, 3.0, 3.0, 0, 0, 6.3); ctx.fill();
+      muzzle(7.4, 1.8, 2.6, 1.4);
+      ear(5.0, -1.8, 2.4, 1.3, 0.5);
+      ctx.fillStyle = "#efe9dc";         // the tusks
+      ctx.beginPath();
+      ctx.moveTo(8.4, 2.4); ctx.lineTo(10.0, 1.4);
+      ctx.lineTo(9.8, 2.4); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#20242a";
+      ctx.beginPath(); ctx.arc(6.6, 0.2, 0.7, 0, 6.3); ctx.fill();
+      break;
+    }
+    case "owl": {
       const flap = ph.flap;
-      ctx.fillStyle = "rgba(0,0,0,0.16)";
+      ctx.fillStyle = "rgba(0,0,0,0.18)";     // the wings beat behind
       ctx.beginPath();
-      ctx.ellipse(-4.8, -1.2 + flap * 2.1, 3.1, 1.15,
-                  -0.55 + flap * 0.55, 0, 6.3); ctx.fill();
+      ctx.ellipse(-5.4, -1.4 + flap * 2.4, 3.4, 1.2,
+                  -0.55 + flap * 0.6, 0, 6.3); ctx.fill();
       ctx.beginPath();
-      ctx.ellipse(4.8, -1.2 - flap * 2.1, 3.1, 1.15,
-                  0.55 - flap * 0.55, 0, 6.3); ctx.fill();
+      ctx.ellipse(5.4, -1.4 - flap * 2.4, 3.4, 1.2,
+                  0.55 - flap * 0.6, 0, 6.3); ctx.fill();
       ctx.fillStyle = body;
       ctx.beginPath(); ctx.ellipse(0, 0, 4.6, 5.6, 0, 0, 6.3); ctx.fill();
-      ctx.fillStyle = "rgba(255,255,255,0.85)";
-      ctx.beginPath(); ctx.arc(-1.6, -1.5, 1.3, 0, 6.3); ctx.fill();
-      ctx.beginPath(); ctx.arc(1.6, -1.5, 1.3, 0, 6.3); ctx.fill();
+      ctx.fillStyle = SUN;
+      ctx.beginPath(); ctx.ellipse(-1.2, 0.6, 2.4, 3.6, 0, 0, 6.3); ctx.fill();
+      for (const s2 of [-1, 1]) {              // the ear tufts
+        ctx.fillStyle = body;
+        ctx.beginPath();
+        ctx.moveTo(s2 * 2.6, -4.2); ctx.lineTo(s2 * 4.4, -7.0);
+        ctx.lineTo(s2 * 4.6, -3.6); ctx.closePath(); ctx.fill();
+      }
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      ctx.beginPath(); ctx.arc(-1.6, -1.5, 1.4, 0, 6.3); ctx.fill();
+      ctx.beginPath(); ctx.arc(1.6, -1.5, 1.4, 0, 6.3); ctx.fill();
       ctx.fillStyle = "#222";
-      ctx.beginPath(); ctx.arc(-1.6, -1.5, 0.6, 0, 6.3); ctx.fill();
-      ctx.beginPath(); ctx.arc(1.6, -1.5, 0.6, 0, 6.3); ctx.fill();
+      ctx.beginPath(); ctx.arc(-1.6, -1.5, 0.62, 0, 6.3); ctx.fill();
+      ctx.beginPath(); ctx.arc(1.6, -1.5, 0.62, 0, 6.3); ctx.fill();
+      ctx.fillStyle = "#d9a441";         // the beak
+      ctx.beginPath();
+      ctx.moveTo(0, -1.1); ctx.lineTo(1.1, 0.6); ctx.lineTo(-1.1, 0.6);
+      ctx.closePath(); ctx.fill();
       if (a.h) {
         ctx.fillStyle = "#f2c96a";
-        ctx.beginPath(); ctx.arc(-1.6, -1.5, 0.3, 0, 6.3); ctx.fill();
-        ctx.beginPath(); ctx.arc(1.6, -1.5, 0.3, 0, 6.3); ctx.fill();
+        ctx.beginPath(); ctx.arc(-1.6, -1.5, 0.28, 0, 6.3); ctx.fill();
+        ctx.beginPath(); ctx.arc(1.6, -1.5, 0.28, 0, 6.3); ctx.fill();
       }
       break;
-    case "robin":
-      // small wings, busy in flight
+    }
+    case "robin": {
       const rf = ph.rf;
-      ctx.fillStyle = "rgba(0,0,0,0.15)";
+      ctx.fillStyle = "rgba(0,0,0,0.17)";
       ctx.beginPath();
-      ctx.ellipse(-3.3, -0.5 + rf * 1.4, 1.9, 0.85,
-                  -0.45 + rf * 0.5, 0, 6.3); ctx.fill();
+      ctx.ellipse(-3.6, -0.6 + rf * 1.6, 2.1, 0.9,
+                  -0.45 + rf * 0.55, 0, 6.3); ctx.fill();
       ctx.beginPath();
-      ctx.ellipse(3.3, -0.5 - rf * 1.4, 1.9, 0.85,
-                  0.45 - rf * 0.5, 0, 6.3); ctx.fill();
+      ctx.ellipse(3.6, -0.6 - rf * 1.6, 2.1, 0.9,
+                  0.45 - rf * 0.55, 0, 6.3); ctx.fill();
+      ctx.fillStyle = "#6b5a4a";         // the tail, behind
+      ctx.beginPath();
+      ctx.moveTo(-3.0, -0.2); ctx.lineTo(-6.6, -1.8);
+      ctx.lineTo(-6.4, 0.6); ctx.closePath(); ctx.fill();
       ctx.fillStyle = body;
-      ctx.beginPath(); ctx.ellipse(0, 0, 3.6, 3, 0, 0, 6.3); ctx.fill();
-      ctx.fillStyle = "#b25c3e";
-      ctx.beginPath(); ctx.ellipse(1.2, 0.8, 1.6, 1.2, 0, 0, 6.3); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(0, 0, 3.7, 3.1, 0, 0, 6.3); ctx.fill();
+      ctx.fillStyle = "#c9622f";         // the breast that names it
+      ctx.beginPath(); ctx.ellipse(1.4, 1.0, 1.9, 1.5, 0, 0, 6.3); ctx.fill();
       ctx.fillStyle = "#494f5c";
-      ctx.beginPath(); ctx.arc(-2.6, -1.6, 1.5, 0, 6.3); ctx.fill();
-      break;
-    case "tortoise":
-      ctx.fillStyle = "#7d8a5a";
-      ctx.beginPath(); ctx.ellipse(0, 2, 5.5, 3.6, 0, 0, 6.3); ctx.fill();
-      ctx.fillStyle = "#5d6b42";
-      ctx.beginPath(); ctx.ellipse(0, 0.5, 4, 2.6, 0, 0, 6.3); ctx.fill();
-      ctx.fillStyle = "#7d8a5a";
-      ctx.beginPath(); ctx.arc(5.4, 2.6, 1.6, 0, 6.3); ctx.fill();
-      break;
-    case "boar":
-      ctx.fillStyle = body;
-      ctx.beginPath(); ctx.ellipse(0, 1.5, 6.4, 4.2, 0, 0, 6.3); ctx.fill();
-      ctx.strokeStyle = "#4a3b35"; ctx.lineWidth = 1;
-      // a trot, too, when the boar moves
-      const bt = ph.bTrot;
+      ctx.beginPath(); ctx.arc(-2.4, -1.8, 1.5, 0, 6.3); ctx.fill();
+      ctx.fillStyle = "#d9a441";         // a beak, not a blob
       ctx.beginPath();
-      ctx.moveTo(-4 + bt, 5); ctx.lineTo(-4 + bt, 7);
-      ctx.moveTo(3 - bt, 5); ctx.lineTo(3 - bt, 7);
-      ctx.stroke();
-      ctx.fillStyle = "#3a2f2b";
-      ctx.beginPath(); ctx.arc(6.2, 0.5, 2.4, 0, 6.3); ctx.fill();
-      ctx.fillStyle = "#e8e3d2";
-      ctx.beginPath(); ctx.arc(7.4, 1.6, 1, 0, 6.3); ctx.fill();
+      ctx.moveTo(-1.2, -1.9); ctx.lineTo(0.1, -1.5); ctx.lineTo(-1.2, -1.1);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#12161c";
+      ctx.beginPath(); ctx.arc(-2.7, -2.1, 0.45, 0, 6.3); ctx.fill();
       break;
+    }
+    case "tortoise": {
+      leg(-3.6, 1.6, 2.0, 1.3, true);    // four stumpy legs
+      leg(3.0, 1.6, 2.0, 1.3, true);
+      ctx.fillStyle = "#7d8a5a";
+      ctx.beginPath(); ctx.ellipse(-4.6, 1.4, 1.6, 1.2, 0, 0, 6.3); ctx.fill();
+      leg(-4.4, 1.6, 2.2, 1.4, false);
+      leg(3.8, 1.6, 2.2, 1.4, false);
+      ctx.fillStyle = "#6f7c4c";         // the carapace, domed
+      ctx.beginPath(); ctx.ellipse(0, 0.6, 5.6, 3.9, 0, 0, 6.3); ctx.fill();
+      ctx.fillStyle = "#87935f";
+      ctx.beginPath(); ctx.ellipse(-0.6, -0.2, 4.2, 2.7, 0, 0, 6.3); ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.20)"; ctx.lineWidth = 0.8;
+      ctx.beginPath();                   // the plates
+      for (const s2 of [-1, 0, 1]) {
+        ctx.moveTo(s2 * 2.4, -3.0); ctx.lineTo(s2 * 2.4, 4.2);
+      }
+      ctx.stroke();
+      ctx.fillStyle = "#8d9a68";
+      ctx.beginPath(); ctx.arc(6.4, 2.0, 1.8, 0, 6.3); ctx.fill();
+      ctx.fillStyle = "#12161c";
+      ctx.beginPath(); ctx.arc(7.0, 1.6, 0.45, 0, 6.3); ctx.fill();
+      break;
+    }
     default:  // wolf
       ctx.fillStyle = body;
-      ctx.beginPath(); ctx.ellipse(0, 1, 6.6, 3.4, 0, 0, 6.3); ctx.fill();
-      ctx.beginPath(); ctx.arc(5.8, -1, 2.3, 0, 6.3); ctx.fill();
+      leg(-3.8, 2.2, 4.4, 1.1, true);
+      leg(3.2, 2.2, 4.2, 1.1, true);
+      ctx.fillStyle = body;
+      ctx.beginPath(); ctx.ellipse(0, 0.2, 6.8, 3.4, 0, 0, 6.3); ctx.fill();
+      ctx.fillStyle = FAR;
+      ctx.beginPath(); ctx.ellipse(0, 1.6, 5.6, 1.8, 0, 0, 6.3); ctx.fill();
+      leg(-4.8, 2.2, 4.6, 1.2, false);
+      leg(4.0, 2.2, 4.4, 1.2, false);
+      // the tail hangs low and heavy, and it is filled
+      ctx.fillStyle = body;
       ctx.beginPath();
-      ctx.moveTo(4.2, -3); ctx.lineTo(5.2, -6); ctx.lineTo(6.4, -3.4);
+      ctx.moveTo(-5.2, 0.0);
+      ctx.quadraticCurveTo(-9.6, 1.4, -8.8, 6.4);
+      ctx.quadraticCurveTo(-7.0, 2.8, -4.8, 1.4);
       ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = body; ctx.lineWidth = 1.4;
-      ctx.beginPath();
-      ctx.moveTo(-5, 0); ctx.quadraticCurveTo(-9, 2, -8, 7); ctx.stroke();
-      if (a.h) {                       // the wolf's hungry eye
+      ctx.fillStyle = body;
+      ctx.beginPath(); ctx.ellipse(6.0, -1.8, 3.0, 2.6, 0, 0, 6.3); ctx.fill();
+      ear(4.8, -3.6, 3.6, 1.5, 0.2);
+      ear(7.2, -3.4, 3.4, 1.5, 0.2);
+      muzzle(6.8, -1.2, 3.4, 1.2);
+      ctx.fillStyle = "#20242a";
+      ctx.beginPath(); ctx.arc(6.8, -2.2, 0.8, 0, 6.3); ctx.fill();
+      if (a.h) {                         // the wolf's hungry eye
         ctx.fillStyle = "#f2c96a";
-        ctx.beginPath(); ctx.arc(6.4, -1.3, 0.6, 0, 6.3); ctx.fill();
+        ctx.beginPath(); ctx.arc(6.9, -2.3, 0.45, 0, 6.3); ctx.fill();
       }
       break;
   }
