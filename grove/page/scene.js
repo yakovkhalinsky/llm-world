@@ -8,6 +8,7 @@ if (new URLSearchParams(location.search).has("plain"))
 const TW = 40, TH = 20;              // isometric tile diamond (2:1)
 const SIDE = 17;                     // slab thickness under the floor
 const PADX = 30, PADY = 72;          // margins head-/foot-room
+const PAD_TOP = 14, PAD_BOT = 14;    // the island's own gap to the window
 const cnv = $("scene");     // kept for the plain word-map and history
 let ctx = null;              // the recipes draw only inside captures
 const DPR = Math.max(1.5, window.devicePixelRatio || 1);
@@ -35,8 +36,18 @@ function fitCanvas(size) {
   VIEW.dw = CW; VIEW.dh = CH;
   FIT = Math.min(CW / SW, CH / SH);             // the world's fit scale
   PX = (CW - SW * FIT) / 2;                     // where the world sits
-  PY = (CH - SH * FIT) / 2;                     // on that canvas
   OX = SW / 2; OY = PADY;          // world-local, where the top corner lives
+  /* The island rides high: its own top corner — the back vertex, raised by
+     whatever the land does there — is set a small padding below the top of
+     the window, and the slack all falls below it, instead of being split
+     above and below. The scale still fits the whole box, so the land is
+     never cropped; when the window is too short to spare the climb the
+     clamp below keeps the plinth on the canvas instead. */
+  const topLift = (ST.s && ST.s.cells)
+      ? cornerField(ST.s)[0] * elevPx() : 0;
+  const topL = OY - TH / 2 - topLift;
+  const botL = OY + (size - 1) * TH + TH / 2 + SIDE;
+  PY = Math.min(PAD_TOP - topL * FIT, CH - PAD_BOT - botL * FIT);
   ENG.sceneBox = { w: SW, h: SH, fit: FIT, px: PX, py: PY };
   if (ENG && ENG.app)
     ENG.app.renderer.resize(Math.round(VIEW.dw), Math.round(VIEW.dh),

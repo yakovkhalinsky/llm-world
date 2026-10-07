@@ -288,9 +288,21 @@ const WORLD = `
   const expPX = vm.runInContext("PX", a.sandbox),
         expPY = vm.runInContext("PY", a.sandbox),
         expFIT = vm.runInContext("FIT", a.sandbox);
-  ok("the island sits centered, scaled to fit",
+  ok("the island rides high, scaled to fit",
      box.x === expPX && box.y === expPY && box.sx === expFIT,
      `pos (${expPX.toFixed(0)}, ${expPY.toFixed(0)}) × ${expFIT.toFixed(2)}`);
+  /* its top corner sits the small padding below the window's top, and the
+     plinth is still on the canvas below it */
+  const highB = vm.runInContext(`(() => {
+    const s = ST.s, w = s.size + 1, c = cornerField(s);
+    const top = vpos(0, 0)[1] - c[0] * elevPx();
+    const bot = OY + (s.size - 1) * TH + TH / 2 + SIDE;
+    return { topPx: PY + top * FIT, botPx: PY + bot * FIT, CH };
+  })()`, a.sandbox);
+  ok("the island hangs from the top of the window, plinth and all",
+     Math.abs(highB.topPx - 14) < 1.5 && highB.botPx <= highB.CH,
+     `top at ${highB.topPx.toFixed(1)}px of ${highB.CH}, ` +
+     `plinth at ${highB.botPx.toFixed(1)}px`);
   const earthW = vm.runInContext("ENG.earthSpr.width", a.sandbox);
   ok("the earth sprite spans the island's own box",
      Math.abs(earthW - 380) < 0.01, "width " + earthW);
