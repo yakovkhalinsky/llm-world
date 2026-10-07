@@ -167,10 +167,31 @@ class DB:
         return os.path.join(data_dir, "world_rules.json")
 
     def save_override(self, data_dir, rules_mod):
+        """The world's constitution, written whole and written at once.
+
+        Keys go out as strings — JSON has no others — which also settles
+        the one crash this could have: a mixed int/str table makes
+        `sort_keys` raise, and the raise arrived mid-write, so the file was
+        left truncated and the world could not read its own constitution
+        back. A world that had just been told its amendment was applied
+        would lose it on the next waking. Written to a neighbour and moved
+        into place, so the file is either the old law or the new one."""
         path = self.override_path(data_dir)
-        with open(path, "w") as f:
-            json.dump(rules_mod.R, f, indent=1, sort_keys=True,
+        tmp = path + ".tmp"
+
+        def strkeys(node):
+            if isinstance(node, dict):
+                return {str(k): strkeys(v) for k, v in node.items()}
+            if isinstance(node, (list, tuple)):
+                return [strkeys(v) for v in node]
+            return node
+
+        with open(tmp, "w") as f:
+            json.dump(strkeys(rules_mod.R), f, indent=1, sort_keys=True,
                       default=str)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
 
     def bio(self, oid):
         rows = self.con.execute(

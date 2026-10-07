@@ -1013,3 +1013,35 @@ merely plain, and all of them were the same animal in another colour.
   auto-tune on moves `animals.rabbit.hunger_drain` 0.8 → 0.75, marks the
   row `applied`, persists it to `world_rules.json`, refuses an unlawful
   path, and takes only the first of two amendments.
+
+- [x] **b52** *found by asking why the page disagreed with the ledger* — the
+  world could corrupt its own constitution, and it did. Chain:
+  1. `presentation.season_lines` lives under **integer** keys (0..3). JSON
+     object keys are strings, so a saved constitution reads back as "0".."3",
+     and `load_override`'s `merge` wrote them *alongside* the ints they
+     already matched — `dst.get("0")` is None when the key is `0` — leaving
+     that one table with four int keys and four string duplicates.
+  2. `save_override` dumped with `sort_keys=True`, which raises
+     `'<' not supported between instances of 'str' and 'int'` on a mixed
+     dict — **mid-write**. The file was left truncated at
+     `"season_lines": {`.
+  3. So the steward applied the rabbit amendment, the ledger recorded
+     `applied`, the persist failed, and `apply_results` swallowed it as a
+     "result handler error". The live world's `world_rules.json` became
+     unparseable: the next waking would have died in `load_override`, and
+     an amended world that could not read its own law back.
+  Found live, after the second reading had taken `animals.rabbit.cap`
+  24 → 16. Fix: `merge` re-uses the destination's int key when the source
+  brings the numeric string of one, so a seasonal table keeps its four
+  keys; `save_override` writes keys as strings (JSON has no others, so
+  nothing is lost) and writes **atomically** — to a neighbour file, fsync,
+  `os.replace` — so the file is always either the old law or the new one.
+  Recovery: the ledger is the record of what was taken, so the constitution
+  was rebuilt from the two `applied` rows (owl.cap 4, rabbit.cap 16) rather
+  than from the damaged file, which is kept at
+  `/tmp/world_rules.corrupt.json`. Check: a JSON override of a seasonal
+  table leaves `season_lines` with exactly `[0, 1, 2, 3]` and the override
+  still lands; three load → amend → save → reload cycles leave valid JSON
+  with no mixed table and a stable file size; the rebuilt constitution
+  loads back at owl 4 / rabbit 16; the gate is unmoved and the harnesses
+  pass.

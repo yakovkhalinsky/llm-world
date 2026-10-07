@@ -98,10 +98,20 @@ def load_override(path):
 
     def merge(dst, src):
         for k, v in src.items():
-            if isinstance(v, dict) and isinstance(dst.get(k), dict):
-                merge(dst[k], v)
+            # JSON object keys are strings, so a table that lives under int
+            # keys — the seasonal ones: season_lines, grass_regrow,
+            # rain_prob — comes back as "0".."3" and would be written
+            # alongside the ints it already has, leaving a dict with both.
+            # That mixed dict is what later makes `sort_keys` raise and a
+            # save_override die half-written.
+            key = k
+            if isinstance(k, str) and k.lstrip("-").isdigit() \
+                    and k not in dst and int(k) in dst:
+                key = int(k)
+            if isinstance(v, dict) and isinstance(dst.get(key), dict):
+                merge(dst[key], v)
             else:
-                dst[k] = copy.deepcopy(v)
+                dst[key] = copy.deepcopy(v)
 
     merge(R, given)
     return given
