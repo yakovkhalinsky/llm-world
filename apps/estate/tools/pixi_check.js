@@ -160,7 +160,32 @@ async function settle(n) {
    * lexical scope, not a property of the sandbox object — so the page's
    * globals have to be asked for inside the context, not read off it */
   const grab = expr => vm.runInContext(expr, ctx);
-  const Scene = grab('Scene'), S = grab('S');
+  const Scene = grab('Scene'), S = grab('S'), Panels = grab('Panels');
+
+  /* Two functions of one name *in one scope* is not an error — declarations
+   * hoist, so the later one silently wins and the earlier is dead code that
+   * still looks alive. A new `feed` was added in front of an old one that
+   * way, and the dead one ran for a day while every other check passed.
+   * Scoped the way the files are: one name twice in a file, or one name at
+   * column zero in two files, is a collision; `update` inside Scene and
+   * `update` inside Panels is not, because those are two closures. */
+  const perFile = {}, topLevel = {};
+  for (const f of FILES) {
+    const src = fs.readFileSync(path.join(HERE, f), 'utf8');
+    const seen = {};
+    for (const m of src.matchAll(
+        /^(\s*)(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/gm)) {
+      const name = m[2];
+      (seen[name] = seen[name] || []).push(f);
+      if (m[1] === '') (topLevel[name] = topLevel[name] || []).push(f);
+    }
+    const dup = Object.keys(seen).filter(k => seen[k].length > 1);
+    ok('no name is declared twice in ' + f, dup.length === 0, dup.join(', '));
+  }
+  const clash = Object.keys(topLevel).filter(k => topLevel[k].length > 1);
+  ok('no name is declared twice at the top level of the page',
+     clash.length === 0,
+     clash.map(k => k + ' in ' + topLevel[k].join(' + ')).join('; '));
   ok('the page loaded its scripts', !!Scene && !!S);
   if (!Scene || !Scene.dbg) {
     console.log('\n' + fails.length + ' FAILED');
@@ -235,8 +260,23 @@ async function settle(n) {
   /* --- the panels are filled, not blank -------------------------------- */
   ok('the header was written', els.when.textContent.indexOf('day ') === 0,
      els.when.textContent);
-  ok('the census lists every household kind',
-     (els.chron.innerHTML.match(/<li>/g) || []).length >= 1);
+  Panels.tab('census');
+  const censusHtml = els.chron.innerHTML;
+  ok('the census lists the household kinds',
+     ['family', 'couple', 'single', 'elder', 'flat_share']
+       .every(k => censusHtml.indexOf(k) >= 0), censusHtml.slice(0, 120));
+  Panels.tab('chron');
+
+  /* the day feed. The panel was reported dead while every check here
+   * passed, because nothing ever asserted what it *rendered* — only that
+   * the header and the census had been written. */
+  const feedHtml = els.chron.innerHTML;
+  console.log('  ---- the day feed holds: ' +
+              JSON.stringify(feedHtml.slice(0, 120)));
+  ok('the day feed renders one row per day',
+     (feedHtml.match(/<li/g) || []).length >= 5, feedHtml.slice(0, 160));
+  ok('the day feed is not the empty-state message',
+     feedHtml.indexOf('nothing has happened yet') < 0);
 
   console.log('\n' + (fails.length ? fails.length + ' FAILED: ' + fails.join('; ')
                                    : 'all ok'));

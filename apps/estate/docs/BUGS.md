@@ -373,3 +373,23 @@ about unread keys applies to the person writing them too.
   value and put the thing straight back, producing a round of failures and
   no events at all: the same "nothing happened and nothing said so" shape,
   caught this time by counting.)
+
+- [x] **h25** *class 2 & 5, and worse than h23 because it shipped* — **two
+  functions of one name, and the dead one ran.** The day feed was reported
+  fixed and was not: `panels.js` held **two** `function feed(st)`, the new
+  day-based one and the old events-based one, and a function declaration
+  hoists — so the *second*, which reads `st.events` and had been dead for a
+  day, was the one actually called, and it kept painting "nothing has
+  happened yet" over a panel whose data was sitting right there. The
+  duplicate came from the same slice-based insertion as h23's over-match:
+  `t[index(seasonName):index(feed)]` replaced *up to* the old feed and put
+  a new one in front of it, leaving the old one behind. And the reason it
+  shipped is the more useful part — **every check passed**. The harness
+  asserted that the header and the census had been written and never once
+  asserted what the feed *rendered*, and the census assertion matched
+  `<li>`, which the empty-state message also is, so it passed on the very
+  failure it was standing next to. Three faults in one afternoon's work,
+  all of the same family: **a check that cannot fail is not a check.** The
+  harness now asserts the feed's actual rows, the census assertion asks for
+  the census, and a new guard fails if any name is declared twice in a file
+  or twice at the top level of the page.

@@ -84,24 +84,6 @@ const Panels = (() => {
       '</li>').join('') : '<li>nothing has happened yet. it is early.</li>';
   }
 
-  function feed(st) {
-    const seen = (st.events || []).slice(-40).reverse();
-    const seenDays = {};
-    const rows = seen.map(e => {
-      seenDays[e.day] = 1;
-      const say = (SAY[e.kind] || (x => x.kind))(e);
-      return '<li><span class="d">d' + e.day + '</span> ' + esc(say) + '</li>';
-    });
-    /* when nothing is happening — and on a quiet estate most days nothing
-     * does — say so rather than showing an empty box */
-    $('chron').innerHTML = rows.length ? rows.join('') :
-      '<li>nothing has happened yet. it is early.</li>';
-  }
-
-  /* ---------------------------------------------------------- the table */
-
-  const TAB = { chron: 'chron', census: 'census', watch: 'watch' };
-
   function tab(name) {
     S.view = name;
     ['tabChron', 'tabCensus', 'tabWatch'].forEach(id =>
