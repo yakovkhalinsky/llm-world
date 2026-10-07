@@ -536,7 +536,7 @@ fates. Everything below lives on the path the gate cannot walk.
   with the weather; the gate is unmoved — 8 worlds × 900 weeks, all
   species persisting, the per-seed census lines byte-identical.
 
-- [ ] **b30** the fates never ended. `_apply_effect` wrote `ticks` for
+- [x] **b30** the fates never ended. `_apply_effect` wrote `ticks` for
   `drought` and `blight` (`grove/engine/effects.py:35,38`) and nothing
   ever decremented or pruned it: a blight cast in week 1 still read
   "6 more weeks" in week 31 and still burned 1.2 hp/week off every

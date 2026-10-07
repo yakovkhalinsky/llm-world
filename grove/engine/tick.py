@@ -6,7 +6,7 @@ from .weather import _roll_weather, _update_cells
 from .plants import build_light, _update_plants, _germinate
 from .animals import _update_animals
 from .population import _check_destinies, _recolonize, _migration
-from .effects import _apply_effect
+from .effects import _age_effects, _apply_effect
 
 
 def tick(world):
@@ -22,6 +22,9 @@ def tick(world):
         world["fawns_named"] = 0
         _migration(w=world, evs=evs, from_season=prev_season,
                    to_season=new_season)
+
+    # the older fates burn a week down before the new one lands
+    _age_effects(world)
 
     # queued operator decision lands at the tick boundary
     if world.get("pending_effect"):

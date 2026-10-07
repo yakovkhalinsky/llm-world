@@ -11,6 +11,18 @@ from .plants import _plants_in_cell
 from .util import _clamp, _clamp01, _region_set, _near_water, _pop
 
 
+def _age_effects(world):
+    """The fates burn down: every ongoing effect loses a week and is spent
+    when its ticks run out. Called before the new fate lands, so a fate
+    always receives the full span its strength bought."""
+    live = []
+    for e in world.get("effects", []):
+        e["ticks"] -= 1
+        if e["ticks"] > 0:
+            live.append(e)
+    world["effects"] = live
+
+
 def _apply_effect(world, effect, evs):
     """Apply a validated operator decision. Pure deterministic mutations."""
     t = world["tick"]
