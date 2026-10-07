@@ -24,29 +24,24 @@ def _tile(world, x, y, animals_at, plants_at):
     if c["terrain"] == "water":
         return "🌊"
     here = animals_at.get((x, y), ())
-    # flyers float above the canopy
+    # flyers float above the canopy — the pack says which species fly
     for a in here:
-        if a["sp"] in ("robin", "owl"):
+        if rules.R["animals"].get(a["sp"], {}).get("flyer"):
             return emoji(a["sp"], "·")
-    # canopy wins the tile from ground animals
+    # canopy wins the tile from ground animals; a fruiting bush shows fruit
     for p in plants_at.get((x, y), ()):
         if p["stage"] in ("mature", "old"):
+            if p.get("berries"):
+                return "🫐"
             return rules.R["plants"][p["sp"]].get("emoji", "🌳")
     for a in here:
         return emoji(a["sp"], "·")
-    # understory
-    top = None
-    for p in plants_at.get((x, y), ()):
-        if p["stage"] == "log":
-            return "🪵"
-        if p["stage"] == "sapling":
-            top = "🌱"
-        elif p["sp"] == "berry":
-            top = "🫐" if p.get("berries") else "🍀"
-        elif p["sp"] == "fern" and top != "🌱":
-            top = "🌿"
-    if top:
-        return top
+    # the understory, where no canopy stands: a fallen trunk, then seedlings
+    stages = {p["stage"] for p in plants_at.get((x, y), ())}
+    if "log" in stages:
+        return "🪵"
+    if "sapling" in stages:
+        return "🌱"
     if c["mushroom"]:
         return "🍄"
     if c["carcass"]:

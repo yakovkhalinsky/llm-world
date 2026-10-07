@@ -567,3 +567,23 @@ fates. Everything below lives on the path the gate cannot walk.
   once the flock has room, `saguaro` and `palo-verde` falls are news
   while `sagebrush` is not, and a junk migration species still falls
   back to `robin` on the grove.
+
+- [x] **b32** the word-map printed words. When the packs went in, the
+  grove's plant table was given `emoji` values copied from its *shape*
+  list — `'pine'`, `'leaf'`, `'fern'`, `'berry'` — and `render._tile`
+  reads that field straight (`grove/render.py:34`), so the terminal's
+  map, `grove map` and the `?plain` fallback page have been spelling
+  those four words across the grove's tiles instead of drawing it. The
+  desert was never wrong: its pack holds real emoji. The grove's now
+  does too (🌲 🌳 🌿 🍀) — so a mature fern reads as a fern rather than
+  as the generic 🌳 it fell back to before the packs, which is the one
+  visible change. The same pass took the tile's other hardcodings to
+  the pack: flying is now `animals.*.flyer` rather than the literal
+  `owl`/`robin` (a desert's shrike and sandgrouse float over the canopy
+  as they should), a fruiting bush shows 🫐 — the branch that would
+  have drawn it was unreachable, every mature plant returning at the
+  canopy loop first — and the dead `berry`/`fern` limbs under it are
+  gone. Check: both biomes render glyph for glyph, a fruiting berry
+  reads 🫐 and a bare one 🍀, a log 🪵, a robin over a canopy 🐦, a
+  desert shrike over a saguaro 🐦 too; and the gate is unmoved (the
+  engine never reads `plants.*.emoji`).
