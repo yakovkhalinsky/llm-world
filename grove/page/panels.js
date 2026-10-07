@@ -84,8 +84,11 @@ $("tabTune").onclick = async () => {
      keeper to press, and the accept/leave buttons belong to the
      offers-only flow (`--no-auto-tune`). */
   const auto = !!s.auto_tune;
+  // both ends of the move: a steward's worth is in what it changed FROM
+  const moveTo = (was, now) =>
+      (was === null || was === undefined) ? `→ ${now}` : `${was} → ${now}`;
   const rows = (s.pending || []).map(p =>
-    `<li><b>${p.rule}</b> → ${p.value}` +
+    `<li><b>${p.rule}</b> ${moveTo(p.was, p.value)}` +
     `<div class="when">wk${p.week} — ${p.why}</div>` +
     (auto ? "" :
       `<div><button class="mini" data-a="accept" data-id="${p.id}">⚔ accept</button> ` +
@@ -105,7 +108,7 @@ $("tabTune").onclick = async () => {
   $("tune").innerHTML = last + head + (rows.join("") ||
       "<div class='when'>the steward offers nothing at the moment.</div>");
   const hrows = (s.history || []).slice(0, 8).map(h =>
-    `<li style="opacity:.75"><b>${h.rule}</b> → ${h.value}` +
+    `<li style="opacity:.75"><b>${h.rule}</b> ${moveTo(h.was, h.value)}` +
     ` <span class="when">${h.status} · wk${h.week}</span></li>`);
   if (hrows.length)
     $("tune").innerHTML += "<div style='margin-top:8px'><i style='color:var(--dim);font-size:12px'>the world's amendments</i></div>" +

@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS vec     (key TEXT PRIMARY KEY, tick INTEGER,
                                     text TEXT, vec TEXT, dim INTEGER);
 CREATE TABLE IF NOT EXISTS proposals (id INTEGER PRIMARY KEY AUTOINCREMENT,
                                     week INTEGER, status TEXT, rule TEXT,
-                                    value REAL, why TEXT, verdict TEXT);
+                                    value REAL, was REAL, why TEXT,
+                                    verdict TEXT);
 """
 
 
@@ -36,7 +37,16 @@ class DB:
         self.path = path
         self.con = sqlite3.connect(path, timeout=30, check_same_thread=False)
         self.con.executescript(SCHEMA)
+        self._migrate()
         self.con.commit()
+
+    def _migrate(self):
+        """Columns added since a world was last opened. `IF NOT EXISTS`
+        leaves an older table alone, so they arrive here."""
+        have = {r[1] for r in
+                self.con.execute("PRAGMA table_info(proposals)").fetchall()}
+        if "was" not in have:                 # what an amendment replaced
+            self.con.execute("ALTER TABLE proposals ADD COLUMN was REAL")
 
     def close(self):
         try:
@@ -139,11 +149,15 @@ class DB:
             (oid, tick, key))
         self.con.commit()
 
-    def add_amendment(self, week, status, rule, value, why, verdict):
+    def add_amendment(self, week, status, rule, value, why, verdict,
+                      was=None):
+        """`was` is the value in force when the amendment was made — the
+        live ruleset moves on, so an amended rule's old value cannot be
+        recovered from it afterwards."""
         self.con.execute(
-            "INSERT INTO proposals (week, status, rule, value, why, "
-            "verdict) VALUES (?, ?, ?, ?, ?, ?)",
-            (week, status, rule, value, (why or "")[:200],
+            "INSERT INTO proposals (week, status, rule, value, was, why, "
+            "verdict) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (week, status, rule, value, was, (why or "")[:200],
              (verdict or "")[:200]))
         self.con.commit()
 

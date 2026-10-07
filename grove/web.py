@@ -345,11 +345,12 @@ def cmd_web(args):
                     hist = reviewer.history(g.db, 12)
                 self._send(200, json.dumps({
                     "pending": [{"id": i, "week": wk, "rule": rp,
-                                 "value": v, "why": wy, "status": st}
-                                for i, wk, rp, v, wy, st in props],
+                                 "value": v, "why": wy, "status": st,
+                                 "was": ws}
+                                for i, wk, rp, v, wy, st, ws in props],
                     "history": [{"id": i, "week": wk, "status": s,
-                                 "rule": rp, "value": v}
-                                for i, wk, s, rp, v in hist],
+                                 "rule": rp, "value": v, "was": ws}
+                                for i, wk, s, rp, v, ws in hist],
                     "auto_tune": bool(rules.R["review"].get("auto_tune")),
                     "current": {sp: t.get("cap") for sp, t in
                                 sorted(rules.R["animals"].items())},

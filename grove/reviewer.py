@@ -211,14 +211,14 @@ def pending(db, current_week=0):
         "WHERE status='offered' AND week < ?", (current_week - 24,))
     db.con.commit()
     return db.con.execute(
-        "SELECT id, week, rule, value, why, status FROM proposals "
+        "SELECT id, week, rule, value, why, status, was FROM proposals "
         "WHERE status IN ('pending','offered') ORDER BY id DESC "
         "LIMIT 3").fetchall()
 
 
 def history(db, n=20):
     return db.con.execute(
-        "SELECT id, week, status, rule, value FROM proposals "
+        "SELECT id, week, status, rule, value, was FROM proposals "
         "ORDER BY id DESC LIMIT ?", (n,)).fetchall()
 
 
@@ -233,11 +233,12 @@ def record(db, world, proposals, verdict, auto):
     applied_rule = None
     for prop in (proposals or [])[:2]:
         ok, value, reason = validate(prop)
+        was = _value_at(str(prop.get("rule", "")))   # read before it moves
         why = str(prop.get("why", ""))[:160] +             (f" [{reason}]" if reason else "")
         if not ok:
             db.add_amendment(world["tick"], "refused", str(
                 prop.get("rule"))[:80], prop.get("value"),
-                f"refused: {reason}", verdict)
+                f"refused: {reason}", verdict, was)
             out.append((False, prop.get("rule"), None, reason))
             continue
         # the row goes in first, always: the ledger keeps every reading,
@@ -246,7 +247,7 @@ def record(db, world, proposals, verdict, auto):
         # it could not do before, because no row was ever written and the
         # world changed its own constitution invisibly.
         db.add_amendment(world["tick"], "offered", prop["rule"], value,
-                         why, verdict)
+                         why, verdict, was)
         if auto and applied_rule is None and \
                 apply_amendment(db, rules, prop["rule"], value):
             applied_rule = prop["rule"]
