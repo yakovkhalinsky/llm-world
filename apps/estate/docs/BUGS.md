@@ -67,3 +67,98 @@ fine and the numbers looked right.
   the whole package including `rules.py`, where the keys are *defined*, so
   a definition counted as a reader and it reported nothing. A check that
   lies about what it checks is worse than none.)
+
+---
+
+## Phases 1–2 — needs, places, and the walk
+
+The engine ran, nobody crashed, and the plan drew. Every fault below was
+found by **measuring the year** — a simulated 364 days on a throwaway
+world — and asking the one question phase 1 exists to answer: *do the
+needs actually get met?* They did not, five times over.
+
+- [x] **h6** *class 8* — **a place's quality was read as an absolute
+  instead of a share of the need.** A bench affords `company: 0.25`, and
+  the code spent it as 0.25 of the need — against a day that adds 1.1. No
+  number of visits could ever keep up, so food, company and play sat pinned
+  at the 4.0 ceiling all year and the estate was, in the only sense that
+  matters, starving. The quality is a *fraction of a whole need*: one visit
+  to the shop is most of a meal, one visit to the bench is a quarter of an
+  afternoon's company. Fix: `restore = need_max × arrive_restore × quality`,
+  the same expression for a flat as for a place. Check: after a year, every
+  need's mean sits under a third of its ceiling.
+
+- [x] **h7** *class 1 & 8, and the worst of the set* — **the need was
+  never chosen; the place was.** The resident was supposed to pick the
+  need that pressed hardest and *then* the best place for it — that is what
+  `top_need` was written for. `update_residents` never called it: it scored
+  every (place, need) pair by the place's own quality and took the best
+  pair. Since a need's urgency was nowhere in that score, **the nearest
+  bench always beat a meal**, and the estate ate only when eating happened
+  to be convenient. `top_need` was defined, correct, and dead — the
+  unread-value class, this time with the value being a whole function.
+  Fix: `ranked_needs`, a need is chosen by pressure first and a place
+  second, falling to the next need down when the top one has nowhere to go.
+  Check: no need is ever the top pressure while sitting at its ceiling.
+
+- [x] **h8** *class 1* — **a masked need drained for the people it was
+  masked from.** `play` is a child's need: `pressure` refuses it for an
+  adult, so an adult can never satisfy it — but `drain` added it to every
+  resident every phase. Thirty-four adults carried a play need of 4.0
+  forever, a number nothing could ever spend. Fix: a need whose `roles`
+  exclude you does not drain for you. Check: no resident carries a need
+  their own role cannot meet.
+
+- [x] **h9** *class 15* — **the plan placed two needs where nobody could
+  reach them.** The shop stood at the courtyard's west end and the
+  playground at its east, so the far blocks' doors were 22 cells from food
+  and 18 from play — past `engine.scan`, which is the filter that decides
+  whether a place is a candidate at all. Fourteen residents could never eat
+  and twenty-five could never play, whatever they chose, and the need just
+  sat at its ceiling. Two surfaces — a need and the place that serves it —
+  that never meet. Fix: the shop and the playground stand in the middle of
+  the courtyard, where an estate's amenities stand; and `gen` now **checks
+  reach**: every door must reach a place affording every need it serves,
+  within `scan`, or the plan is refused by name. Check: the reach check
+  runs at generation on every seed.
+
+- [x] **h10** *class 15 & 8* — **the walk could not get around a wall, and
+  an arrival was reported as a failure.** Grove's `step_toward` is greedy:
+  it steps toward its target and there was never a wall to argue with.
+  The estate has blocks, and a building is impassable — so a resident whose
+  target lay behind one gave up and stood still. Worse, the first way round
+  that suggested itself was the cell it had just come from, so a walk beside
+  the shop oscillated between two cells for forty steps and never passed
+  it. Three children stood above the shop for 728 days and never ate. And
+  separately: a walk that arrived on its final step fell out of the loop and
+  returned *False*, so the visit did not count. Fix: going round is a
+  committed maneuver that holds its side until the way opens, and the walk
+  checks arrival after the loop. Check: from all four doors of all four
+  blocks, a walk reaches the shop and the playground.
+
+- [x] **h11** *class 1, in miniature* — **a container with no reader.**
+  `gen` wrote `st["names"] = {}`, which nothing ever read, while the pack's
+  `presentation.resident_names` — a list of forty-seven names — was read by
+  nothing at all. A dict that looks like state and a list that looks like
+  a feature, both inert. Fix: people are named at generation from the pack,
+  and the empty dict goes. Check: every resident has a name, and the audit's
+  unread-key count drops by one.
+
+- [x] **h12** *class 11 & 12, and the best of the set* — **the mending
+  shrank exactly as the wear grew, so the busiest place on the estate could
+  never mend.** `condition` fell by `decay × (1 + busy_wear × uses)` and
+  rose by `repair / (1 + uses)`: the more a thing was used, the faster it
+  wore *and* the slower it mended, which is a one-way ratchet to zero for
+  anything used often enough. Nothing on the estate is used oftener than
+  the shop — and food has exactly one source. So the shop sat permanently
+  at condition 0.000, and the estate ate on alternate days: everybody ate
+  until the shop broke, the shop mended a hair overnight (0.0198), and
+  everybody ate again. A metronome, three days long, built out of the very
+  loop that exists to prevent one — and invisible in every summary, because
+  the *average* need over the year looked like a mildly hungry estate
+  rather than a clock. Found by watching the need day by day instead of at
+  the end. Fix: mending grows with the damage (`repair × (1 - condition)`),
+  so every fixture has a real level — the busy ones lower — and a thing
+  used past what the estate can keep up with still fails, which keeps the
+  attrition loop the design wanted. Check: the busiest fixture's condition
+  settles above zero, and the estate's food does not alternate.

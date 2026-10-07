@@ -9,4 +9,5 @@ caller is Grove's b41 in miniature.
 """
 
 from .weather import roll_weather, update_wet_streak, wetness
+from . import places, residents, trees
 from .tick import tick

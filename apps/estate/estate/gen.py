@@ -88,25 +88,34 @@ def generate(seed: int, width: int = None, height: int = None,
         _rect(cells, door[0], min(door[1], edge),
               door[0], max(door[1], edge), "path")
 
-    # --- the shop, on the courtyard's edge ------------------------------
+    # --- the shop and the playground, together, in the middle -----------
+    # Where these stand is not decoration. A need is only served if the
+    # place that serves it can be *reached*: with the shop at the west end
+    # of the courtyard and the playground at the east, the far blocks were
+    # 22 cells from food and 18 from play — past the scan — so a whole
+    # corner of the estate could not eat, whatever it chose, and the need
+    # sat at its ceiling all year. Both go in the middle now, and the plan
+    # is checked for reach below rather than trusted.
+    mid = (cx0 + cx1) // 2
     shop_b = None
-    if g["shop"] and cx0 - 4 >= rw + rw:       # four cells clear of the ring
-        sx, sy = cx0 - 4, cy0                 # hard against the courtyard
-        _rect(cells, sx, sy, sx + 3, sy + 3, "building")
+    if g["shop"]:
+        sx, sy = mid - 1, cy0
+        _rect(cells, sx, sy, sx + 2, sy + 1, "building")
         bid = st["next_id"]; st["next_id"] += 1
-        shop_b = W.new_building(bid, "The Shop", "shop", sx, sy, 4, 4, 1,
-                                (sx + 4, sy + 1))    # open on the courtyard
+        shop_b = W.new_building(bid, "The Shop", "shop", sx, sy, 3, 2, 1,
+                                (sx + 1, sy + 2))    # open on the walkway
         st["buildings"][str(bid)] = shop_b
 
     # --- the pond, and the playground -----------------------------------
+    # the pond sits in the courtyard's west, clear of the doors' paths
     if g["pond"]:
-        px, py = cx0 + 8, cy0 + 1
-        _rect(cells, px, py, px + 3, py + 2, "water")
+        px, py = cx0, cy1 - 1
+        _rect(cells, px, py, px + 3, py + 1, "water")
     play_at = None
-    if g["playgrounds"] and cx1 - 8 > cx0 + 12:
-        px, py = cx1 - 5, cy0
-        _rect(cells, px, py, px + 3, cy1, "play")
-        play_at = (px + 1, py + 1)
+    if g["playgrounds"]:
+        px, py = mid + 2, cy0
+        _rect(cells, px, py, px + 3, py + 1, "play")
+        play_at = (px, py)
 
     # --- the fixtures ---------------------------------------------------
     st["fixtures"] = {}
@@ -146,8 +155,6 @@ def generate(seed: int, width: int = None, height: int = None,
 
     plan = (("bench", edge[:g["benches"]]),
             ("lamp", edge[g["benches"]:g["benches"] + g["lamps"]]),
-            ("bin", edge[g["benches"] + g["lamps"]:
-                         g["benches"] + g["lamps"] + g["bins"]]),
             ("table", inner[:g["tables"]]))
     placed_counts = {}
     for kind, spots in plan:
@@ -181,7 +188,7 @@ def generate(seed: int, width: int = None, height: int = None,
     got = {}
     for f in st["fixtures"].values():
         got[f["kind"]] = got.get(f["kind"], 0) + 1
-    asked = {"bench": g["benches"], "lamp": g["lamps"], "bin": g["bins"],
+    asked = {"bench": g["benches"], "lamp": g["lamps"],
              "table": g["tables"], "tree": g["trees"],
              "playground": g["playgrounds"] if play_at else 0,
              "shop": 1 if shop_b else 0}
@@ -192,12 +199,13 @@ def generate(seed: int, width: int = None, height: int = None,
             f"the recipe asks for more than this plan can hold: {short} "
             f"(asked, placed) — widen the plan or lower the recipe")
 
+    _check_reach(st, cells, buildings)
+
     st["cells"] = cells
 
     # --- the first households --------------------------------------------
     st["households"] = {}
     st["residents"] = {}
-    st["names"] = {}
     units = [u for b in buildings for u in b["units"]
              if st["units"][str(u)]["floor"] <= 4]      # ground floors fill
     rng.shuffle(units)
@@ -220,6 +228,61 @@ def generate(seed: int, width: int = None, height: int = None,
     return st
 
 
+def _reachable(cells, start, goal, limit):
+    """Can a walker get from one passable cell to another within `limit`
+    steps? Water is not walked on and a building is entered at its door,
+    never crossed, so this is a flood over the ground that is walkable."""
+    if start == goal:
+        return True
+    seen = {start}
+    frontier = [start]
+    for _ in range(limit):
+        nxt = []
+        for x, y in frontier:
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                p = (x + dx, y + dy)
+                if p in seen:
+                    continue
+                if not (0 <= p[0] < len(cells[0]) and 0 <= p[1] < len(cells)):
+                    continue
+                if p == goal:
+                    return True
+                if rules.R["sites"][cells[p[1]][p[0]]["site"]]["walk"] is None:
+                    continue
+                seen.add(p)
+                nxt.append(p)
+        frontier = nxt
+    return False
+
+
+def _check_reach(st, cells, buildings):
+    """Every door must be able to reach a place that affords each need the
+    law claims the estate serves.
+
+    This is the check whose absence let a corner of the estate starve: the
+    shop existed, the need existed, and nothing asked whether the two could
+    ever meet. It is the plan's own promise, and it fails named rather than
+    being discovered as a need pinned at its ceiling a year later.
+    """
+    scan = rules.R["engine"]["scan"]
+    doors = [tuple(b["door"]) for b in buildings]
+    for need, spec in rules.R["needs"].items():
+        if spec.get("from") == "noise":
+            continue                     # quiet is met at home, or nowhere
+        goals = [(f["x"], f["y"]) for f in st["fixtures"].values()
+                 if rules.R["fixtures"][f["kind"]]["affords"].get(need)]
+        if not goals:
+            raise ValueError(
+                f"this plan places nothing that affords {need!r} — the need "
+                f"is in the law and nothing in the estate can meet it")
+        for d in doors:
+            if not any(_reachable(cells, d, g, scan) for g in goals):
+                raise ValueError(
+                    f"the door at {d} cannot reach anywhere affording "
+                    f"{need!r} within {scan} steps — nobody in that building "
+                    f"can meet it, whatever they choose")
+
+
 def _move_in(st, rng, kind, unit):
     """One household takes a flat: the people are made here, and the unit
     remembers when they came."""
@@ -240,6 +303,7 @@ def _move_in(st, rng, kind, unit):
         if kids > 0:
             kids -= 1
         r = W.new_resident(rid, hid, age)
+        r["name"] = W.name_for(rng)
         r["where"]["unit"] = unit["id"]
         r["mobility"] = spec.get("mobility", 1.0)
         st["residents"][str(rid)] = r

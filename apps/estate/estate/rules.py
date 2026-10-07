@@ -32,14 +32,48 @@ R = {
     # what the engine itself owns: the numbers that are the machinery
     # rather than the world, and that no pack should have to restate
     "engine": {
-        "scan": 16,              # how far a resident will look for a place
-        "steps_per_phase": 6,    # cells a resident covers in one phase
+        # How far a resident will look for a place. It is a *backstop*
+        # against an absurdly large plan, not a description of how far
+        # anyone will walk: distance is already priced by `travel_cost`,
+        # and a hard cliff at a number smaller than the estate meant a
+        # resident 23 cells from the shop had no food candidate at all —
+        # so food was never the chosen need, and they rested on the tree at
+        # their own feet for the rest of the year while it climbed to 4.0.
+        # A cliff in a distance is the same fault as a cliff in a band.
+        "scan": 48,
+        "steps_per_phase": 14,   # cells a resident covers in one phase.
+                                 # A day is five phases, and a day has to
+                                 # hold the walk out, the doing of a thing
+                                 # and the walk home — at nine the round
+                                 # trip to the shop ate four of the five
+                                 # and a far resident managed one errand a
+                                 # day, so every need drifted up together
         "congestion": 1.0,       # k in capacity/(capacity + k*occupancy)
-        "arrive_restore": 1.0,   # how much of a need one visit lifts
-        "stress_line": 2.6,      # pressure at which a person starts to fray
+        "arrive_restore": 1.0,   # what share of the *whole* need one
+                                 # visit lifts, as a multiplier on
+                                 # need_max: a place's quality is a
+                                 # fraction of a need, not a crumb
+                                 # off it, or feeding can never keep
+                                 # up with a day
         "stress_decay": 0.90,    # how fast that frays away again
-        "busy_wear": 3.0,        # how much harder use wears a fixture
-        "repair": 0.0,           # set by a fate; residents do not yet mend
+        "busy_wear": 2.0,        # how much harder use wears a fixture
+        "repair": 0.075,         # how fast damage is made good, as a
+                                 # fraction of the damage: with the wear
+                                 # above, the busiest place on the estate
+                                 # settles near half-worn rather than at
+                                 # zero, and a broken thing is whole again
+                                 # in about a fortnight
+
+        # -- the choosing
+        "urge_floor": 0.35,      # a need this faint is not worth a trip
+        "need_max": 4.0,        # a need saturates here: desperate
+        "stress_at": 3.2,       # fraying begins at this need
+        "travel_cost": 0.055,    # what one cell of walking is worth giving up
+        "stair_step": 0.35,      # one floor, in steps out of the phase
+        "habit_bonus": 0.22,     # going back where you went last time
+        "whim": 0.18,            # the day's own small variation
+        "home_rest": 0.62,       # what a flat is worth for rest and quiet
+        "quiet_gain": 0.09,      # how fast noise fills the need for quiet
     },
 
     "pacing": {

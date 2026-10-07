@@ -103,7 +103,8 @@ def new_state(seed: int, width: int, height: int) -> dict:
 
 
 def new_cell(site: str) -> dict:
-    return {"site": site, "wear": 0.0, "puddle": 0, "shade": 0.0, "noise": 0.0}
+    return {"site": site, "wear": 0.0, "puddle": 0, "shade": 0.0,
+            "noise": 0.0, "light": 0.0}
 
 
 def new_building(bid: int, name: str, kind: str, x: int, y: int,
@@ -132,16 +133,36 @@ def new_resident(rid: int, household, age: int) -> dict:
             "needs": {n: 0.0 for n in rules.R["needs"]},
             "where": {"mode": "in", "unit": None, "x": 0, "y": 0,
                       "fixture": None},
-            "habit": {}, "mobility": 1.0, "stress": 0.0, "tag": None}
+            "habit": {}, "mobility": 1.0, "stress": 0.0, "tag": None,
+            # which way this walk is going round a wall it cannot cross;
+            # None when it is walking freely. Read and written only by the
+            # walk, and cleared the moment the way opens.
+            "side": None}
 
 
 def new_fixture(fid: int, kind: str, x: int, y: int) -> dict:
-    return {"id": fid, "kind": kind, "x": x, "y": y, "condition": 1.0,
-            "occupants": [], "use_total": 0,
-            "stock": rules.R["fixtures"][kind].get("stock", 0),
-            # a tree carries the plant law; nothing else grows
-            "sp": kind if rules.R["fixtures"][kind].get("living") else None,
-            "age": 0, "stage": None, "hp": 10.0, "name": None}
+    """A placed thing. `condition` is its health — a bench's slats and a
+    tree's life are the same number, worn by the same rule."""
+    f = {"id": fid, "kind": kind, "x": x, "y": y, "condition": 1.0,
+         "occupants": [], "uses_today": 0, "use_total": 0}
+    if rules.R["fixtures"][kind].get("stock"):
+        f["stock"] = rules.R["fixtures"][kind]["stock"]
+    if rules.R["fixtures"][kind].get("living"):
+        f["age"] = 0
+    return f
+
+
+def name_for(rng) -> str:
+    """A person's name, drawn from the pack's own list.
+
+    The estate is small enough that people are named rather than numbered,
+    and a name is most of what makes a card read as a life instead of a
+    row. The list lives in the pack with the rest of the world's words —
+    a page that invented its own names would be a second copy of a fact
+    the world already owns (grove b21/b34).
+    """
+    names = rules.R["presentation"].get("resident_names") or ()
+    return rng.choice(tuple(names)) if names else None
 
 
 def role_of(age: int) -> str:

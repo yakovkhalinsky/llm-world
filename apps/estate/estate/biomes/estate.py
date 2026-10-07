@@ -42,13 +42,24 @@ SPEC = {
     # but *imposed* by the noise you are standing in, which is what makes
     # it the one need a lively estate can never fully meet.
     "needs": {
-        "food":    {"urge": 1.0, "rate": 0.30, "glyph": "🍞"},
-        "rest":    {"urge": 0.9, "rate": 0.26, "glyph": "🛏"},
-        "company": {"urge": 0.7, "rate": 0.22, "glyph": "👥"},
+        # `phases` is what gives a day its shape rather than its length: an
+        # unlisted phase counts 1.0, so food leans on the mealtimes, the
+        # children come out after lunch, and the estate wants its quiet at
+        # night — which is also when the roads are quietest, so it is
+        # satisfiable then and hardly ever during the day
+        "food":    {"urge": 1.0, "rate": 0.30, "glyph": "🍞",
+                    "phases": {"dawn": 1.7, "morning": 1.3,
+                               "evening": 1.7, "night": 0.4}},
+        "rest":    {"urge": 0.9, "rate": 0.26, "glyph": "🛏",
+                    "phases": {"afternoon": 0.8, "night": 2.3}},
+        "company": {"urge": 0.7, "rate": 0.22, "glyph": "👥",
+                    "phases": {"afternoon": 1.2, "evening": 1.7}},
         "play":    {"urge": 0.8, "rate": 0.34, "glyph": "🎈",
-                    "roles": ("child",)},
+                    "roles": ("child",),
+                    "phases": {"afternoon": 1.9, "evening": 1.1,
+                               "night": 0.1}},
         "quiet":   {"urge": 0.6, "rate": 0.00, "glyph": "🤫",
-                    "from": "noise"},
+                    "from": "noise", "phases": {"night": 1.9}},
     },
 
     # ------------------------------------------------------ the fixtures
@@ -58,21 +69,25 @@ SPEC = {
     # governor, the heir of Grove's density-dependent hunting).
     "fixtures": {
         "bench":      {"affords": {"rest": 0.55, "company": 0.25},
-                       "capacity": 2, "decay": 0.0040, "glyph": "🪑"},
+                       "capacity": 2, "decay": 0.00030, "loud": 0.015,
+                       "glyph": "🪑"},
         "playground": {"affords": {"play": 0.95},
-                       "capacity": 8, "decay": 0.0060, "glyph": "🛝"},
+                       "capacity": 12, "decay": 0.00040, "loud": 0.055,
+                       "glyph": "🛝"},
         "table":      {"affords": {"company": 0.60, "rest": 0.20},
-                       "capacity": 4, "decay": 0.0030, "glyph": "♟"},
+                       "capacity": 4, "decay": 0.00025, "loud": 0.030,
+                       "glyph": "♟"},
         "shop":       {"affords": {"food": 0.85, "company": 0.40},
-                       "capacity": 6, "decay": 0.0020, "stock": 40,
-                       "glyph": "🏪"},
-        "lamp":       {"affords": {"company": 0.15},
-                       "capacity": 0, "decay": 0.0015, "glyph": "💡"},
-        "bin":        {"affords": {}, "capacity": 0, "decay": 0.0010,
-                       "glyph": "🗑"},
+                       "capacity": 12, "decay": 0.00020, "stock": 150,
+                       "restock": 90, "loud": 0.035, "glyph": "🏪"},
+        # a lamp affords nothing by itself: it lights, and what it lights
+        # is worth more in the evening. A place that affords nothing but
+        # state is decoration pretending to be a place.
+        "lamp":       {"affords": {}, "capacity": 0, "decay": 0.00012,
+                       "light": 0.55, "glyph": "💡"},
         "tree":       {"affords": {"quiet": 0.35, "rest": 0.15},
-                       "capacity": 4, "decay": 0.0008, "glyph": "🌳",
-                       "living": True},
+                       "capacity": 4, "decay": 0.00006, "storm_fall": 0.02,
+                       "glyph": "🌳", "living": True},
     },
 
     # ------------------------------------------------------ the households
@@ -113,7 +128,6 @@ SPEC = {
         "tables": 2,
         "trees": 16,
         "lamps": 9,
-        "bins": 6,
         "shop": True,
         "pond": True,
         "founding": {"family": 4, "couple": 3, "single": 4,
