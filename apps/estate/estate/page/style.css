@@ -130,6 +130,9 @@ body.plain #scene { display: none; }
 .row { display: flex; gap: 6px; flex-wrap: wrap; }
 .zoomrow { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
 .zoomrow .hint { font-size: 11px; color: var(--dim); margin-left: 4px; }
+.speedrow { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+.speedrow .hint { font-size: 11px; color: var(--dim); }
+.speedrow #speeds { display: flex; gap: 4px; }
 
 button {
   font: inherit;

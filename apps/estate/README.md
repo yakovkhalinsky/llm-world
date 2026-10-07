@@ -73,7 +73,13 @@ reason.
 python3 tools/balance.py       # the gate: 8 estates, years, every law
 ```
 
-The dashboard is one hand-written page and no build step: a background
+The dashboard runs the estate at a pace you choose — `a day every 60s`,
+`20s` or `5s`, set in the control panel and owned by the pack
+(`pacing.day_seconds`), not by the page. At the slowest, one of the day's
+five phases lasts twelve seconds and you can follow a single person out of
+their door and back; at the fastest the phases blur into a timelapse.
+
+It is one hand-written page and no build step: a background
 thread ticks the estate and the page draws it, gliding each resident from
 where they were yesterday to where they are today, and turning the light
 across the plan as the five phases pass. PixiJS is **vendored** beside the

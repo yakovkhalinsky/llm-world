@@ -192,8 +192,8 @@ def build_parser():
     sp.add_argument("--force", action="store_true")
     sp.set_defaults(func=cmd_new)
     sp = sub.add_parser("run", help="watch the estate live")
-    sp.add_argument("--tick-seconds", type=float, default=3.0,
-                    help="wall seconds per day")
+    sp.add_argument("--tick-seconds", type=float, default=None,
+                    help="wall seconds per day (default: the middle pace)")
     sp.set_defaults(func=cmd_run)
     sp = sub.add_parser("step", help="advance N days")
     sp.add_argument("n", type=int, nargs="?", default=7)
@@ -206,7 +206,8 @@ def build_parser():
     sp.set_defaults(func=cmd_status)
     sp = sub.add_parser("web", help="serve the dashboard")
     sp.add_argument("--port", type=int, default=8787)
-    sp.add_argument("--tick-seconds", type=float, default=6.0)
+    sp.add_argument("--tick-seconds", type=float, default=None,
+                    help="wall seconds per day (default: the middle pace)")
     sp.add_argument("--public", action="store_true",
                     help="bind the LAN, not just loopback")
     sp.add_argument("--offline", action="store_true",
@@ -229,6 +230,10 @@ def main(argv=None):
         print(f"rules override: {args.rules}")
     if getattr(args, "biome", None):
         rules.select_biome(args.biome)
+    # one home for the pace: --tick-seconds wins, otherwise the middle of
+    # the paces the pack offers the dashboard
+    if getattr(args, "tick_seconds", None) is None:
+        args.tick_seconds = rules.R["pacing"]["day_seconds"][1]
     if args.cmd == "new" and args.seed is None:
         args.seed = random.randint(1, 10_000)
     args.func(args)

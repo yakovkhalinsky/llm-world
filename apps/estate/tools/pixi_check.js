@@ -92,13 +92,16 @@ function El(id) {
     toggle: (c, on) => { on ? set.add(c) : set.delete(c); },
   };
   this.clientWidth = 1200; this.clientHeight = 800;
+  // the speed buttons are built from the ground payload and found by
+  // query; a stub that cannot hold children just finds none
+  this.querySelectorAll = () => [];
   this.addEventListener = () => {};
   this.getBoundingClientRect = () => ({ left: 0, top: 0 });
 }
 ['scene', 'scroller', 'engine', 'when', 'weather', 'pops', 'chron', 'look',
  'pauseBtn', 'stepBtn', 'fsBtn', 'zoomFit', 'zoom1x', 'zoom2x', 'hint',
  'tabChron', 'tabCensus', 'tabWatch', 'card', 'cardName', 'cardState',
- 'cardRows', 'cardClose', 'plain', 'watch', 'voice'].forEach(id => { els[id] = new El(id); });
+ 'cardRows', 'cardClose', 'plain', 'watch', 'voice', 'speeds'].forEach(id => { els[id] = new El(id); });
 
 const document = {
   body: new El('body'), documentElement: new El('html'),

@@ -11,7 +11,7 @@ cannot judge (grove's b26/b48 — several bugs were found only by looking at
 the artifact). A plain glyph map remains as the honest fallback, exactly as
 it does for the grove.
 
-  estate web [--port 8787] [--public] [--tick-seconds 6] [--offline]
+  estate web [--port 8787] [--public] [--tick-seconds 20] [--offline]
 
 Default bind is loopback only (viewable through an ssh tunnel); pass
 --public to open it to the LAN.
@@ -229,6 +229,7 @@ def ground(est):
             "roles": render.ROLE_GLYPH,
             "weather": render.WEATHER_GLYPH,
         },
+        "speeds": list(rules.R["pacing"]["day_seconds"]),
         "words": {"world": rules.R["presentation"].get("world_word",
                                                        "the estate"),
                   "seasons": list(rules.R["presentation"].get("seasons",

@@ -78,7 +78,16 @@ R = {
     },
 
     "pacing": {
-        "day_seconds": {"run": 6.0, "web": 6.0},
+        # The paces the estate may be watched at, slowest first: how many
+        # wall seconds one day takes. A day is five phases, so at 60 s a
+        # phase lasts twelve seconds and you can follow one person out of
+        # their door and back; at 5 s the phases blur and the estate reads
+        # as a timelapse rather than a place. Three of them, because a
+        # slider would only interpolate badly between the three things
+        # worth watching at — a day, a week, a season — and the default is
+        # the middle one. This was a dict of literals that nothing read,
+        # while the pace was set by three separate numbers in the CLI.
+        "day_seconds": [60.0, 20.0, 5.0],
         "watcher_gap": (60, 120),      # wall seconds between invitations
         "watcher_gap_cloud": (40, 80),
         "reprobe_seconds": 900,        # before retrying the chosen voice

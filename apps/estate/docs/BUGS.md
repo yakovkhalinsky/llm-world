@@ -315,3 +315,19 @@ about unread keys applies to the person writing them too.
   result is present. Found by curling the running estate and comparing what
   it served against what was on disk, which is the only way this class is
   ever found.
+
+- [x] **h22** *class 1* — **the pace had no home, and the one place that
+  looked like it did was read by nothing.** `pacing.day_seconds` held
+  `{"run": 6.0, "web": 6.0}` and nothing ever read it, while the estate's
+  actual pace was set by three separate literals in the CLI — a `3.0` for
+  the terminal watcher, a `6.0` for the dashboard, and a `6.0` again in the
+  page's own fallback for how long a day lasts. Four numbers describing one
+  fact, three of them live and none of them the one that looked official.
+  Fix: the pack holds the paces the estate may be watched at — a list, 60,
+  20 and 5 wall seconds a day — the CLI's default is the middle of it, the
+  dashboard sends the list down with the ground, and the page builds its
+  buttons from what it is given rather than from a copy. Three and not a
+  slider: a day is five phases, so at 60 s a phase lasts twelve seconds and
+  you can follow one person out of their door and back, while at 5 s the
+  phases blur into a timelapse, and there is nothing honest between those
+  worth a fourth stop.

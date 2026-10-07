@@ -116,6 +116,10 @@ function start() {
   wire();
   fetchJSON('/api/ground').then(g => {
     S.ground = g;
+    /* the paces come down with the ground, from the pack, so the page
+       offers exactly what the world may be watched at and nothing of its
+       own invention */
+    Panels.speeds(g.speeds, s => post({ tick_seconds: s }));
     if (window.PIXI && window.PIXI.Application) {
       S.havePixi = true;
       $('engine').textContent = 'pixi';

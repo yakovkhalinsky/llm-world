@@ -208,6 +208,34 @@ const Panels = (() => {
     el.classList.add('on');
   }
 
+  /* --------------------------------------------------------------- pace */
+
+  /* How the estate is watched. Three buttons and no slider: the choices
+   * are the pack's, and the pace is the server's — the page only asks. */
+  function speeds(list, onPick) {
+    const speeds = list && list.length ? list : [60, 20, 5];
+    const box = $('speeds');
+    if (!box) return;
+    box.innerHTML = speeds.map(s =>
+      '<button data-s="' + s + '">' + SPEED_WORD(s) + '</button>').join('');
+    Array.prototype.forEach.call(box.querySelectorAll('button'), b => {
+      b.onclick = () => onPick(parseFloat(b.dataset.s));
+    });
+  }
+
+  function SPEED_WORD(s) {
+    if (s >= 60 && s % 60 === 0) return (s / 60) + ' min';
+    return s + 's';
+  }
+
+  function markSpeed(now) {
+    const box = $('speeds');
+    if (!box) return;
+    Array.prototype.forEach.call(box.querySelectorAll('button'), b => {
+      b.classList.toggle('on', Math.abs(parseFloat(b.dataset.s) - now) < 0.01);
+    });
+  }
+
   /* -------------------------------------------------------------- update */
 
   function update(st) {
@@ -218,7 +246,8 @@ const Panels = (() => {
     const b = $('pauseBtn');
     b.textContent = st.paused ? '▶ play' : '⏸ pause';
     b.classList.toggle('on', !!st.paused);
+    markSpeed(st.tick_seconds);
   }
 
-  return { update, tab, card };
+  return { update, tab, card, speeds };
 })();
