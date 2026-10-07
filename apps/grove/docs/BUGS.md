@@ -1045,3 +1045,25 @@ merely plain, and all of them were the same animal in another colour.
   with no mixed table and a stable file size; the rebuilt constitution
   loads back at owl 4 / rabbit 16; the gate is unmoved and the harnesses
   pass.
+
+## Found moving the grove into the monorepo
+
+- [x] **b53** *a new class: the path is part of the handle.* Moving
+  `grove_data/` under the running dashboard silently turned its writes off.
+  The reasoning that made it look safe was half right and the half that was
+  wrong cost ten months of world time: an **open fd follows its inode**, so
+  the data file survived the move — but SQLite creates its rollback journal
+  **by path** on every transaction, and `./grove_data/grove.db-journal` had
+  ceased to exist with the directory. Every commit then failed with
+  `attempt to write a readonly database`. The world kept ticking in memory
+  (tick 142 by the time anyone looked) while the last durable commit stood
+  at tick 99 — forty-three weeks of the estate gone, and nothing wrong with
+  the file itself (`PRAGMA quick_check`: ok). **The failure named itself** —
+  eight `grove: runner error: attempt to write a readonly database` lines
+  in the web log — and nobody read the log. The catch-all that kept the
+  world alive is the same catch-all that made it quiet. Fix: the server was
+  restarted from the new layout, where the journal's directory exists
+  again; verified by the in-memory tick and the on-disk tick agreeing.
+  **The rule this adds:** a running process holds paths, not just
+  descriptors — never move a directory out from under a live SQLite, and
+  after any filesystem surgery, check the log before believing the tick.
