@@ -171,7 +171,6 @@ def update_fixtures(w, evs):
                 w["daybook"]["broke"] += 1
         # a shop is supplied: the delivery fate is a windfall on top of
         # this, not the estate's only way of eating
-        if spec.get("restock"):
-            f["stock"] = min(spec.get("stock", 150),
-                             f["stock"] + spec["restock"])
+        if spec.get("supplied"):
+            f["stock"] = spec.get("stock", 150)
         f["occupants"] = []

@@ -103,6 +103,9 @@ def day_line(book, people) -> str:
         return f"hot and still; {total} errands, and whatever shade there was, taken"
     if sky == "frost":
         return f"cold and bright; {total} errands, the {place} busy and nobody lingering"
+    if book.get("sold_out") and sky in (None, "clear", "frost"):
+        return (f"{total} errands and the shop sold out before the evening — "
+                f"the {place} busy instead")
     if total >= 400:
         return f"a busy day — {total} errands, the {place} never empty"
     if total <= 352:

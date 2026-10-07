@@ -311,6 +311,8 @@ def _satisfy(w, r, c, need, phase):
         u[f["kind"]] = u.get(f["kind"], 0) + 1
     if need == "food" and f.get("stock") is not None and f["stock"] > 0:
         f["stock"] -= 1
+        if f["stock"] <= 0 and w.get("daybook") is not None:
+            w["daybook"]["sold_out"] = True
 
 
 def drain(w, phase):

@@ -90,22 +90,31 @@ SPEC = {
         "bench":      {"affords": {"rest": 0.55, "company": 0.25},
                        "capacity": 2, "decay": 0.00030, "loud": 0.015,
                        "carry": 2,
-                       "upkeep": 1.0, "break_prob": 0.0012, "glyph": "🪑"},
+                       "upkeep": 1.0, "break_prob": 0.0034, "glyph": "🪑"},
         "playground": {"affords": {"play": 0.95},
                        "capacity": 12, "decay": 0.00040, "loud": 0.110, "carry": 12,
-                       "upkeep": 1.6, "break_prob": 0.0010, "glyph": "🛝"},
+                       "upkeep": 1.6, "break_prob": 0.0028, "glyph": "🛝"},
         "table":      {"affords": {"company": 0.60, "rest": 0.20},
                        "capacity": 4, "decay": 0.00025, "loud": 0.030, "carry": 3,
-                       "upkeep": 1.0, "break_prob": 0.0008, "glyph": "♟"},
+                       "upkeep": 1.0, "break_prob": 0.0022, "glyph": "♟"},
         "shop":       {"affords": {"food": 0.85, "company": 0.40},
-                       "capacity": 12, "decay": 0.00020, "stock": 150,
-                       "restock": 90, "loud": 0.035, "carry": 5, "upkeep": 3.0, "break_prob": 0.0002,
+                       "capacity": 12, "decay": 0.00020,
+                       # `stock` is what the shelves hold and `supplied`
+                       # says a delivery tops them up every morning. The
+                       # fixed 90 a day was less than a day's demand, so the
+                       # shop lived at exactly 90 and sold out by
+                       # mid-afternoon every single afternoon, and food —
+                       # which has one source — was simply unavailable for
+                       # part of every day. A delivery fills the shelves.
+                       "stock": 238, "supplied": True,
+                       "loud": 0.035, "carry": 5, "upkeep": 3.0,
+                       "break_prob": 0.0005,
                        "glyph": "🏪"},
         # a lamp affords nothing by itself: it lights, and what it lights
         # is worth more in the evening. A place that affords nothing but
         # state is decoration pretending to be a place.
         "lamp":       {"affords": {}, "capacity": 0, "decay": 0.00012,
-                       "light": 0.55, "upkeep": 1.2, "break_prob": 0.0006, "glyph": "💡"},
+                       "light": 0.55, "upkeep": 1.2, "break_prob": 0.0018, "glyph": "💡"},
         # A tree affords nothing, and that is not a gap — it is what a tree
         # is. It *shades*: the field `build_shade` makes is read by the heat
         # bonus and the quiet bonus where a person is sitting, so a bench
@@ -184,7 +193,7 @@ SPEC = {
         "unhappy_decay": 0.97,          # and how fast it settles again
         "emigrate_at": 3.0,             # how sour a household has to get
                                         # before it leaves the estate
-        "move_away_prob": 0.0009,       # per household per day, for its own
+        "move_away_prob": 0.0024,       # per household per day, for its own
                                         # reasons: work, family, a bigger
                                         # flat elsewhere. Not every departure
                                         # is misery, and `emigrate_at` could

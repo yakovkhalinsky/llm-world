@@ -22,7 +22,8 @@ def tick(w) -> list:
     evs = []
     w["day"] += 1
     t = w["day"]
-    w["daybook"] = {"uses": {}, "out": 0, "noise": 0.0, "broke": 0}
+    w["daybook"] = {"uses": {}, "out": 0, "noise": 0.0, "broke": 0,
+                    "sold_out": False}
 
     # 1. the day turns; a season turn is news
     prev, now = W.season_index(t - 1), W.season_index(t)
