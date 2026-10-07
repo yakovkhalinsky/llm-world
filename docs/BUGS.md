@@ -548,7 +548,7 @@ fates. Everything below lives on the path the gate cannot walk.
   `world["effects"]` at week 7 and the digest stops announcing it;
   a strength-3 drought holds exactly 9 weeks.
 
-- [ ] **b31** the fates and the chronicle still spoke the grove's
+- [x] **b31** the fates and the chronicle still spoke the grove's
   species. Four hardcoded species lists survived the packs:
   `operator.validate` coerced any `migration` species outside
   rabbit/deer/fox/owl/robin/boar to `"robin"` — a species the desert

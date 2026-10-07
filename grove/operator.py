@@ -148,13 +148,12 @@ def validate(raw):
     # blight only on plants; migration/visitor only on their animal lists
     if action == "blight" and effect["species"] not in W.PLANT_SPECIES:
         effect["species"] = None
-    if action == "migration" and (effect["species"] not in
-                                  ("rabbit", "deer", "fox", "owl", "robin",
-                                   "boar")):
-        effect["species"] = "robin"
+    if action == "migration" and effect["species"] not in \
+            rules.R["pop"]["base_residents"]:
+        effect["species"] = rules.R["pop"].get("migration_default", "robin")
     if action == "visitor" and effect["species"] not in \
             rules.R["pop"]["visitor_species"]:
-        effect["species"] = "stag"
+        effect["species"] = rules.R["pop"].get("visitor_default", "stag")
     if action not in ("blight", "migration", "visitor"):
         effect["species"] = None
     return effect

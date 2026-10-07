@@ -1,6 +1,8 @@
 """Event handling: which happenings deserve a place in the chronicle,
 with same-week same-story events folded into one counted event."""
 
+from . import world as W
+
 # priority tiers for clipping loud weeks (lower is more important)
 PRIORITY = {
     "op": 0, "recolonize": 1, "destiny": 1, "arrival": 1,
@@ -45,8 +47,10 @@ def notable(events):
     scored = []
     for i, e in enumerate(_fold(events)):
         kind = e["kind"]
-        if kind == "fell" and e.get("sp") not in ("pine", "birch", "willow"):
-            continue    # understory lives short; only tree falls are news
+        # understory lives short; only a pack's own trees falling are news
+        if kind == "fell" and W.PLANT_SPECIES.get(
+                e.get("sp"), {}).get("kind") != "tree":
+            continue
         if kind in ("birth", "oldage", "starve") and e.get("sp") and \
                 e["sp"] in ("stag", "wolf"):
             continue    # transient visitors don't need birth/death notes

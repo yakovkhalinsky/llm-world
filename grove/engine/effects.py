@@ -75,7 +75,8 @@ def _apply_effect(world, effect, evs):
         ev["n"] = planted
 
     elif action == "migration":
-        sp = effect.get("species") or "robin"
+        sp = effect.get("species") or rules.R["pop"].get("migration_default",
+                                                         "robin")
         if sp in rules.R["pop"]["base_residents"]:
             pop_now = _pop(world, sp)
             cap = W.ANIMAL_SPECIES[sp].get("cap", 100)
@@ -104,8 +105,9 @@ def _apply_effect(world, effect, evs):
                  "made": t, "kind": kind})
 
     elif action == "visitor":
-        sp = effect.get("species") or "stag"
-        if sp in ("stag", "wolf"):
+        sp = effect.get("species") or rules.R["pop"].get("visitor_default",
+                                                         "stag")
+        if sp in rules.R["pop"]["visitor_species"]:
             n = 1 + (1 if strength >= 3 else 0)
             spawn_animals(world, sp, n, transient=5 + 2 * strength,
                           region=region if region != "all" else None)
