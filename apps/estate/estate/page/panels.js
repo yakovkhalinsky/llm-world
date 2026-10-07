@@ -111,7 +111,12 @@ const Panels = (() => {
       $('chron').innerHTML = census(st);
       $('look').textContent = 'who lives here';
     } else if (name === 'watch') {
-      $('chron').innerHTML = '<li>no watcher has come yet.</li>';
+      const c = (st.chronicle || []).slice().reverse();
+      $('chron').innerHTML = c.length
+        ? c.map(e => '<li><span class="d">d' + e.day + '</span> ' +
+                     esc(e.text) + '</li>').join('')
+        : '<li>no watcher has come yet, and the chronicle is empty. ' +
+          'the estate keeps its own lines either way.</li>';
       $('look').textContent = '';
     } else {
       feed(st);

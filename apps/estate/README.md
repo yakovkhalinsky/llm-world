@@ -69,7 +69,8 @@ reason.
 ./estate.sh map                # draw the plan
 ./estate.sh status             # census history
 ./estate.sh rules              # the live ruleset
-./estate.sh web                # the dashboard, drawn with PixiJS
+./estate.sh web                # the dashboard on :8787, drawn with PixiJS
+python3 tools/balance.py       # the gate: 8 estates, years, every law
 ```
 
 The dashboard is one hand-written page and no build step: a background
@@ -88,8 +89,8 @@ and that the weather falls in the plan's box and not the window's:
 
 ```sh
 python3 -m estate web &            # in one shell
-curl -s localhost:8790/api/ground > /tmp/g.json
-curl -s localhost:8790/api/state  > /tmp/s.json
+curl -s localhost:8787/api/ground > /tmp/g.json
+curl -s localhost:8787/api/state  > /tmp/s.json
 node tools/pixi_check.js /tmp/g.json /tmp/s.json
 ```
 
@@ -139,6 +140,11 @@ A world of met needs is a dead world. Three loops prevent it:
 | `estate/gen.py` | seeded estate generation (no LLM) |
 | `estate/render.py` | the terminal view: the plan and the day's lines |
 | `estate/web.py` | the dashboard's server: the page, the state API, the tick thread |
+| `estate/watcher.py` | the watcher: the menu, the digest, the validator |
+| `estate/llm.py` | the Ollama client: one voice, one chain, never raises |
+| `estate/chronicler.py` | the estate's record of its own days, with and without a model |
+| `estate/engine/households.py` | ageing, births, deaths, emigration, the letting office |
+| `estate/engine/effects.py` | the watcher's fates: what lands, what lasts, what ages |
 | `estate/page/` | the dashboard: PixiJS scene, panels, and the vendored engine |
 | `tools/pixi_check.js` | the page's headless check: the layer order, a warm frame, the weather's box |
 | `estate/db.py` | SQLite: the estate as one blob, plus its census |
@@ -146,16 +152,25 @@ A world of met needs is a dead world. Three loops prevent it:
 
 ## Status
 
-**Phases 0–2 and the graphics page.** The estate plants, steps, draws and
-is deterministic per seed; its people choose, walk and are satisfied; its
-fixtures fill, wear and break; and the dashboard shows all of it.
+**All seven phases.** The estate plants, steps, draws and is deterministic
+per seed; its people choose, walk and are satisfied; its fixtures fill,
+wear and break; its households age, grow, leave and refill; a watcher
+sends it weather and luck from a menu it cannot invent past; and the
+dashboard shows all of it.
 
-Phases 1 and 2 took eleven recorded faults to get right (**h6–h11** in
-`docs/BUGS.md`), and ten of them were found by one act: *measuring a
-simulated year and asking whether the needs were actually met.* They were
-not, five different ways. The needs now come out in a band, and the
-faults are kept in the ledger because the way they hid is the useful part.
+The gate is `tools/balance.py`. It runs seeded estates for years with no
+model at all and refuses one that has lost a household type, emptied, gone
+quiet in the wrong way, or settled into a marching band — and it prints a
+fingerprint, so an engine change that alters the world's behaviour cannot
+land unnoticed.
 
-Still to come, each with its readers rather than ahead of them: the
-households (ageing, births, the letting office), the watcher and its
-fates, the gate, and the dashboard's narration.
+Nineteen faults are recorded in `docs/BUGS.md` under Grove's sixteen
+classes. Almost none of them crashed anything. They were found by asking
+the estate's own design questions and checking the answers — *do the needs
+get met*, *is the playground heard*, *does anyone live above the third
+floor* — which is the whole of the method this project inherited, and the
+reason the ledger is the most useful file in it.
+
+Still deferred, each deliberately: money, traffic beyond noise, a school
+timetable, illness, interiors as a grid, A*, the steward, embeddings, the
+SVG twin.

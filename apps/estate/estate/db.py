@@ -16,6 +16,7 @@ import sqlite3
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS world (id INTEGER PRIMARY KEY, json TEXT, day INTEGER);
 CREATE TABLE IF NOT EXISTS stats (day INTEGER, json TEXT);
+CREATE TABLE IF NOT EXISTS chronicle (day INTEGER, text TEXT);
 """
 
 
@@ -51,6 +52,23 @@ class DB:
         self.con.execute("INSERT INTO stats (day, json) VALUES (?, ?)",
                          (day, json.dumps(census)))
         self.con.commit()
+
+    # -- the chronicle ----------------------------------------------------
+    def add_chronicle(self, day, text):
+        """The estate's record of a stretch of its own days. Written once
+        and never rewritten: a chronicle that could be revised is not a
+        record, and the whole reason the deterministic line exists beside
+        the model's prose is that the record must not depend on the prose.
+        """
+        self.con.execute("INSERT INTO chronicle (day, text) VALUES (?, ?)",
+                         (day, text))
+        self.con.commit()
+
+    def chronicle(self, limit=40):
+        rows = self.con.execute(
+            "SELECT day, text FROM chronicle ORDER BY day DESC LIMIT ?",
+            (limit,)).fetchall()
+        return [{"day": d, "text": x} for d, x in reversed(rows)]
 
     def history(self, limit=64):
         rows = self.con.execute(

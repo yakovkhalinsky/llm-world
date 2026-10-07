@@ -186,8 +186,14 @@ def new_resident(rid: int, household, age: int) -> dict:
 def new_fixture(fid: int, kind: str, x: int, y: int) -> dict:
     """A placed thing. `condition` is its health — a bench's slats and a
     tree's life are the same number, worn by the same rule."""
+    # `occupants` is who is here *now* — it is what congestion reads, and
+    # it is emptied every day. `last_use` is how many used it yesterday,
+    # which is what the noise field reads. They were one field once, and
+    # the noise field was therefore built from a list that had just been
+    # emptied: the playground, the shop and the tables had never made a
+    # sound between them.
     f = {"id": fid, "kind": kind, "x": x, "y": y, "condition": 1.0,
-         "occupants": [], "uses_today": 0, "use_total": 0}
+         "occupants": [], "uses_today": 0, "use_total": 0, "last_use": 0}
     if rules.R["fixtures"][kind].get("stock"):
         f["stock"] = rules.R["fixtures"][kind]["stock"]
     if rules.R["fixtures"][kind].get("living"):
@@ -220,12 +226,20 @@ def role_of(age: int) -> str:
 # ------------------------------------------------------------------ counts
 
 def counts(world) -> dict:
-    """Residents by household type — the estate's census, the heir of
-    Grove's species counts, and what the roster law is judged on."""
+    """Households by type — the estate's census, the heir of Grove's species
+    counts, and what the roster law is judged on.
+
+    This had two homes and they disagreed: `world.counts` counted *people*
+    by their household's type while `__main__._census` and `render.header`
+    each counted *households* in their own way, so the same estate had a
+    different census depending on which one you asked. One home, and it is
+    the one the law is about — a household is what a flat holds, and a flat
+    is what the estate has. A household not in a flat is not living here
+    and is not counted."""
     out = {}
-    for r in world["residents"].values():
-        h = world["households"].get(str(r["household"]))
-        if h:
+    for h in world["households"].values():
+        u = world["units"].get(str(h["unit"]))
+        if u is not None and u["household"] == h["id"]:
             out[h["kind"]] = out.get(h["kind"], 0) + 1
     return out
 

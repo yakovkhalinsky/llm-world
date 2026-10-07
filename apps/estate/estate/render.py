@@ -43,6 +43,22 @@ def say(ev) -> str:
         return "ice on the pond"
     if k == "fate":
         return ev.get("say") or f"the watcher sent {ev.get('what')}"
+    # the household events. Every kind the engine emits has a sentence
+    # here, and a kind without one is a bug this function would hide by
+    # printing its own name — which is how `moved_in` reached a chronicle
+    # draft as the literal string "moved_in".
+    if k == "moved_in":
+        return f"a {ev.get('where', 'household')} moves into a flat"
+    if k == "born":
+        return f"{ev.get('who', 'a child')} is born on the estate"
+    if k == "died":
+        return f"{ev.get('who', 'someone')} dies"
+    if k == "left":
+        who = ev.get("who")
+        return (f"{who} leaves the estate" if who
+                else "a household leaves the estate")
+    if k == "grew":
+        return f"{ev.get('who', 'someone')} — {ev.get('what', 'a year older')}"
     return str(k)
 
 
@@ -51,10 +67,7 @@ def header(world) -> str:
     wd = W.weekday_name(day)
     # households, not people — one glyph per household is what the roster
     # law counts, and two types sharing a glyph made the header unreadable
-    census = {}
-    for h in world["households"].values():
-        if world["units"].get(str(h["unit"]), {}).get("household") == h["id"]:
-            census[h["kind"]] = census.get(h["kind"], 0) + 1
+    census = W.counts(world)
     kinds = " ".join(f"{rules.R['households'][k]['glyph']}{n}"
                      for k, n in sorted(census.items()) if n)
     return (f"DAY {day} · {W.season_name(day)} · {wd} · "

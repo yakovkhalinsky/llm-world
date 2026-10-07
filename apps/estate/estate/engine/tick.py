@@ -10,6 +10,7 @@ refilled the same evening.
 
 from .. import world as W
 from . import effects
+from . import households
 from . import places
 from . import residents
 from . import trees
@@ -56,5 +57,11 @@ def tick(w) -> list:
 
     # 8. the day's wear: fixtures are used up, and some of them break
     places.update_fixtures(w, evs)
+
+    # 9. the slow layer. The people have acted; now the households age,
+    #    lose and gain their own, and the letting office counts the empty
+    #    flats — after the day's living, so a household that leaves this
+    #    morning leaves a vacancy tomorrow rather than one filled today
+    households.update_households(w, evs)
 
     return evs

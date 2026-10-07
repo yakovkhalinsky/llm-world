@@ -6,8 +6,9 @@ that fill them. Everything comes from (seed, 0, "gen") in a fixed order, so
 the same seed is the same estate in any process.
 """
 
-from . import world as W
 from . import rules
+from . import world as W
+from .engine import households
 
 BLOCK_NAMES = ("Ash", "Elm", "Lime", "Maple", "Willow", "Hawthorn")
 
@@ -216,7 +217,7 @@ def generate(seed: int, width: int = None, height: int = None,
     for kind in founding:
         if not units:
             break
-        _move_in(st, rng, kind, st["units"][str(units.pop())])
+        households.move_in(st, kind, st["units"][str(units.pop())], rng)
     # and a waiting list of people outside, wanting a flat
     for _ in range(g["waiting"]):
         st["waiting"].append({"kind": rng.choice(rules.R["pop"]["roster"])})
@@ -281,32 +282,3 @@ def _check_reach(st, cells, buildings):
                     f"the door at {d} cannot reach anywhere affording "
                     f"{need!r} within {scan} steps — nobody in that building "
                     f"can meet it, whatever they choose")
-
-
-def _move_in(st, rng, kind, unit):
-    """One household takes a flat: the people are made here, and the unit
-    remembers when they came."""
-    spec = rules.R["households"][kind]
-    hid = st["next_id"]; st["next_id"] += 1
-    hh = W.new_household(hid, kind, unit["id"])
-    hh["moved_in"] = st["day"]
-    unit["household"] = hid
-    unit["vacant_since"] = None
-    lo, hi = spec["members"]
-    n = rng.randint(lo, hi)
-    clo, chi = spec["children"]
-    kids = rng.randint(clo, chi) if chi else 0
-    kids = min(kids, max(0, n - 1))
-    for _ in range(n):
-        rid = st["next_id"]; st["next_id"] += 1
-        age = rng.randint(2, 16) if kids > 0 else rng.randint(19, 78)
-        if kids > 0:
-            kids -= 1
-        r = W.new_resident(rid, hid, age)
-        r["name"] = W.name_for(rng)
-        r["where"]["unit"] = unit["id"]
-        r["mobility"] = spec.get("mobility", 1.0)
-        st["residents"][str(rid)] = r
-        hh["members"].append(rid)
-    st["households"][str(hid)] = hh
-    return hh

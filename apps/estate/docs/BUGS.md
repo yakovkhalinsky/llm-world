@@ -193,3 +193,104 @@ needs actually get met?* They did not, five times over.
   the watcher is the weather, and what it sends for today is what today
   is. The wet streak is now read from the sky the estate actually got.
   Check: a fate sent for N days is in force for N days.
+
+---
+
+## Phases 4, 6 and 7 — households, the gate, and the chronicle
+
+The estate now grows into its own housing, ages, loses people and fills
+their flats; the gate judges eight of them over years; and the chronicle is
+written. Five faults, and the first four were all found by *asking the
+estate's own design questions and checking the answer* rather than by
+anything crashing. Nothing crashed for any of them.
+
+- [x] **h15** *class 8* — **the estate outgrew a shop it could never
+  mend.** With the flats filled, one shop served 171 errands a day, and
+  the wear rule is linear in use while the mending rule is not: at that
+  load its equilibrium condition was **0.08**, so the estate spent seasons
+  with a shop that broke every few days, and food — which has exactly one
+  source — went with it. Every other kind was healthy (benches 0.79, the
+  playground 0.74); only the busiest thing in the estate was broken, which
+  is the shape h12 had already warned about and a different mechanism.
+  Found by measuring every fixture kind's equilibrium rather than looking
+  at a summary. Fix: `upkeep` in the pack — how well the estate looks after
+  *this sort of thing* — because sorts differ: a shop has someone who runs
+  it and a bench has nobody. The attrition loop survives; a kind just has
+  to be used past what its own upkeep can carry. Check: the busiest kind's
+  condition settles above zero as the estate grows.
+
+- [x] **h16** *class 1, and the best-hidden of the set* — **the noise field
+  was built from a list that is always empty at the moment it is read.**
+  `build_noise` read each fixture's `occupants`, and `update_fixtures`
+  empties `occupants` at the end of every day, so when the field was built
+  each morning every fixture was empty: *the playground had never made a
+  sound.* Grove's b15 exactly — a field written every tick and read by
+  nothing — except here the field was read and its source was always
+  nothing. Worse, the kernel was 3×3 for everything, so even a full
+  playground was inaudible from the nearest door, seven cells away. **The
+  estate's central design claim — that quiet is a commons, that noise does
+  not stop at a wall — was not implemented at all**, and the measurement
+  proved it backwards: flats near the playground were *quieter* than far
+  ones. Fix: `occupants` is who is here now (congestion reads it) and
+  `last_use` is how many were here yesterday (the noise field reads that),
+  one fact per home; and `carry` says how far each sort of sound is heard,
+  because a playground is not a bench. Check: flats near the playground
+  want quiet more than flats far from it.
+
+- [x] **h17** *class 9* — **the letting office filled the estate from the
+  ground up.** It let to the lowest-numbered vacant flat, and unit ids run
+  floor by floor, so after two years **nobody had ever lived above the
+  third floor** and the stairs — the entire interior model — were a cost
+  almost nobody paid. The plan's own rider says the stair cost must
+  interact or it is invisible noise; it was invisible, and it had been
+  invisible since phase 0 because of a `sort`. Fix: the office lets what it
+  has, chosen deterministically. Check: the upper floors are lived in.
+
+- [x] **h18** *class 2* — **the stairs were charged twice.** `_go_to` takes
+  `floor × stair_step` out of the phase's step budget, which *is* the cost
+  of climbing; `_utility` also subtracted it as a penalty. Charged once, a
+  fourth floor is a walk; charged twice it is 1.4 against a flat worth
+  0.62, so nobody above the third floor ever went home at all — they slept
+  on benches, and the estate had a wing of empty bedrooms. Two copies of
+  one fact, and the second copy was the one in charge. Fix: the cost lives
+  in the walk, where it is physical, and what makes a sixth floor hard is
+  the distance rather than a dislike of it. Check: residents on every floor
+  arrive home.
+
+- [x] **h19** *class 14, in the gate itself* — **a band fitted instead of
+  derived.** The friction band was written at phase 0 as `(0.15, 0.85)`
+  before any estate existed to have a value, and a perfectly living estate
+  of 130 people failed it at 1.7 — the gate was about to be "fixed" by
+  widening a number until its own subject passed, which is how a check
+  becomes decoration. The statistic is `urge × need × phase-multiplier ×
+  drains`, so its scale is set by what it is made of: a need pinned at its
+  ceiling gives about 5, and needs at zero give 0. The band is now derived
+  from those two facts — the top under a famine, the bottom above nothing —
+  and it can still fail in both directions. Check: the reasons are in the
+  pack, beside the numbers.
+
+Three faults were also caught in passing and folded in rather than numbered:
+the estate had **two censuses that disagreed** (`world.counts` counted
+people by their household's type; two other places counted households), so
+the same estate answered differently depending on who asked — one home now,
+and it is the one the roster law is about. `render.say` printed raw event
+kinds for events it had no wording for, so `moved_in` reached a chronicle
+draft as the literal string. And a knob added and never read
+(`pacing.watcher_every`) was removed the same day: the project's own rule
+about unread keys applies to the person writing them too.
+
+- [x] **h20** *class 14, caught by the gate on its first real run* — **a
+  place the law offered and nobody wanted.** The gate's first honest run
+  named one failure: `tree` — a fixture kind with zero uses in 364 days. A
+  tree afforded `quiet: 0.35, rest: 0.15`, and under the shade term (its own
+  cell is only 0.30 shaded) that is worth 0.36 against a flat's own 0.62 —
+  and `quiet` presses hardest at night, when everyone is indoors anyway. So
+  not one person sat under a tree in a year, and the pack said one should
+  want to. The tempting fix was to raise the number until the check passed;
+  the honest one was to read what the check said. **A tree is not a place
+  you go.** It shades — and the field it makes is already read by the heat
+  bonus and the quiet bonus wherever a person is sitting, so a bench under
+  a plane is a better bench than a bench in the open and the tree is the
+  reason. Its affordances are now empty, exactly as the lamp's are: a lamp
+  lights and a tree shades, and neither is somewhere you go. Check: the
+  gate's fixture-use rule, which is what found it.

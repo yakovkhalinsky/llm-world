@@ -82,7 +82,6 @@ R = {
         "watcher_gap": (60, 120),      # wall seconds between invitations
         "watcher_gap_cloud": (40, 80),
         "reprobe_seconds": 900,        # before retrying the chosen voice
-        "naming_budget_per_day": 2,
         "chronicle_need": 3,
     },
 

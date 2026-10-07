@@ -113,7 +113,15 @@ def _utility(w, r, c, need, phase, rng):
         eff = rules.R["engine"]["home_rest"] * c["unit"]["condition"]
         if need == "quiet":
             eff *= max(0.05, 1.0 - places.unit_noise(w, c["unit"]))
-        cost = (c["unit"]["floor"] * stair) if not inside else 0
+        # No stair term here. The stairs are already what they cost — they
+        # come out of the phase's step budget in _go_to, which is the whole
+        # of the interior model. Charging them again as a utility penalty
+        # charged them twice, and the second charge was the one that
+        # dominated: at four floors it was 1.4 against a flat worth 0.62,
+        # so nobody above the third floor ever went home at all. They slept
+        # on benches, and the estate had a whole wing of empty bedrooms.
+        # What makes a sixth floor hard is the walk, not a dislike of it.
+        cost = 0.0
     else:
         f = c["fixture"]
         eff = places.effective(c["kind"], need, f["condition"],

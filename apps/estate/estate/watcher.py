@@ -40,8 +40,17 @@ def regions_for(fate):
 
 
 def system():
-    """The watcher's words, from the pack (presentation.watcher_system)."""
-    return rules.R["presentation"].get("watcher_system", "")
+    """The watcher's words, from the pack.
+
+    The role it is being asked to be — "a housing estate" — comes from the
+    pack too, so the one phrase that tells the model what it is watching
+    has a single home and cannot end up disagreeing with the world.
+    """
+    words = rules.R["presentation"]
+    role = words.get("watcher_role", "a place")
+    body = words.get("watcher_system", "")
+    return body or (f"You are the presence that watches {role}. You own "
+                    f"none of it.")
 
 
 def schema():
@@ -111,8 +120,9 @@ def digest(w, recent_lines=()):
     fates = ", ".join(f"{f['kind']} ({f['left']}d left)" for f in w["fates"])
     recent = "\n".join(f"  - {r}" for r in recent_lines[-6:]) or "  - nothing"
     lines = [
-        f"Day {day} ({W.weekday_name(day)}, {W.season_name(day)}). "
-        f"Weather: {w['weather']}. " +
+        f"Day {day}, {W.weekday_name(day)} in {W.season_name(day)}. "
+        f"{rules.R['presentation'].get('edge_name', 'The estate').capitalize()}"
+        f" lies around the outside of it. Weather: {w['weather']}. " +
         (f"In force: {fates}." if fates else "Nothing is in force."),
         f"People: {len(w['residents'])} residents in "
         f"{W.occupied_units(w)} of {len(w['units'])} flats, "

@@ -11,7 +11,7 @@ cannot judge (grove's b26/b48 — several bugs were found only by looking at
 the artifact). A plain glyph map remains as the honest fallback, exactly as
 it does for the grove.
 
-  estate web [--port 8790] [--public] [--tick-seconds 6] [--offline]
+  estate web [--port 8787] [--public] [--tick-seconds 6] [--offline]
 
 Default bind is loopback only (viewable through an ssh tunnel); pass
 --public to open it to the LAN.
@@ -26,6 +26,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
+from . import chronicler
 from . import db as dbm
 from . import llm as llmm
 from . import render
@@ -59,6 +60,9 @@ class SimRunner(threading.Thread):
         self.events = []
         self.last_watch = {"fate": None, "region": None, "why": None,
                            "day": None}
+        self.lines = []              # since the last chronicle entry
+        self.span = 0                # days since the last chronicle entry
+        self.chronicle = []
         self.next_watch = 0.0
         self.stop = threading.Event()
 
@@ -76,13 +80,40 @@ class SimRunner(threading.Thread):
                     self.prev = self.snapshot_prev()
                     evs = sim.tick(self.est.world)
                     self.events.extend(evs)
+                    self.lines.extend(chronicler.day_lines(self.est.world, evs))
+                    self.span += 1
                     del self.events[:-400]
                     self.est.save()
                 if self.step_once:
                     self.step_once -= 1
                 self._maybe_watch()
+                self._maybe_chronicle()
             self.stop.wait(0.1 if (self.paused and self.step_once) else
                            self.tick_seconds)
+
+    def _maybe_chronicle(self):
+        """Write the estate's record of a stretch of days.
+
+        The deterministic lines are gathered under the lock and the prose
+        is written outside it — a model must never stall the estate — and
+        the fallback is the lines themselves, so the record is complete
+        whether or not anyone was awake to phrase it.
+        """
+        if not chronicler.worth_writing(self.span):
+            return
+        with self.lock:
+            w = self.est.world
+            lines = list(self.lines)
+            span = self.span
+            recent = [c["text"] for c in self.chronicle[-2:]]
+        text = chronicler.narrate(self.llm, w, lines, span, recent)
+        with self.lock:
+            day = self.est.world["day"]
+            self.est.db.add_chronicle(day, text)
+        self.chronicle.append({"day": day, "text": text})
+        del self.chronicle[:-40]
+        self.lines = []
+        self.span = 0
 
     def _maybe_watch(self):
         """Invite the watcher on its cadence, if there is one and it is
@@ -128,6 +159,9 @@ class Estate:
                              f"estate new")
         if self.world.get("biome"):
             rules.select_biome(self.world["biome"])
+        # the record the estate already has, so a restart resumes its
+        # chronicle rather than beginning a new one
+        self.history = self.db.chronicle(40)
         self.save_every = 1
         # the watcher is optional in the only sense that matters: with no
         # model the estate still runs, because the model never owned any of
@@ -264,6 +298,7 @@ def snapshot(est, runner, lock):
             "shade": shade, "light": light,
             "events": [dict(e, say=render.say(e)) for e in evs],
             "watcher": dict(runner.last_watch),
+            "chronicle": list(runner.chronicle[-8:]),
             "llm": llmm.status_line(runner.llm),
         }
 
@@ -306,14 +341,14 @@ def _ip_hint(host):
     if host != "0.0.0.0":
         return ("local only: http://localhost:{}"
                 "\n  (LAN view: add --public, or tunnel: "
-                "ssh -L 8790:localhost:8790 user@this-host)")
+                "ssh -L 8787:localhost:8787 user@this-host)")
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
         return (f"LAN: http://{ip}:{{}}  (any device on this network)\n"
-                "  off-network: ssh -L 8790:localhost:8790 user@this-host")
+                "  off-network: ssh -L 8787:localhost:8787 user@this-host")
     except OSError:
         return "lan ip undetectable — check hostname -I"
 

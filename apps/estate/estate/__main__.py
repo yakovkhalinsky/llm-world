@@ -3,7 +3,7 @@
   estate new [--seed 42] [--size 40x30]     plant an estate (no LLM)
   estate step N                             advance N days in batch
   estate map                                draw the plan once
-  estate web [--port 8790]                  serve the dashboard (pixijs)
+  estate web [--port 8787]                  serve the dashboard (pixijs)
   estate status                             census history
   estate rules [--template FILE]            the live ruleset
 
@@ -73,12 +73,9 @@ def cmd_new(args):
 
 
 def _census(world):
-    """Households by type — what the roster law is judged on."""
-    out = {}
-    for h in world["households"].values():
-        if world["units"].get(str(h["unit"]), {}).get("household") == h["id"]:
-            out[h["kind"]] = out.get(h["kind"], 0) + 1
-    return out
+    """Households by type — what the roster law is judged on. One home for
+    it: see world.counts."""
+    return W.counts(world)
 
 
 def cmd_step(args):
@@ -208,7 +205,7 @@ def build_parser():
     sp.add_argument("--width", type=int, default=20)
     sp.set_defaults(func=cmd_status)
     sp = sub.add_parser("web", help="serve the dashboard")
-    sp.add_argument("--port", type=int, default=8790)
+    sp.add_argument("--port", type=int, default=8787)
     sp.add_argument("--tick-seconds", type=float, default=6.0)
     sp.add_argument("--public", action="store_true",
                     help="bind the LAN, not just loopback")

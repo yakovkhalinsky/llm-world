@@ -67,26 +67,46 @@ SPEC = {
     # wears it out. `affords` is a need -> quality map; the quality is cut
     # down by condition and by how full the place is (the congestion
     # governor, the heir of Grove's density-dependent hunting).
+    #
+    # `upkeep` is how well the estate looks after this sort of thing, and
+    # it is not the same for every sort because the sorts are not the
+    # same: a shop has someone who runs it, and a bench has nobody. Without
+    # it the estate's arithmetic had no answer for growth — a single shop
+    # served 171 errands a day once the flats filled, its equilibrium
+    # condition was 0.08, and the estate spent a season with a shop that
+    # broke every few days. A kind the estate cannot keep up with still
+    # fails; it just has to be used past what its own upkeep can carry.
     "fixtures": {
         "bench":      {"affords": {"rest": 0.55, "company": 0.25},
-                       "capacity": 2, "decay": 0.00030, "loud": 0.015,
-                       "glyph": "🪑"},
+                       "capacity": 2, "decay": 0.00030, "loud": 0.015, "carry": 2,
+                       "upkeep": 1.0, "glyph": "🪑"},
         "playground": {"affords": {"play": 0.95},
-                       "capacity": 12, "decay": 0.00040, "loud": 0.055,
-                       "glyph": "🛝"},
+                       "capacity": 12, "decay": 0.00040, "loud": 0.110, "carry": 12,
+                       "upkeep": 1.6, "glyph": "🛝"},
         "table":      {"affords": {"company": 0.60, "rest": 0.20},
-                       "capacity": 4, "decay": 0.00025, "loud": 0.030,
-                       "glyph": "♟"},
+                       "capacity": 4, "decay": 0.00025, "loud": 0.030, "carry": 3,
+                       "upkeep": 1.0, "glyph": "♟"},
         "shop":       {"affords": {"food": 0.85, "company": 0.40},
                        "capacity": 12, "decay": 0.00020, "stock": 150,
-                       "restock": 90, "loud": 0.035, "glyph": "🏪"},
+                       "restock": 90, "loud": 0.035, "carry": 5, "upkeep": 3.0,
+                       "glyph": "🏪"},
         # a lamp affords nothing by itself: it lights, and what it lights
         # is worth more in the evening. A place that affords nothing but
         # state is decoration pretending to be a place.
         "lamp":       {"affords": {}, "capacity": 0, "decay": 0.00012,
-                       "light": 0.55, "glyph": "💡"},
-        "tree":       {"affords": {"quiet": 0.35, "rest": 0.15},
-                       "capacity": 4, "decay": 0.00006, "storm_fall": 0.02,
+                       "light": 0.55, "upkeep": 1.2, "glyph": "💡"},
+        # A tree affords nothing, and that is not a gap — it is what a tree
+        # is. It *shades*: the field `build_shade` makes is read by the heat
+        # bonus and the quiet bonus where a person is sitting, so a bench
+        # under a plane is a better bench than a bench in the open, and the
+        # tree is the reason. It was written with `quiet: 0.35, rest: 0.15`
+        # and never once chosen in a year: its own cell is only 0.30 shaded,
+        # so under the shade term it was worth 0.36 against a flat's 0.62 —
+        # and quiet only presses at night, when everyone is indoors anyway.
+        # The gate said "a place the law offers and nobody wants"; the
+        # honest answer was that the law should not have offered it. A lamp
+        # lights and a tree shades, and neither is somewhere you go.
+        "tree":       {"affords": {}, "decay": 0.00006, "storm_fall": 0.02,
                        "glyph": "🌳", "living": True},
     },
 
@@ -138,9 +158,21 @@ SPEC = {
     # ------------------------------------------------------- the office
     "pop": {
         "roster": ["family", "couple", "single", "elder", "flat_share"],
-        "letting_after": 21,            # days a flat may stand empty
-        "waiting_size": 6,
+        "letting_after": 21,            # days a flat may stand empty before
+                                        # the office looks at it
+        "waiting_size": 6,              # households outside wanting a flat
         "crowding": 1.0,                # residents a unit holds per capacity
+        "fill_to": 0.8,                 # the share of its own flats the
+                                        # estate means to keep let — what
+                                        # the letting office aims at, and
+                                        # so what bounds the population
+        "birth_prob": 0.22,             # per household per year, where there
+                                        # is room — the estate's own growth
+        "death_prob": 0.06,             # per elder per year, past 76
+        "unhappy_rise": 0.5,            # how fast a frayed household sours
+        "unhappy_decay": 0.97,          # and how fast it settles again
+        "emigrate_at": 3.0,             # how sour a household has to get
+                                        # before it leaves the estate
     },
 
     # -------------------------------------------------------- the weather
@@ -201,12 +233,23 @@ SPEC = {
 
     # ---------------------------------------------------------- the gate
     "gate": {
-        "seeds": 8, "years": 8,
+        "seeds": 8, "years": 3,
         "residents_min": 40, "residents_max": 220,
         "occupancy_min": 0.55,          # of all the estate's units
-        "friction": (0.15, 0.85),       # mean top-need pressure, a band
+
+        # Mean top-need pressure, and the band is derived rather than
+        # fitted. The statistic is urge × need × phase-multiplier × drains,
+        # so on a need at its ceiling of 4.0 the pressure is roughly 4 ×
+        # the multiplier — about 5 across a day. That is a famine, and the
+        # top of the band sits under it. The bottom sits above nothing:
+        # needs at zero give zero, and an estate where nothing presses
+        # anywhere is a utopia, which is the other way this model dies.
+        # Written at phase 0 as (0.15, 0.85) — numbers chosen before an
+        # estate existed to have them, and which a perfectly living estate
+        # of 130 people failed at 1.7.
+        "friction": (0.6, 3.0),
         "distinct_min": 2.5,            # distinct (need, place) pairs a day
-        "use_min": 1,                   # uses a fixture kind must get a year
+        "use_min": 1,                   # uses a fixture kind must get
     },
 
     # ---------------------------------------------------- how it speaks

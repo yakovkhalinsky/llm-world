@@ -51,18 +51,28 @@ def build_noise(w):
         for x in range(ww):
             grid[y][x] = rules.R["sites"][w["cells"][y][x]["site"]]["noise"]
     for f in w["fixtures"].values():
-        n = len(f["occupants"])
+        n = f.get("last_use", 0)
         if not n or f["condition"] <= 0:
             continue
         loud = rules.R["fixtures"][f["kind"]].get("loud", 0.0)
         if not loud:
             continue
-        emit = loud * n
-        for dy in (-1, 0, 1):
-            for dx in (-1, 0, 1):
+        # A sound carries. The kernel was 3×3 for everything, so the
+        # playground — the loudest thing on the estate and the whole
+        # reason `quiet` is a commons — was inaudible from every door,
+        # seven cells away at the nearest. `carry` is how far this sort of
+        # thing is heard, and it differs by sort for the same reason
+        # `upkeep` does: a playground is not a bench.
+        carry = rules.R["fixtures"][f["kind"]].get("carry", 1)
+        emit = loud * min(n, 12)          # a hundred hands are not ten
+        for dy in range(-carry, carry + 1):
+            for dx in range(-carry, carry + 1):
+                d = abs(dx) + abs(dy)
+                if d > carry:
+                    continue
                 x, y = f["x"] + dx, f["y"] + dy
                 if W.in_bounds(w, x, y):
-                    grid[y][x] += emit * (1.0 if not (dx or dy) else 0.45)
+                    grid[y][x] += emit * (1.0 - d / (carry + 1.0))
     for y in range(hh):
         for x in range(ww):
             # a fate can quieten a place without closing it: tranquillity
@@ -119,6 +129,7 @@ def update_fixtures(w, evs):
         if spec.get("living"):
             continue                     # trees age by their own law
         uses = f.pop("uses_today", 0)
+        f["last_use"] = uses      # what the noise field hears tomorrow
         was = f["condition"]
         # Wear grows with use; mending grows with *damage*. The second half
         # is the whole of it: `repair / (1 + uses)` made the repair term
@@ -132,7 +143,8 @@ def update_fixtures(w, evs):
         # thing used past what the estate can keep up with still fails.
         f["condition"] = max(0.0, min(1.0, was
                                        - spec["decay"] * (1.0 + busy * uses)
-                                       + repair * (1.0 - was)))
+                                       + repair * spec.get("upkeep", 1.0)
+                                       * (1.0 - was)))
         if was > 0 and f["condition"] <= 0:
             evs.append({"day": w["day"], "kind": "broke", "what": f["kind"],
                         "x": f["x"], "y": f["y"]})
