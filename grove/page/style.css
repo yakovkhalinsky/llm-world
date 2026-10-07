@@ -97,7 +97,8 @@
   .zoomrow { display: flex; gap: 8px; align-items: center; margin: 10px 2px 2px; }
   .zoomrow button { padding: 3px 9px; font-size: 12.5px; }
   .zoomrow .hint { color: var(--dim); font-size: 11.5px; margin-left: auto; }
-  .tabs { display: flex; gap: 8px; margin: 2px 0 10px; }
+  .tabs { display: flex; gap: 8px; margin: 10px 0 0;
+          padding-top: 9px; border-top: 1px solid rgba(46,68,54,0.35); }
   .tabs button { padding: 3px 10px; font-size: 12.5px; }
   .chron, .timeline { list-style: none; margin: 0; padding: 0; }
   #chron { max-height: 34vh; overflow: auto; font-size: 13.5px;

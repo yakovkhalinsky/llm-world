@@ -30,15 +30,18 @@
     </div>
 
     <div class="panel feed">
+      <ul class="chron" id="chron"></ul>
+      <div id="sparks" hidden></div>
+      <div id="tune" hidden style="max-height:38vh; overflow:auto"></div>
+      <div class="status" id="look"></div>
+      <!-- the tabs sit under whatever they switch between: three views of
+           very different heights, and the panel is pinned to the bottom of
+           the window, so buttons along its top would jump with the content -->
       <div class="tabs">
         <button class="on" id="tabChron">chronicle</button>
         <button id="tabCensus">census</button>
         <button id="tabTune">⚖ tuning</button>
       </div>
-      <ul class="chron" id="chron"></ul>
-      <div id="sparks" hidden></div>
-      <div id="tune" hidden style="max-height:38vh; overflow:auto"></div>
-      <div class="status" id="look"></div>
     </div>
 
     <div class="panel ctl">
