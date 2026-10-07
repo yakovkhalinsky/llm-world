@@ -618,3 +618,55 @@ fates. Everything below lives on the path the gate cannot walk.
   frames, the rabbit still squashes on landing, the bake and the walls
   unmoved) and the real page over a throwaway world passes
   `tools/page_harness.js`.
+
+## The same sweep — the knobs that were not connected
+
+Found by asking the ruleset which of its own numbers nothing reads. All
+four are the same fault: a setting that exists, is settable, and does
+nothing — so anyone tuning through `--rules` (or writing a world's own
+constitution) changes a value the engine never consults.
+
+- [x] **b34** the sky's law was written twice. `cells.winter_grass_decay`,
+  `cells.wet_streak_soak`, `cells.mushroom_base_prob` and
+  `cells.mushroom_humus_mult` sit in the ruleset and merge from any JSON
+  override, while `weather.py` ran its own copies of the same four
+  numbers (`0.93`, `0.4`, `0.08`, `2.5`). `pacing.chron_max_per_tick` had
+  a twin too — the module constant `MAX_PER_TICK` in `events.py`. The
+  engine reads the ruleset for all five now. The arithmetic is
+  untouched at the default values, so the gate's census is unmoved.
+  Check: frost shaves the grove's grass to 179 with
+  `winter_grass_decay: 0.5` against 339 at 0.93; `mushroom_base_prob: 0`
+  grows no mushrooms at all against 63; a three-event week yields three
+  lines with `chron_max_per_tick: 3`.
+
+- [ ] **b35** the generator ignored its own recipe. `gen.noise_octaves`
+  and `gen.coarse_grid` rode in both packs while `gen.py` used the
+  module constants `_OCTAVES`/`_COARSE`; `gen.founder_names` and
+  `gen.founder_prob` were bare literals in the founding loop;
+  `gen.fern_scorch_light` was a leftover the fern's own per-species
+  `scorch_light` had already superseded (it is gone from both packs);
+  and a dead `lo, hi = 8.4, 9.0` local sat unread above the terrain
+  loop. All now read the pack. Check: `noise_octaves` 3 → 2 and
+  `coarse_grid` 6 → 9 each move the terrain and the plant count;
+  `founder_names` 6 → 1 leaves one founder; the packs' defaults
+  reproduce seed 42's world exactly (286 plants, 60 animals, 6
+  founders).
+
+- [ ] **b36** the gate would not read its own law, and the pack's
+  chronicler brief was dead. `tools/balance.py` defaulted to **10**
+  seeds while `gate.seeds` said 8 and `TUNING.md` tells you to run
+  `--seeds 8`; `gate.weeks` and `gate.species_all_present` were never
+  consulted at all; and `--biome` folded its pack in *after* argparse
+  had already read the defaults, so the law could not have applied
+  either way. The pack is folded first now and unset arguments take its
+  law (`--seeds`/`--weeks` default to `None` and fill in afterwards).
+  Separately, `presentation.chronicler_system` — a complete verbatim
+  brief in both packs, which `ARCHITECTURE.md` promises — was never
+  read: `chronicler.system()` rebuilt its own body from
+  `chronicler_role`. The pack's brief wins; the shared body stays as the
+  fallback for a pack that carries none. The grove's two texts are
+  character-for-character the same, so its prompt is unchanged.
+  Check: `balance.py` with no arguments reports 8 worlds; a pack may
+  waive the roster law with `species_all_present: false`; the desert's
+  chronicler brief and the grove's each come back from their own pack,
+  and a pack stripped of one still gets the shared body.

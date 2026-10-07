@@ -1,6 +1,7 @@
 """Event handling: which happenings deserve a place in the chronicle,
 with same-week same-story events folded into one counted event."""
 
+from . import rules
 from . import world as W
 
 # priority tiers for clipping loud weeks (lower is more important)
@@ -12,8 +13,6 @@ PRIORITY = {
     "fell": 3, "elder": 4, "predation": 5, "departure": 6,
     "browsed": 7, "picked": 7, "birth": 8, "oldage": 9, "starve": 9,
 }
-
-MAX_PER_TICK = 10
 
 FOLDABLE = ("fell", "predation", "browsed", "picked", "oldage", "starve",
             "birth")
@@ -43,7 +42,7 @@ def _fold(events):
 
 
 def notable(events):
-    """Filter + fold + clip: the chronicle takes ~MAX_PER_TICK events."""
+    """Filter + fold + clip: the chronicle takes a bounded week's worth."""
     scored = []
     for i, e in enumerate(_fold(events)):
         kind = e["kind"]
@@ -57,7 +56,7 @@ def notable(events):
         if kind in PRIORITY:
             scored.append((PRIORITY[kind], i, e))
     scored.sort(key=lambda t: (t[0], t[1]))
-    return [e for _, _, e in scored[:MAX_PER_TICK]]
+    return [e for _, _, e in scored[:rules.R["pacing"]["chron_max_per_tick"]]]
 
 
 def event_key(e):

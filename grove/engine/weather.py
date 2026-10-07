@@ -49,7 +49,8 @@ def _update_cells(w, evs):
     # the sky remembers: a run of rainy weeks soaks the ground
     w["wet_streak"] = (w.get("wet_streak", 0) + 1
                        if weather in ("rain", "storm") else 0)
-    soak = min(2.0, w.get("wet_streak", 0) * 0.4)
+    soak = min(2.0, w.get("wet_streak", 0)
+               * rules.R["cells"]["wet_streak_soak"])
 
     for y in range(size):
         for x in range(size):
@@ -78,16 +79,16 @@ def _update_cells(w, evs):
                     and light > 0.30:
                 c["grass"] = _clamp01(c["grass"] + regrow)
             if weather == "frost":
-                c["grass"] *= 0.93
+                c["grass"] *= rules.R["cells"]["winter_grass_decay"]
 
             # mushrooms: they favor humus, and boom after days of rain
             if c["mushroom"] > 0:
                 c["mushroom"] -= 1
             elif weather in ("rain", "storm") and \
                     (c["grass"] > 0.25 or c.get("humus", 0) > 0.3):
-                p_mush = 0.08 * (1.0 + soak)
+                p_mush = rules.R["cells"]["mushroom_base_prob"] * (1.0 + soak)
                 if c.get("humus", 0) > 0.3:
-                    p_mush *= 2.5
+                    p_mush *= rules.R["cells"]["mushroom_humus_mult"]
                 if rng.random() < p_mush:
                     c["mushroom"] = 3
 
