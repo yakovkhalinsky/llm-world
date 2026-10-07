@@ -17,6 +17,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS world (id INTEGER PRIMARY KEY, json TEXT, day INTEGER);
 CREATE TABLE IF NOT EXISTS stats (day INTEGER, json TEXT);
 CREATE TABLE IF NOT EXISTS chronicle (day INTEGER, text TEXT);
+CREATE TABLE IF NOT EXISTS days (day INTEGER PRIMARY KEY, line TEXT, json TEXT);
 """
 
 
@@ -48,10 +49,26 @@ class DB:
         return json.loads(row[0]) if row else None
 
     # -- the census -------------------------------------------------------
-    def add_stats(self, day, census):
+    def add_stats(self, day, census, line=None, book=None):
+        """The census, and — when the caller has them — the shape of the
+        day and the numbers behind it. The shape is stored, not recomputed:
+        a restart used to leave every earlier day with no line at all, and
+        the feed called them all quiet, which they had not been."""
         self.con.execute("INSERT INTO stats (day, json) VALUES (?, ?)",
                          (day, json.dumps(census)))
+        if line is not None or book is not None:
+            self.con.execute(
+                "INSERT OR REPLACE INTO days (day, line, json) VALUES (?,?,?)",
+                (day, line, json.dumps(book) if book is not None else None))
         self.con.commit()
+
+    def days(self, limit=64):
+        """The shapes of the last few days, oldest first."""
+        rows = self.con.execute(
+            "SELECT day, line, json FROM days ORDER BY day DESC LIMIT ?",
+            (limit,)).fetchall()
+        return [{"day": d, "line": ln, "book": json.loads(js) if js else None}
+                for d, ln, js in reversed(rows)]
 
     # -- the chronicle ----------------------------------------------------
     def add_chronicle(self, day, text):

@@ -60,6 +60,8 @@ class SimRunner(threading.Thread):
         self.events = []
         self.last_watch = {"fate": None, "region": None, "why": None,
                            "day": None}
+        self.daybooks = {}           # day -> the shape of that day
+        self.past_lines = {}         # day -> its line, from the database
         self.lines = []              # since the last chronicle entry
         self.span = 0                # days since the last chronicle entry
         self.chronicle = []
@@ -82,6 +84,11 @@ class SimRunner(threading.Thread):
                     self.events.extend(evs)
                     self.lines.extend(chronicler.day_lines(self.est.world, evs))
                     self.span += 1
+                    day = self.est.world["day"]
+                    book = self.est.world.get("daybook") or {}
+                    self.daybooks[day] = dict(book, uses=dict(book.get("uses", {})))
+                    for old_day in [d for d in self.daybooks if d < day - 64]:
+                        del self.daybooks[old_day]
                     del self.events[:-400]
                     self.est.save()
                 if self.step_once:
@@ -162,6 +169,9 @@ class Estate:
         # the record the estate already has, so a restart resumes its
         # chronicle rather than beginning a new one
         self.history = self.db.chronicle(40)
+        # and the shapes of the days it has already lived, so a restart
+        # resumes the feed rather than blanking it
+        self.past_days = self.db.days(64)
         self.save_every = 1
         # the watcher is optional in the only sense that matters: with no
         # model the estate still runs, because the model never owned any of
@@ -172,7 +182,11 @@ class Estate:
 
     def save(self):
         self.db.save_world(self.world)
-        self.db.add_stats(self.world["day"], _census(self.world))
+        w = self.world
+        book = w.get("daybook") or {}
+        self.db.add_stats(w["day"], _census(w),
+                          render.day_line(book, max(1, len(w["residents"]))),
+                          book)
 
 
 def _census(world):
@@ -237,7 +251,7 @@ def ground(est):
     }
 
 
-def day_feed(w, events, days=24):
+def day_feed(w, events, books, past=None, days=24):
     """The last few days, one row each.
 
     A feed of *events* looks frozen on an estate having a quiet week, which
@@ -250,8 +264,18 @@ def day_feed(w, events, days=24):
     for e in events:
         by_day.setdefault(e["day"], []).append(render.say(e))
     today = w["day"]
-    return [{"day": d, "says": by_day.get(d, [])}
-            for d in range(max(1, today - days + 1), today + 1)]
+    people = max(1, len(w["residents"]))
+    out = []
+    for d in range(max(1, today - days + 1), today + 1):
+        line = render.day_line(books.get(d), people) or (past or {}).get(d)
+        says = by_day.get(d, [])
+        # a day the estate has no record of is not a quiet day; it is a day
+        # before the record began, and it is left out rather than dressed
+        # up as something it was not
+        if not line and not says:
+            continue
+        out.append({"day": d, "says": says, "line": line or ""})
+    return out
 
 
 def _small(vals, scale=9.0):
@@ -316,7 +340,7 @@ def snapshot(est, runner, lock):
             "buildings": buildings,
             "shade": shade, "light": light,
             "events": [dict(e, say=render.say(e)) for e in evs],
-            "days": day_feed(w, day_events),
+            "days": day_feed(w, day_events, runner.daybooks, runner.past_lines),
             "watcher": dict(runner.last_watch),
             "chronicle": list(runner.chronicle[-8:]),
             "llm": llmm.status_line(runner.llm),
@@ -384,6 +408,8 @@ def cmd_web(args):
     # them. (The patch that was supposed to add this line silently matched
     # nothing, which is why it is asserted now.)
     runner.chronicle = list(est.history)
+    runner.past_lines = {d["day"]: d["line"] for d in est.past_days}
+    runner.daybooks = {d["day"]: d["book"] for d in est.past_days if d["book"]}
     runner.start()
 
     class Handler(BaseHTTPRequestHandler):

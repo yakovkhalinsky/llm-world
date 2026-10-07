@@ -139,6 +139,13 @@ def new_state(seed: int, width: int, height: int) -> dict:
         "next_id": 1,
         "weather": "clear", "weather_left": 0, "wet_days": 0,
         "waiting": [],               # households outside, queued to move in
+        # What the day was *like*, collected as it happens and thrown away
+        # at the next dawn. Every one of these is already computed by the
+        # tick and was being discarded, which is why a feed that read only
+        # *events* reported "a quiet day" for weeks on an estate where
+        # eighty people were out and about. A day with nothing notable in
+        # it still had a shape, and the estate was not recording it.
+        "daybook": {"uses": {}, "out": 0, "noise": 0.0, "broke": 0},
         "fates": [],                 # the watcher's effects, in force now
         "pending": [],               # sent, and landing tomorrow
         "biome": None,

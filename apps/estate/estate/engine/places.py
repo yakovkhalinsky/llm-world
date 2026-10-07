@@ -80,6 +80,10 @@ def build_noise(w):
             w["cells"][y][x]["noise"] = max(
                 0.0, (grid[y][x] - soft)
                 * W.fate_mult(w, "noise_mult", x, y))
+    book = w.get("daybook")
+    if book is not None:
+        book["noise"] = max((c["noise"] for row in w["cells"] for c in row),
+                            default=0.0)
     return w["cells"]
 
 
@@ -163,6 +167,8 @@ def update_fixtures(w, evs):
         if was > 0 and f["condition"] <= 0:
             evs.append({"day": w["day"], "kind": "broke", "what": f["kind"],
                         "x": f["x"], "y": f["y"]})
+            if w.get("daybook") is not None:
+                w["daybook"]["broke"] += 1
         # a shop is supplied: the delivery fate is a windfall on top of
         # this, not the estate's only way of eating
         if spec.get("restock"):

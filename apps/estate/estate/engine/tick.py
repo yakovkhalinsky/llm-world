@@ -22,6 +22,7 @@ def tick(w) -> list:
     evs = []
     w["day"] += 1
     t = w["day"]
+    w["daybook"] = {"uses": {}, "out": 0, "noise": 0.0, "broke": 0}
 
     # 1. the day turns; a season turn is news
     prev, now = W.season_index(t - 1), W.season_index(t)
@@ -43,6 +44,7 @@ def tick(w) -> list:
     # 4. the estate's memory of the sky it actually got, not the one that
     #    was rolled for it
     update_wet_streak(w)
+    w["daybook"]["weather"] = w["weather"]
 
     # 5. the trees grow and can come down; their shade is built with them
     trees.update_trees(w, evs)

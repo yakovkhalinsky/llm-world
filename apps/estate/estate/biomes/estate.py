@@ -42,6 +42,11 @@ SPEC = {
     # but *imposed* by the noise you are standing in, which is what makes
     # it the one need a lively estate can never fully meet.
     "needs": {
+        # `home` says a flat can meet this need, which is what puts home in
+        # the candidate list for it — and it was hardcoded as ("rest",
+        # "quiet") in two places, which is a fact about a need living in the
+        # engine instead of in the pack that defines the needs.
+        #
         # `phases` is what gives a day its shape rather than its length: an
         # unlisted phase counts 1.0, so food leans on the mealtimes, the
         # children come out after lunch, and the estate wants its quiet at
@@ -49,17 +54,22 @@ SPEC = {
         # satisfiable then and hardly ever during the day
         "food":    {"urge": 1.0, "rate": 0.30, "glyph": "🍞",
                     "phases": {"dawn": 1.7, "morning": 1.3,
-                               "evening": 1.7, "night": 0.4}},
+                               "evening": 1.7, "night": 0.4},
+                    "weekend": 0.9},
         "rest":    {"urge": 0.9, "rate": 0.26, "glyph": "🛏",
-                    "phases": {"afternoon": 0.8, "night": 2.3}},
+                    "phases": {"afternoon": 0.8, "night": 2.3},
+                    "weekend": 1.25, "home": True},
         "company": {"urge": 0.7, "rate": 0.22, "glyph": "👥",
-                    "phases": {"afternoon": 1.2, "evening": 1.7}},
+                    "phases": {"afternoon": 1.2, "evening": 1.7},
+                    "weekend": 1.5},
         "play":    {"urge": 0.8, "rate": 0.34, "glyph": "🎈",
                     "roles": ("child",),
                     "phases": {"afternoon": 1.9, "evening": 1.1,
-                               "night": 0.1}},
+                               "night": 0.1},
+                    "weekend": 1.7},
         "quiet":   {"urge": 0.6, "rate": 0.00, "glyph": "🤫",
-                    "from": "noise", "phases": {"night": 1.9}},
+                    "from": "noise", "phases": {"night": 1.9}, "weekend": 0.85,
+                    "home": True},
     },
 
     # ------------------------------------------------------ the fixtures
@@ -174,10 +184,26 @@ SPEC = {
         "unhappy_decay": 0.97,          # and how fast it settles again
         "emigrate_at": 3.0,             # how sour a household has to get
                                         # before it leaves the estate
+        "move_away_prob": 0.0009,       # per household per day, for its own
+                                        # reasons: work, family, a bigger
+                                        # flat elsewhere. Not every departure
+                                        # is misery, and `emigrate_at` could
+                                        # only ever move people out when they
+                                        # were fraying — nobody ever was, so
+                                        # once the flats had filled the estate
+                                        # had no comings and no goings at all,
+                                        # for years, and nothing to report
     },
 
     # -------------------------------------------------------- the weather
     "weather": {
+        # How much the day's own sky puts you off going out. The wet *streak*
+        # compounds on top of this (soften, below); this is the day itself,
+        # and without it rain changed nothing that anyone could see — the
+        # streak takes a fortnight to build, so the estate ran a rainy
+        # Tuesday exactly as it ran a clear one.
+        "outdoor": {"clear": 1.0, "rain": 0.68, "storm": 0.30,
+                    "heat": 1.0, "frost": 0.62},
         "rain_prob": {"0": 0.30, "1": 0.18, "2": 0.32, "3": 0.20},
         "storm_prob": {"0": 0.02, "2": 0.05},
         "heat_prob": {"1": 0.08},

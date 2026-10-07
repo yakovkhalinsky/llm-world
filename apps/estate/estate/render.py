@@ -62,6 +62,54 @@ def say(ev) -> str:
     return str(k)
 
 
+def _plural(kind) -> str:
+    """Benches, not benchs. The kind names come from the pack and are
+    singular, so anything that says them aloud has to say them properly."""
+    if kind.endswith(("ch", "sh", "s", "x")):
+        return kind + "es"
+    if kind.endswith("y"):
+        return kind[:-1] + "ies"
+    return kind + "s"
+
+
+def day_line(book, people) -> str:
+    """What a day was *like*, from what actually happened in it.
+
+    Not an event and not a summary: the shape of an ordinary day. Most days
+    on a settled estate have no news at all and still have a shape, and a
+    feed that reported only events called every one of them quiet.
+
+    It leads with whatever differed. The first version recited the same
+    three statistics every morning — the numbers were real but they barely
+    moved, so a merely settled estate read as a metronome — and the sky is
+    the one thing that genuinely is not the same from one day to the next.
+    Nothing here is invented; every number is the day's own.
+    """
+    if not book:
+        return ""
+    uses = book.get("uses") or {}
+    if not uses:
+        return "a still day — nobody left their flat"
+    total = sum(uses.values())
+    sky = book.get("weather")
+    top = sorted(uses.items(), key=lambda kv: (-kv[1], kv[0]))
+    aside = [k for k, _ in top if k != "shop"][:1]
+    place = _plural(aside[0]) if aside else "courtyard"
+    if sky == "storm":
+        return "a storm — nobody crossed the estate who did not have to"
+    if sky == "rain":
+        return f"rain on and off; {total} errands, the {place} empty between showers"
+    if sky == "heat":
+        return f"hot and still; {total} errands, and whatever shade there was, taken"
+    if sky == "frost":
+        return f"cold and bright; {total} errands, the {place} busy and nobody lingering"
+    if total >= 400:
+        return f"a busy day — {total} errands, the {place} never empty"
+    if total <= 352:
+        return f"a slow day — {total} errands, and the {place} mostly to itself"
+    return f"{total} errands, most of them to the shop, and the {place} busy"
+
+
 def header(world) -> str:
     day = world["day"]
     wd = W.weekday_name(day)

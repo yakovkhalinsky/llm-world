@@ -393,3 +393,28 @@ about unread keys applies to the person writing them too.
   harness now asserts the feed's actual rows, the census assertion asks for
   the census, and a new guard fails if any name is declared twice in a file
   or twice at the top level of the page.
+
+- [x] **h26** *class 12, and the one that took three tries* — **an estate
+  whose days were interchangeable had no days in it.** Yakov reported that
+  the feed always said "a quiet day". It did, and it was telling the truth:
+  the estate ran 391, 395, 397 errands every single day, and eighty-odd
+  people went out and came home in the same order every morning. **The
+  plan's three anti-equilibrium loops were not what was missing. What was
+  missing was that two of them had never been connected:** the plan has
+  said since it was written that weather "keeps people in", and nothing
+  implemented it — rain softened the noise and changed nothing else at all
+  — and nothing anywhere distinguished Saturday from Tuesday. Fixing it
+  took three goes, each wrong in an instructive way. Putting the sky on the
+  *places* did nothing, because it multiplied every outdoor option by the
+  same number and left the ranking untouched. Putting it on the *pressure*
+  worked, but only for needs that cannot be met at home — which meant the
+  engine had to stop hardcoding `("rest", "quiet")` in two places and ask
+  the pack which needs a flat can meet (`"home": true`), a fact about a
+  need that belongs with the needs. And the day's own line was a recital of
+  the same three statistics until it was made to lead with whatever
+  differed. A storm now stops the estate (243 errands against 393); rain
+  and frost visibly shorten it; the weekend has a shape; households come
+  and go for their own reasons rather than only when miserable, which after
+  the flats filled they never did — so the estate had no comings and no
+  goings and no news of any kind for years. Check: the day feed's lines are
+  distinct, and the gate still holds.

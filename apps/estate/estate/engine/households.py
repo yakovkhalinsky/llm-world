@@ -206,6 +206,31 @@ def want_kind(w):
     return best if need[best] > 0.5 else None
 
 
+def turnover(w, evs):
+    """A household leaves for its own reasons.
+
+    Not every departure is misery. The estate could only ever move people
+    out when they were fraying, and on a healthy estate nobody is — so
+    after the flats had filled, nobody left and nobody arrived and the
+    estate had no news of any kind, for years. Real estates turn over:
+    work, family, a bigger flat somewhere else. The letting office refills
+    what they leave, so the population holds and the comings and goings
+    are the estate's ordinary weather.
+    """
+    p = rules.R["pop"].get("move_away_prob", 0.0)
+    if not p:
+        return
+    rng = W.rng_for(w["seed"], w["day"], "turnover")
+    for hh in list(w["households"].values()):
+        if rng.random() >= p:
+            continue
+        folk = members_of(w, hh)
+        evs.append({"day": w["day"], "kind": "left",
+                    "who": (f"the {folk[0]['name']} household" if folk
+                            else f"a {hh['kind']}")})
+        move_out(w, hh, "moved away")
+
+
 def letting_office(w, evs):
     """Fill vacant flats. A flat must stand empty for `letting_after` days
     first — so a vacancy is a fact about the estate's life and not an
@@ -273,5 +298,6 @@ def update_households(w, evs):
         births(w, evs)
     unhappiness(w)
     emigration(w, evs)
+    turnover(w, evs)
     arrivals(w)
     letting_office(w, evs)

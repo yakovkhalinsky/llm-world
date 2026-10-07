@@ -77,11 +77,15 @@ const Panels = (() => {
      * events: the estate is quiet most days, and a panel that only ever
      * showed events sat unchanged for half an hour and read as broken. */
     const days = (st.days || []).slice().reverse();
-    $('chron').innerHTML = days.length ? days.map(d =>
-      '<li' + (d.says.length ? '' : ' class="quiet"') + '>' +
-      '<span class="d">d' + d.day + '</span> ' +
-      (d.says.length ? esc(d.says.join(' · ')) : 'a quiet day') +
-      '</li>').join('') : '<li>nothing has happened yet. it is early.</li>';
+    $('chron').innerHTML = days.length ? days.map(d => {
+      const shape = d.line || '';
+      const news = d.says.length ? d.says.join(' · ') : '';
+      return '<li' + (d.says.length ? '' : ' class="quiet"') + '>' +
+        '<span class="d">d' + d.day + '</span>' +
+        '<span class="shape">' + esc(shape) + '</span>' +
+        (news ? '<span class="news">' + esc(news) + '</span>' : '') +
+        '</li>';
+    }).join('') : '<li>nothing has happened yet. it is early.</li>';
   }
 
   function tab(name) {

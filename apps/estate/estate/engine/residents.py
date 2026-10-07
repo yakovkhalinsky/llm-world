@@ -16,6 +16,7 @@ rather than a diff:
 from .. import rules
 from .. import world as W
 from . import places
+from . import weather
 
 PHASES = ("dawn", "morning", "afternoon", "evening", "night")
 
@@ -56,7 +57,9 @@ def candidates(w):
         if u["household"] is None:
             continue
         b = w["buildings"][str(u["building"])]
-        for need in ("rest", "quiet"):
+        for need, spec in rules.R["needs"].items():
+            if not spec.get("home"):
+                continue
             out[need].append({"kind": "home", "x": b["door"][0],
                               "y": b["door"][1], "fixture": None, "unit": u})
     return out
@@ -64,6 +67,19 @@ def candidates(w):
 
 def phase_mult(need, phase):
     return rules.R["needs"][need].get("phases", {}).get(phase, 1.0)
+
+
+def week_mult(need, day):
+    """The week has a shape, and it is not a detail.
+
+    Saturday and Sunday are not Tuesday. Without this the estate had no
+    rhythm above the day at all: every one of them ran 391, 395, 397
+    errands and the plan's own day-feed said the same sentence for weeks.
+    A world whose days are interchangeable has no days in it.
+    """
+    if W.weekday(day) < 5:
+        return 1.0
+    return rules.R["needs"][need].get("weekend", 1.0)
 
 
 def pressure(w, r, need, phase):
@@ -74,7 +90,17 @@ def pressure(w, r, need, phase):
     hh = rules.R["households"].get(
         w["households"].get(str(r["household"]), {}).get("kind", ""), {})
     mult = hh.get("drains", {}).get(need, 1.0)
-    return spec["urge"] * r["needs"][need] * phase_mult(need, phase) * mult
+    p = (spec["urge"] * r["needs"][need] * phase_mult(need, phase)
+         * week_mult(need, w["day"]) * mult)
+    # Rain belongs here, in what sends you looking, and not in what you
+    # find when you get there. Put on the places instead it multiplied every
+    # outdoor option by the same number, so the ranking was untouched and a
+    # rainy Tuesday ran exactly as a clear one did. A need a flat can meet
+    # is not damped: you are no less hungry on a wet day, only less willing
+    # to cross the estate for it.
+    if not spec.get("home"):
+        p *= rules.R["weather"].get("outdoor", {}).get(w["weather"], 1.0)
+    return p
 
 
 def ranked_needs(w, r, phase):
@@ -111,6 +137,8 @@ def _utility(w, r, c, need, phase, rng):
         # four people spent the rest of the year on the bottom road. The
         # way home is also the recovery path.
         eff = rules.R["engine"]["home_rest"] * c["unit"]["condition"]
+        # ... and home is worth more when it is wet out
+        eff *= 1.0 + 0.35 * weather.wetness(w)
         if need == "quiet":
             eff *= max(0.05, 1.0 - places.unit_noise(w, c["unit"]))
         # No stair term here. The stairs are already what they cost — they
@@ -126,6 +154,13 @@ def _utility(w, r, c, need, phase, rng):
         f = c["fixture"]
         eff = places.effective(c["kind"], need, f["condition"],
                                len(f["occupants"]))
+        # and the weather reaches the need without the weather module ever
+        # knowing what a need is: a wet day keeps people in. The plan has
+        # claimed this since it was written and nothing implemented it, so
+        # rain softened the noise and changed nothing else at all.
+        wet = weather.wetness(w)
+        if wet:
+            eff *= 1.0 - 0.45 * wet
         shade = w["cells"][f["y"]][f["x"]]["shade"]
         if w["weather"] == "heat":
             eff *= 1.0 + 0.8 * shade      # the shade is worth having
@@ -271,6 +306,9 @@ def _satisfy(w, r, c, need, phase):
     f["occupants"].append(r["id"])
     f["uses_today"] = f.get("uses_today", 0) + 1
     f["use_total"] += 1
+    if w.get("daybook") is not None:
+        u = w["daybook"]["uses"]
+        u[f["kind"]] = u.get(f["kind"], 0) + 1
     if need == "food" and f.get("stock") is not None and f["stock"] > 0:
         f["stock"] -= 1
 
@@ -348,3 +386,10 @@ def update_residents(w, evs):
                 r["stress"] *= rules.R["engine"]["stress_decay"]
         for f in w["fixtures"].values():
             f["occupants"] = []
+        # how full the estate was at its fullest hour, which is the one
+        # number that says whether a day was busy without saying anything
+        # about what happened in it
+        if w.get("daybook") is not None:
+            out = sum(1 for x in w["residents"].values()
+                      if x["where"]["mode"] == "at")
+            w["daybook"]["out"] = max(w["daybook"]["out"], out)

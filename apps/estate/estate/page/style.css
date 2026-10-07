@@ -134,7 +134,9 @@ body.plain #scene { display: none; }
   color: var(--dim);
 }
 .chron li:first-child { color: var(--ink); }
-.chron li.quiet { color: var(--dim); opacity: 0.55; }
+.chron li.quiet { color: var(--dim); opacity: 0.75; }
+.chron li .shape { color: var(--dim); }
+.chron li .news { color: var(--ink); display: block; padding-left: 26px; }
 .chron li .d { color: var(--lamp); font-variant-numeric: tabular-nums; }
 
 .tabs {
