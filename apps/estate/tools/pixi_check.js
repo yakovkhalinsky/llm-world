@@ -161,6 +161,12 @@ async function settle(n) {
    * globals have to be asked for inside the context, not read off it */
   const grab = expr => vm.runInContext(expr, ctx);
   const Scene = grab('Scene'), S = grab('S'), Panels = grab('Panels');
+  const sceneHeights = () => {
+    const sc = Scene.dbg;
+    let hi = 0;
+    for (const k in (sc.heights || {})) hi = Math.max(hi, sc.heights[k]);
+    return hi;
+  };
 
   /* Two functions of one name *in one scope* is not an error — declarations
    * hoist, so the later one silently wins and the earlier is dead code that
@@ -214,8 +220,17 @@ async function settle(n) {
   const drewTree = OPS.filter(o => o[0] === 'ellipse').length;
   ok('trees are drawn with a shadow of their own', drewTree >= 1,
      drewTree + ' ellipses');
-  ok('every building footprint is drawn',
-     OPS.filter(o => o[0] === 'rect').length >= state.buildings.length * 5);
+  /* the ground is columns, not tiles: every cell is two visible faces and
+   * a top, so the polygon count is at least three times the plan — and a
+   * block has to be *taller* than the lawn beside it or the floors are not
+   * being drawn at all */
+  const polys = OPS.filter(o => o[0] === 'poly').length;
+  ok('the plan is drawn as columns, not tiles',
+     polys >= ground.width * ground.height * 3,
+     polys + ' polygons for ' + ground.width * ground.height + ' cells');
+  const tall = sceneHeights();
+  ok('the blocks stand up: a storey is more than the ground is thick',
+     tall > 40, 'tallest column ' + tall + 'px');
   ok('a window pane was drawn for every flat',
      OPS.filter(o => o[0] === 'circle').length >= Object.keys(ground.units).length,
      'circles ' + OPS.filter(o => o[0] === 'circle').length +
@@ -250,8 +265,9 @@ async function settle(n) {
 
   /* --- a click lands where it was aimed ------------------------------- */
   const target = { x: 12, y: 15 };
-  const wx = sc.ox + (target.x + 0.5) * 30 * sc.scale;
-  const wy = sc.oy + (target.y + 0.5) * 30 * sc.scale;
+  const c = Scene.iso(target.x + 0.5, target.y + 0.5);
+  const wx = sc.ox + c.x * sc.scale;
+  const wy = sc.oy + c.y * sc.scale;
   const got = Scene.cellAt(wx, wy);
   ok('a click maps back to the cell it landed on',
      got && got.x === target.x && got.y === target.y,
