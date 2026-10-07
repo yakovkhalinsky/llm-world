@@ -297,10 +297,10 @@ const WORLD = `
     const s = ST.s, w = s.size + 1, c = cornerField(s);
     const top = vpos(0, 0)[1] - c[0] * elevPx();
     const bot = OY + (s.size - 1) * TH + TH / 2 + SIDE;
-    return { topPx: PY + top * FIT, botPx: PY + bot * FIT, CH };
+    return { topPx: PY + top * FIT, botPx: PY + bot * FIT, CH, PAD_TOP };
   })()`, a.sandbox);
   ok("the island hangs from the top of the window, plinth and all",
-     Math.abs(highB.topPx - 14) < 1.5 && highB.botPx <= highB.CH,
+     Math.abs(highB.topPx - highB.PAD_TOP) < 1.5 && highB.botPx <= highB.CH,
      `top at ${highB.topPx.toFixed(1)}px of ${highB.CH}, ` +
      `plinth at ${highB.botPx.toFixed(1)}px`);
   const earthW = vm.runInContext("ENG.earthSpr.width", a.sandbox);

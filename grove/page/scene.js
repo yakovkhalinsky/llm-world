@@ -8,7 +8,7 @@ if (new URLSearchParams(location.search).has("plain"))
 const TW = 40, TH = 20;              // isometric tile diamond (2:1)
 const SIDE = 17;                     // slab thickness under the floor
 const PADX = 30, PADY = 72;          // margins head-/foot-room
-const PAD_TOP = 14, PAD_BOT = 14;    // the island's own gap to the window
+const PAD_TOP = 34, PAD_BOT = 14;    // the island's own gap to the window
 const cnv = $("scene");     // kept for the plain word-map and history
 let ctx = null;              // the recipes draw only inside captures
 const DPR = Math.max(1.5, window.devicePixelRatio || 1);
