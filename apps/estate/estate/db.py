@@ -49,7 +49,7 @@ class DB:
         return json.loads(row[0]) if row else None
 
     # -- the census -------------------------------------------------------
-    def add_stats(self, day, census, line=None, book=None):
+    def add_stats(self, day, census, line=None, book=None, says=None):
         """The census, and — when the caller has them — the shape of the
         day and the numbers behind it. The shape is stored, not recomputed:
         a restart used to leave every earlier day with no line at all, and
@@ -59,16 +59,24 @@ class DB:
         if line is not None or book is not None:
             self.con.execute(
                 "INSERT OR REPLACE INTO days (day, line, json) VALUES (?,?,?)",
-                (day, line, json.dumps(book) if book is not None else None))
+                (day, line, json.dumps({"book": book, "says": says or []})))
         self.con.commit()
 
     def days(self, limit=64):
-        """The shapes of the last few days, oldest first."""
+        """The shapes of the last few days, oldest first — and the news
+        each of them carried. The lines were stored and the news was not,
+        so a restart kept the shape of every day and lost everything that
+        had happened in any of them: the same join-missing fault as the
+        chronicle, in the same file, found the same way."""
         rows = self.con.execute(
             "SELECT day, line, json FROM days ORDER BY day DESC LIMIT ?",
             (limit,)).fetchall()
-        return [{"day": d, "line": ln, "book": json.loads(js) if js else None}
-                for d, ln, js in reversed(rows)]
+        out = []
+        for d, ln, js in reversed(rows):
+            blob = json.loads(js) if js else {}
+            out.append({"day": d, "line": ln, "book": blob.get("book"),
+                        "says": blob.get("says") or []})
+        return out
 
     # -- the chronicle ----------------------------------------------------
     def add_chronicle(self, day, text):

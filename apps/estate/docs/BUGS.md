@@ -418,3 +418,15 @@ about unread keys applies to the person writing them too.
   the flats filled they never did — so the estate had no comings and no
   goings and no news of any kind for years. Check: the day feed's lines are
   distinct, and the gate still holds.
+
+- [x] **h27** *class 1 & 12, and h21's exact shape a third time* — **the
+  day's shape was stored and the day's news was not.** Restarting the
+  server kept the shape of every day in the feed and lost everything that
+  had happened in any of them, because the line went to the database and
+  the events stayed in the running process. The feed then read as a
+  fortnight of nothing happening on an estate that had just had a bench
+  break, a household leave and a single move in. It is the same missing
+  join as h21 — a write path and a read path that each work and are never
+  connected — found the same way both times (by comparing what the estate
+  served against what was on disk), and it will keep recurring wherever a
+  fact lives only in the process. Both are stored with the day now.

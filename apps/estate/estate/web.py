@@ -62,6 +62,7 @@ class SimRunner(threading.Thread):
                            "day": None}
         self.daybooks = {}           # day -> the shape of that day
         self.past_lines = {}         # day -> its line, from the database
+        self.past_news = {}          # day -> its news, from the database
         self.lines = []              # since the last chronicle entry
         self.span = 0                # days since the last chronicle entry
         self.chronicle = []
@@ -90,7 +91,7 @@ class SimRunner(threading.Thread):
                     for old_day in [d for d in self.daybooks if d < day - 64]:
                         del self.daybooks[old_day]
                     del self.events[:-400]
-                    self.est.save()
+                    self.est.save(evs)
                 if self.step_once:
                     self.step_once -= 1
                 self._maybe_watch()
@@ -180,13 +181,13 @@ class Estate:
             self.llm = llmm.LLM(model=getattr(args, "model", "auto") or "auto",
                                 tier=getattr(args, "tier", "cloud"))
 
-    def save(self):
+    def save(self, evs=()):
         self.db.save_world(self.world)
         w = self.world
         book = w.get("daybook") or {}
         self.db.add_stats(w["day"], _census(w),
                           render.day_line(book, max(1, len(w["residents"]))),
-                          book)
+                          book, [render.say(e) for e in evs])
 
 
 def _census(world):
@@ -251,7 +252,7 @@ def ground(est):
     }
 
 
-def day_feed(w, events, books, past=None, days=24):
+def day_feed(w, events, books, past=None, news=None, days=24):
     """The last few days, one row each.
 
     A feed of *events* looks frozen on an estate having a quiet week, which
@@ -268,7 +269,7 @@ def day_feed(w, events, books, past=None, days=24):
     out = []
     for d in range(max(1, today - days + 1), today + 1):
         line = render.day_line(books.get(d), people) or (past or {}).get(d)
-        says = by_day.get(d, [])
+        says = by_day.get(d) or (news or {}).get(d) or []
         # a day the estate has no record of is not a quiet day; it is a day
         # before the record began, and it is left out rather than dressed
         # up as something it was not
@@ -340,7 +341,8 @@ def snapshot(est, runner, lock):
             "buildings": buildings,
             "shade": shade, "light": light,
             "events": [dict(e, say=render.say(e)) for e in evs],
-            "days": day_feed(w, day_events, runner.daybooks, runner.past_lines),
+            "days": day_feed(w, day_events, runner.daybooks,
+                             runner.past_lines, runner.past_news),
             "watcher": dict(runner.last_watch),
             "chronicle": list(runner.chronicle[-8:]),
             "llm": llmm.status_line(runner.llm),
@@ -409,6 +411,7 @@ def cmd_web(args):
     # nothing, which is why it is asserted now.)
     runner.chronicle = list(est.history)
     runner.past_lines = {d["day"]: d["line"] for d in est.past_days}
+    runner.past_news = {d["day"]: d["says"] for d in est.past_days if d["says"]}
     runner.daybooks = {d["day"]: d["book"] for d in est.past_days if d["book"]}
     runner.start()
 
