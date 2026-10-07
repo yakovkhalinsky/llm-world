@@ -779,49 +779,66 @@ function animalBody(shape, a, ph) {
 
 /* particles fall over the whole scene */
 const dots = [];
+
+/* The box the air is seen through, in WORLD units. Every particle's sprite
+   is a child of ENG.poolLayer, which lives inside ENG.worldGroup — placed
+   at (PX, PY) and scaled by FIT — so a particle must be made and culled in
+   the units the island is drawn in, not in canvas pixels. The two agree
+   only at FIT 1: on a phone the island is wider than the screen, and rain
+   spawned over canvas x 0..CW world-units covered the left sliver of it —
+   never more than FIT of the window, however long you watched. */
+function airBox() {
+  if (!FIT) return { x0: 0, x1: CW, y0: 0, y1: CH };
+  return { x0: -PX / FIT, x1: (CW - PX) / FIT,
+           y0: -PY / FIT, y1: (CH - PY) / FIT };
+}
+function airX(air) { return air.x0 + Math.random() * (air.x1 - air.x0); }
+
 function spawnParticles(s, dt) {
   const storm = s.weather === "storm", rain = s.weather === "rain",
         frost = s.weather === "frost";
+  const air = airBox();
   const count = kind => dots.reduce((n, d) => n + (d.kind === kind), 0);
   if ((rain || storm) && count("rain") < (storm ? 120 : 36) &&
       Math.random() < 0.5)
-    dots.push({ kind: "rain", x: Math.random() * CW, y: -6,
+    dots.push({ kind: "rain", x: airX(air), y: air.y0 - 6,
                 v: 190 + Math.random() * 90, dx: storm ? 42 : 12 });
   if (frost && count("snow") < 70)
     for (let k = 0; k < 2; k++)
-      dots.push({ kind: "snow", x: Math.random() * CW, y: -4,
+      dots.push({ kind: "snow", x: airX(air), y: air.y0 - 4,
                   v: 18 + Math.random() * 14, dx: Math.random() * 10 - 5 });
   if (s.season === "autumn" && count("leaf") < 10 && Math.random() < 0.015)
-    dots.push({ kind: "leaf", x: Math.random() * CW, y: -4,
+    dots.push({ kind: "leaf", x: airX(air), y: air.y0 - 4,
                 v: 22 + Math.random() * 16, dx: Math.random() * 24 - 12 });
   /* the air holds its own quiet life: pollen in spring, fireflies on
      summer weeks — they drift rather than fall */
   if (s.season === "spring" && count("pollen") < 18 && Math.random() < 0.06)
-    dots.push({ kind: "pollen", x: Math.random() * CW,
-                y: CH * (0.15 + Math.random() * 0.6),
+    dots.push({ kind: "pollen", x: airX(air),
+                y: air.y0 + (air.y1 - air.y0) * (0.15 + Math.random() * 0.6),
                 v: 7 + Math.random() * 8,
                 dx: Math.random() * 8 - 4, ph: Math.random() * 6.3 });
   if (s.season === "summer" && count("fly") < 16 && Math.random() < 0.05)
-    dots.push({ kind: "fly", x: Math.random() * CW,
-                y: CH * (0.25 + Math.random() * 0.55),
+    dots.push({ kind: "fly", x: airX(air),
+                y: air.y0 + (air.y1 - air.y0) * (0.25 + Math.random() * 0.55),
                 v: 0, dx: 0, ph: Math.random() * 6.3 });
 }
 
 /* the air's motion, without the drawing: positions advance, the dead
    are culled — shared by every engine that paints the air */
 function updateParticles(dt) {
+  const air = airBox();               // the same box they were made in
   for (let i = dots.length - 1; i >= 0; i--) {
     const d = dots[i];
     if (d.kind === "fly") {
       d.x += Math.sin(dt * 40 + d.ph) * 0.02 * 60 * dt + 6 * dt;
       d.y += Math.cos(dt * 37 + d.ph) * 0.018 * 60 * dt;
-      if (d.x > CW + 6) dots.splice(i, 1);
+      if (d.x > air.x1 + 6) dots.splice(i, 1);
       continue;
     }
     d.y += d.v * dt; d.x += d.dx * dt;
     if (d.kind === "pollen") d.x += Math.sin(d.y * 0.05 + d.ph) * 4 * dt;
     if (d.kind === "leaf") d.x += Math.sin((d.y + i * 10) * 0.05) * 12 * dt;
-    if (d.y > CH - 4) dots.splice(i, 1);
+    if (d.y > air.y1) dots.splice(i, 1);
   }
   if (dots.length > 260) dots.splice(0, dots.length - 260);
 }

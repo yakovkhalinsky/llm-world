@@ -808,7 +808,7 @@ constitution) changes a value the engine never consults.
   new textures" — which fails on the old code with "144 made over 24
   weeks" (6 × 24).
 
-- [ ] **b43** the rain fell in the wrong space. Every particle's sprite
+- [x] **b43** the rain fell in the wrong space. Every particle's sprite
   is a child of `ENG.poolLayer`, which lives inside `ENG.worldGroup` —
   placed at `(PX, PY)` and scaled by `FIT` — but `spawnParticles` made
   the drops over `Math.random() * CW` and `updateParticles` culled them

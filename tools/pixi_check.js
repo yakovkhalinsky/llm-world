@@ -339,6 +339,32 @@ const WORLD = `
      rec.textures === texBase,
      (rec.textures - texBase) + " made over 24 weeks");
 
+  /* --- the air is made in the world's units, not the canvas's --------
+     Every particle's sprite is a child of ENG.poolLayer, inside the scaled
+     world group. Spawning over canvas x 0..CW therefore confined rain to
+     the island's left sliver on any window narrower than the world: at a
+     phone's fit the drops could reach at most 38% of the width, ever. */
+  const phone = el("map-scroll");
+  const keptW = phone.clientWidth, keptH = phone.clientHeight;
+  phone.clientWidth = 300; phone.clientHeight = 740;   // narrower than SW
+  vm.runInContext("ST.s.weather = 'rain'; fitCanvas.key = null;", a.sandbox);
+  for (let w = 0; w < 60; w++) frames(a.sandbox, a.rafQ, 1);
+  const air = vm.runInContext(`(() => {
+    const keep = Math.random;
+    let k = 0;
+    Math.random = () => (k++ === 0 ? 0 : 0.999);   // pass the gate, take the edge
+    dots.length = 0;
+    spawnParticles({ weather: "rain", season: "spring" }, 0);
+    Math.random = keep;
+    return { CW, FIT, x: dots.length ? dots[0].x : -1 };
+  })()`, a.sandbox);
+  ok("the rain is spawned in the world's box, not the canvas's",
+     air.FIT < 1 && air.x > air.CW,
+     `a ${air.CW}px window over a world ${(air.CW / air.FIT).toFixed(0)} units wide —` +
+     ` the far edge of the air is x ${air.x.toFixed(0)}, past the ${air.CW}` +
+     ` a canvas-pixel spawn could ever reach`);
+  phone.clientWidth = keptW; phone.clientHeight = keptH;
+  vm.runInContext("ST.s.weather = 'clear'; dots.length = 0; fitCanvas.key = null;", a.sandbox);
   frames(a.sandbox, a.rafQ, 1);
   vm.runInContext("VIEW.zoom = 2.2; fitCanvas.key = null; ST.s.tick = 475;",
                   a.sandbox);
