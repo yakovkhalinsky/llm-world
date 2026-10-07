@@ -237,6 +237,23 @@ def ground(est):
     }
 
 
+def day_feed(w, events, days=24):
+    """The last few days, one row each.
+
+    A feed of *events* looks frozen on an estate having a quiet week, which
+    is most weeks: the panel held the same two lines for half an hour of
+    watching and read as a broken page. The feed is days, and a day with
+    nothing in it says so — which is the honest report, and it is also what
+    makes the panel visibly alive.
+    """
+    by_day = {}
+    for e in events:
+        by_day.setdefault(e["day"], []).append(render.say(e))
+    today = w["day"]
+    return [{"day": d, "says": by_day.get(d, [])}
+            for d in range(max(1, today - days + 1), today + 1)]
+
+
 def _small(vals, scale=9.0):
     """A field as small integers: the page draws washes, not measurements,
     and 0-9 is all a wash needs."""
@@ -250,6 +267,7 @@ def snapshot(est, runner, lock):
         w = est.world
         prev = dict(runner.prev)
         evs = list(runner.events[-60:])
+        day_events = list(runner.events)
         day = w["day"]
         people = []
         for rid, r in w["residents"].items():
@@ -298,6 +316,7 @@ def snapshot(est, runner, lock):
             "buildings": buildings,
             "shade": shade, "light": light,
             "events": [dict(e, say=render.say(e)) for e in evs],
+            "days": day_feed(w, day_events),
             "watcher": dict(runner.last_watch),
             "chronicle": list(runner.chronicle[-8:]),
             "llm": llmm.status_line(runner.llm),

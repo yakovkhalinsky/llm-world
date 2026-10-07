@@ -348,3 +348,28 @@ about unread keys applies to the person writing them too.
   exactly once. Found by the next edit's assertion refusing to match inside
   the corrupted block, which is the first time a check of mine caught a
   mistake of mine before it landed.
+
+- [x] **h24** *class 12, and the one a person noticed first* — **the estate
+  lost its texture, and the panel that should have shown it was looking at
+  the wrong thing.** Yakov reported that the day feed had stopped
+  updating. It had not stopped: it was faithfully reporting that nothing
+  was happening, and nothing was happening because the `upkeep` fix of h15
+  — which stopped the shop starving the estate — had also stopped anything
+  ever breaking. Condition `0` is what fires a `broke`, and after upkeep no
+  fixture came within 0.45 of it, so the estate's attrition loop, one of
+  the three the whole design rests on, had been quietly switched off by the
+  repair of a different fault. Over 400 days it produced 54 events, all of
+  them in the first ninety while the flats were filling. **A fix for one
+  thing had silently removed another**, and no check was watching: the gate
+  asks whether a kind is *entirely* broken, which it never was. Two faults
+  in one place, then. The estate now has ordinary failure — a slat gives
+  way, a bulb goes — at a rate the pack states per sort of thing, and the
+  feed is **days rather than events**: one row a day, and a day with
+  nothing in it says `a quiet day`. A feed of events looks frozen on an
+  estate having a quiet week, which is most weeks, and a panel that sits
+  still for half an hour reads as broken however truthful it is. (The
+  failure roll was written in the wrong place first — zeroing the condition
+  *before* `was` was read, so the repair term computed from the zeroed
+  value and put the thing straight back, producing a round of failures and
+  no events at all: the same "nothing happened and nothing said so" shape,
+  caught this time by counting.)

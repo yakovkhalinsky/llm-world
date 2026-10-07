@@ -70,16 +70,18 @@ const Panels = (() => {
   /* --------------------------------------------------------- the feed */
 
   function feed(st) {
-    /* The sentence comes from the server (render.say) — the page does not
-     * spell its own. Two wordings for one event is two copies of a fact,
-     * and the estate would end up telling a person and the watcher
-     * different stories about the same day. */
-    const seen = (st.events || []).slice(-40).reverse();
-    const rows = seen.map(e =>
-      '<li><span class="d">d' + e.day + '</span> ' +
-      esc(e.say || e.kind) + '</li>');
-    $('chron').innerHTML = rows.length ? rows.join('') :
-      '<li>nothing has happened yet. it is early.</li>';
+    /* One row per day, newest first. The sentences come from the server
+     * (render.say) — the page does not spell its own, because two wordings
+     * for one event would have the estate telling a person and the watcher
+     * different stories about the same day. And the rows are *days*, not
+     * events: the estate is quiet most days, and a panel that only ever
+     * showed events sat unchanged for half an hour and read as broken. */
+    const days = (st.days || []).slice().reverse();
+    $('chron').innerHTML = days.length ? days.map(d =>
+      '<li' + (d.says.length ? '' : ' class="quiet"') + '>' +
+      '<span class="d">d' + d.day + '</span> ' +
+      (d.says.length ? esc(d.says.join(' · ')) : 'a quiet day') +
+      '</li>').join('') : '<li>nothing has happened yet. it is early.</li>';
   }
 
   function feed(st) {

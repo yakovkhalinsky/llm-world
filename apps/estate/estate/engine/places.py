@@ -124,6 +124,14 @@ def update_fixtures(w, evs):
     every hand that touched it today."""
     busy = rules.R["engine"]["busy_wear"]
     repair = rules.R["engine"]["repair"]
+    # And a thing can simply *fail* — a slat gives way, a bulb goes, a
+    # swing chain snaps. Maintenance keeps the estate's places well; it
+    # does not keep them immortal, and without this the estate had no
+    # attrition at all: the `upkeep` fix that stopped the shop starving
+    # the estate also stopped anything ever breaking, quietly removing
+    # one of the three loops the whole design rests on. Nothing here is
+    # near condition zero any more, so the decay alone can never reach it.
+    rng = W.rng_for(w["seed"], w["day"], "fail")
     for f in w["fixtures"].values():
         spec = rules.R["fixtures"][f["kind"]]
         if spec.get("living"):
@@ -141,10 +149,17 @@ def update_fixtures(w, evs):
         # the very loop meant to prevent one. Mending toward whole gives
         # every fixture a real level instead — the busy ones lower, and a
         # thing used past what the estate can keep up with still fails.
-        f["condition"] = max(0.0, min(1.0, was
-                                       - spec["decay"] * (1.0 + busy * uses)
-                                       + repair * spec.get("upkeep", 1.0)
-                                       * (1.0 - was)))
+        if rng.random() < spec.get("break_prob", 0.0):
+            # it failed outright. This has to be *after* `was` is read, or
+            # the repair term below computes from the zeroed value and puts
+            # the thing straight back — which is exactly what happened, and
+            # is why a round of failures produced no `broke` events at all.
+            f["condition"] = 0.0
+        else:
+            f["condition"] = max(0.0, min(1.0, was
+                                           - spec["decay"] * (1.0 + busy * uses)
+                                           + repair * spec.get("upkeep", 1.0)
+                                           * (1.0 - was)))
         if was > 0 and f["condition"] <= 0:
             evs.append({"day": w["day"], "kind": "broke", "what": f["kind"],
                         "x": f["x"], "y": f["y"]})

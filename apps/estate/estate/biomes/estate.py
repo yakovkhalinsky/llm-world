@@ -78,23 +78,24 @@ SPEC = {
     # fails; it just has to be used past what its own upkeep can carry.
     "fixtures": {
         "bench":      {"affords": {"rest": 0.55, "company": 0.25},
-                       "capacity": 2, "decay": 0.00030, "loud": 0.015, "carry": 2,
-                       "upkeep": 1.0, "glyph": "🪑"},
+                       "capacity": 2, "decay": 0.00030, "loud": 0.015,
+                       "carry": 2,
+                       "upkeep": 1.0, "break_prob": 0.0012, "glyph": "🪑"},
         "playground": {"affords": {"play": 0.95},
                        "capacity": 12, "decay": 0.00040, "loud": 0.110, "carry": 12,
-                       "upkeep": 1.6, "glyph": "🛝"},
+                       "upkeep": 1.6, "break_prob": 0.0010, "glyph": "🛝"},
         "table":      {"affords": {"company": 0.60, "rest": 0.20},
                        "capacity": 4, "decay": 0.00025, "loud": 0.030, "carry": 3,
-                       "upkeep": 1.0, "glyph": "♟"},
+                       "upkeep": 1.0, "break_prob": 0.0008, "glyph": "♟"},
         "shop":       {"affords": {"food": 0.85, "company": 0.40},
                        "capacity": 12, "decay": 0.00020, "stock": 150,
-                       "restock": 90, "loud": 0.035, "carry": 5, "upkeep": 3.0,
+                       "restock": 90, "loud": 0.035, "carry": 5, "upkeep": 3.0, "break_prob": 0.0002,
                        "glyph": "🏪"},
         # a lamp affords nothing by itself: it lights, and what it lights
         # is worth more in the evening. A place that affords nothing but
         # state is decoration pretending to be a place.
         "lamp":       {"affords": {}, "capacity": 0, "decay": 0.00012,
-                       "light": 0.55, "upkeep": 1.2, "glyph": "💡"},
+                       "light": 0.55, "upkeep": 1.2, "break_prob": 0.0006, "glyph": "💡"},
         # A tree affords nothing, and that is not a gap — it is what a tree
         # is. It *shades*: the field `build_shade` makes is read by the heat
         # bonus and the quiet bonus where a person is sitting, so a bench
