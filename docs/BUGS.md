@@ -506,3 +506,64 @@ during a slow embed).
   counts the gentled field's drops and asserts one face for each —
   "the walls close every step the ground makes" — plus the twin's
   byte-stable render and the ground counts across seasons.
+
+## The 2026-10-07 sweep — the World Soul's own ground
+
+The gate runs the pure engine with no LLM, so it can never reach the
+fates. Everything below lives on the path the gate cannot walk.
+
+- [x] **b29** the fates' region helper crashes: **every drought**, and
+  **any off-region blight**. `_region_set` (`grove/engine/util.py:29`)
+  called `W.region_cells` while the module imported only `rules`, so a
+  named region raised `NameError: name 'W' is not defined`; for `"all"`
+  it returned `None`, which `grove/engine/weather.py:66,72` then used
+  directly — `(x, y) in None` → `TypeError`. The Soul's two lasting
+  fates were therefore dead on arrival: `drought` at any region killed
+  the tick (web mode swallowed it as "runner error" and lost the week
+  mid-write; `grove step --narrate` died outright), and `blight` died on
+  NW/NE/SW/SE — its own schema enum — leaving only `blight` over `all`
+  alive, because `plants.py` is the one caller that already guarded the
+  `None`. Measured before the fix: `drought/all` → TypeError,
+  `drought/NW` → NameError, `blight/SW` → NameError; `storm`, `bloom`
+  and `blight/all` were clean. Fix: `util.py` imports the world and
+  documents `None` = everywhere; `weather.py` resolves each drought's
+  footprint **once per week** rather than once per cell (it rebuilt a
+  576-cell set inside the cell loop) and tests `region is None or
+  (x, y) in region` — the guard `plants.py` already used. The `blights`
+  list `_update_cells` built and never read goes with it. Check: every
+  fate on every region ticks clean, and a strength-3 `drought` over NW
+  drops that quadrant's mean moisture 0.74 → 0.31 while SE moves only
+  with the weather; the gate is unmoved — 8 worlds × 900 weeks, all
+  species persisting, the per-seed census lines byte-identical.
+
+- [ ] **b30** the fates never ended. `_apply_effect` wrote `ticks` for
+  `drought` and `blight` (`grove/engine/effects.py:35,38`) and nothing
+  ever decremented or pruned it: a blight cast in week 1 still read
+  "6 more weeks" in week 31 and still burned 1.2 hp/week off every
+  plant it named, forever — the World Soul's *lasting* fates were
+  permanent ones. Fix: `_age_effects` burns a week off every live
+  effect and spends it at zero, called from `tick()` **before** the
+  new fate lands so a fate always gets the full span its strength
+  bought. Check: a strength-1 blight (6 ticks) is gone from
+  `world["effects"]` at week 7 and the digest stops announcing it;
+  a strength-3 drought holds exactly 9 weeks.
+
+- [ ] **b31** the fates and the chronicle still spoke the grove's
+  species. Four hardcoded species lists survived the packs:
+  `operator.validate` coerced any `migration` species outside
+  rabbit/deer/fox/owl/robin/boar to `"robin"` — a species the desert
+  does not have, so the fate was demoted to `quiet` and **the desert's
+  migrations never happened at all**; `effects.py` defaulted `migration`
+  to `"robin"` and `visitor` to `"stag"`, and gated a visitor on
+  `sp in ("stag", "wolf")`, demoting a `bighorn`; and `events.notable`
+  dropped every `fell` whose species was not pine/birch/willow, so **no
+  desert tree ever fell in the chronicle**. All four now read the pack
+  (`pop.base_residents`, `pop.migration_default`, `pop.visitor_default`,
+  `pop.visitor_species`, and the plant table's own `kind == "tree"`).
+  Byte-identical on the grove — `migration_default` is `robin`,
+  `visitor_default` is `stag`, and the grove's three tree species are
+  exactly the ones the old list named. Check: the desert validates
+  `sandgrouse`/`bighorn` and keeps them, a migration genuinely lands
+  once the flock has room, `saguaro` and `palo-verde` falls are news
+  while `sagebrush` is not, and a junk migration species still falls
+  back to `robin` on the grove.

@@ -3,6 +3,7 @@
 # the constants bundle (cell physics, weather chances, the winter drain)
 
 from .. import rules
+from .. import world as W
 
 
 def _intkey(d):
@@ -26,7 +27,8 @@ def _rules():
 # ------------------------------------------------------------------ weather
 
 def _region_set(region, size):
-    return set(W.region_cells(size, region)) if region != "all" else None
+    """The cells a fate covers; None means the whole world ('all')."""
+    return None if region == "all" else set(W.region_cells(size, region))
 
 def _clamp(v, lo, hi):
     return lo if v < lo else hi if v > hi else v

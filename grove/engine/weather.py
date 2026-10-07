@@ -42,8 +42,10 @@ def _update_cells(w, evs):
     rng = W.rng_for(w["seed"], t, "cells")
     season = W.season_index(t)
     weather = w["weather"]
-    droughts = [e for e in w["effects"] if e["kind"] == "drought"]
-    blights = [e for e in w["effects"] if e["kind"] == "blight"]
+    # the drought's footprint, resolved once per week: None means the
+    # whole world, so `_region_set` must never be re-read per cell
+    droughts = [_region_set(e["region"], size) for e in w["effects"]
+                if e["kind"] == "drought"]
     # the sky remembers: a run of rainy weeks soaks the ground
     w["wet_streak"] = (w.get("wet_streak", 0) + 1
                        if weather in ("rain", "storm") else 0)
@@ -62,14 +64,14 @@ def _update_cells(w, evs):
             elif weather == "storm":
                 m += _rules()[3]
             m *= _rules()[1][season]
-            for e in droughts:
-                if (x, y) in _region_set(e["region"], size):
+            for region in droughts:
+                if region is None or (x, y) in region:
                     m -= 0.09
             c["moisture"] = _clamp01(m)
 
             # grass
             regrow = _rules()[0][season] * (1.0 + soak * 0.15)
-            if any((x, y) in _region_set(e["region"], size) for e in droughts):
+            if any(region is None or (x, y) in region for region in droughts):
                 regrow *= 0.2
             light = w["_light"][y][x]
             if regrow and weather != "frost" and c["moisture"] > 0.12 \
