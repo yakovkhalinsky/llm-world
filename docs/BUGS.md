@@ -967,3 +967,17 @@ merely plain, and all of them were the same animal in another colour.
   which already worked — gained tufts and a beak. Check: the rendered sheet,
   and `tools/pixi_check.js` ALL PASS (the pose channels, the rabbit's
   landing squash and "creatures ride the land" all unchanged).
+
+- [ ] **b50** the twin has never drawn the creatures. `tools/render_svg.py`
+  paints every animal as **one flat ellipse** in the species' colour
+  (`creature`, render_svg.py:215-222) — it never had the shapes at all, so
+  the README's scene has always shown coloured blobs where the dashboard
+  shows a fox. It kept looking plausible only because the ellipses were all
+  the page had either, until b49 gave the page anatomy. **Not fixed here on
+  purpose**: the honest fix is for the twin to stop owning a copy of the
+  drawing and take the shapes from the page — but the page's creatures are
+  JavaScript and the twin is Python, so that means either shelling out to
+  node at render time or writing a second copy of two hundred lines of
+  vector work in Python, which is exactly the duplication that let the
+  terrain recipe drift twice (b25, b28: "the twin matched the wrong branch
+  first trip"). Worth a decision rather than a reflex.

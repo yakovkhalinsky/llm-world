@@ -766,6 +766,14 @@ function animalBody(shape, a, ph) {
     ctx.lineTo(x + w, y);
     ctx.closePath(); ctx.fill();
   };
+  /* winter lays a pale coat along the back of whatever wears it, so the
+     season reads on the body and not only on a stag's antlers */
+  const frost = (x, y, rx, ry, rot) => {
+    if (!winter) return;
+    ctx.fillStyle = "rgba(240,246,249,0.38)";
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx, ry, rot || 0, 0, 6.3); ctx.fill();
+  };
   /* a snout: the muzzle that says which animal this is */
   const muzzle = (x, y, len, h) => {
     ctx.fillStyle = body;
@@ -780,10 +788,9 @@ function animalBody(shape, a, ph) {
       ctx.fillStyle = body;              // the crouch is most of a rabbit
       ctx.beginPath(); ctx.ellipse(-3.2, 1.4, 4.6, 4.0, 0, 0, 6.3); ctx.fill();
       ctx.beginPath(); ctx.ellipse(1.4, 1.0, 4.4, 3.1, 0, 0, 6.3); ctx.fill();
-      ctx.fillStyle = FAR;               // the haunch's shadowed side
-      ctx.beginPath(); ctx.ellipse(-4.6, 2.2, 2.6, 2.6, 0, 0, 6.3); ctx.fill();
-      ctx.fillStyle = "#f4f1ea";         // the tail, clear of the body
-      ctx.beginPath(); ctx.arc(-7.4, 0.2, 2.3, 0, 6.3); ctx.fill();
+      frost(-2.8, -0.8, 3.4, 1.0, -0.08);
+      ctx.fillStyle = "#f4f1ea";         // the scut: small, and past the hip
+      ctx.beginPath(); ctx.ellipse(-8.5, 1.4, 1.8, 1.7, 0.25, 0, 6.3); ctx.fill();
       ctx.fillStyle = body;              // head
       ctx.beginPath(); ctx.ellipse(5.4, -0.6, 2.9, 2.5, 0, 0, 6.3); ctx.fill();
       ctx.beginPath(); ctx.ellipse(7.4, 0.2, 1.5, 1.2, 0, 0, 6.3); ctx.fill();
@@ -809,6 +816,7 @@ function animalBody(shape, a, ph) {
       ctx.fill();
       leg(-5.4 - trot, 2.4, 5.6 * sz, 1.1, false);    // the near pair
       leg(4.2 + trot, 2.4, 5.4 * sz, 1.1, false);
+      frost(-1.2, -2.2 * sz, 5.2 * sz, 1.1 * sz, 0);
       ctx.fillStyle = body;              // the neck carries the animal
       ctx.beginPath();
       ctx.moveTo(2.6, -1.4 * sz); ctx.lineTo(5.2, -6.2 * sz);
@@ -858,6 +866,7 @@ function animalBody(shape, a, ph) {
       ctx.quadraticCurveTo(-11.0, -1.4 + tailSway, -9.6, -7.0 + tailSway * 1.3);
       ctx.quadraticCurveTo(-7.4, -3.6 + tailSway * 0.6, -5.0, -0.2);
       ctx.closePath(); ctx.fill();
+      frost(0.2, -1.5, 4.8, 1.0, -0.05);
       ctx.fillStyle = body;
       ctx.beginPath(); ctx.ellipse(5.4, -1.4, 2.7, 2.4, 0, 0, 6.3); ctx.fill();
       ear(4.2, -3.0, 3.4, 1.4, 0.3);     // the pointed ears
@@ -884,14 +893,24 @@ function animalBody(shape, a, ph) {
       ctx.beginPath(); ctx.ellipse(-0.4, -1.0, 5.4, 2.0, 0, 0, 6.3); ctx.fill();
       leg(-4.4 - bt, 3.4, 3.2, 1.3, false);
       leg(3.8 + bt, 3.4, 3.0, 1.3, false);
-      ctx.fillStyle = body;
-      ctx.beginPath(); ctx.ellipse(6.0, 1.0, 3.0, 3.0, 0, 0, 6.3); ctx.fill();
-      muzzle(7.4, 1.8, 2.6, 1.4);
-      ear(5.0, -1.8, 2.4, 1.3, 0.5);
-      ctx.fillStyle = "#efe9dc";         // the tusks
+      frost(-0.8, -2.4, 4.8, 1.1, 0);
+      ctx.fillStyle = body;              // the skull runs down into the snout
       ctx.beginPath();
-      ctx.moveTo(8.4, 2.4); ctx.lineTo(10.0, 1.4);
-      ctx.lineTo(9.8, 2.4); ctx.closePath(); ctx.fill();
+      ctx.moveTo(3.0, -0.8); ctx.lineTo(6.6, -1.6);
+      ctx.lineTo(8.2, 2.2); ctx.lineTo(3.4, 3.4);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = FAR;               // a small ear, folded back on it
+      ctx.beginPath();
+      ctx.moveTo(4.4, -1.8); ctx.lineTo(5.8, -3.6);
+      ctx.lineTo(6.6, -1.5); ctx.closePath(); ctx.fill();
+      muzzle(7.2, 2.0, 2.8, 1.3);
+      ctx.fillStyle = "#efe9dc";         // the tusks, and both of them
+      ctx.beginPath();
+      ctx.moveTo(8.2, 1.6); ctx.lineTo(11.0, 0.6);
+      ctx.lineTo(10.8, 2.2); ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(7.8, 2.6); ctx.lineTo(10.6, 2.4);
+      ctx.lineTo(10.2, 3.4); ctx.closePath(); ctx.fill();
       ctx.fillStyle = "#20242a";
       ctx.beginPath(); ctx.arc(6.6, 0.2, 0.7, 0, 6.3); ctx.fill();
       break;
@@ -905,6 +924,7 @@ function animalBody(shape, a, ph) {
       ctx.beginPath();
       ctx.ellipse(5.4, -1.4 - flap * 2.4, 3.4, 1.2,
                   0.55 - flap * 0.6, 0, 6.3); ctx.fill();
+      frost(-0.4, -3.2, 3.0, 1.5, 0);
       ctx.fillStyle = body;
       ctx.beginPath(); ctx.ellipse(0, 0, 4.6, 5.6, 0, 0, 6.3); ctx.fill();
       ctx.fillStyle = SUN;
@@ -966,6 +986,7 @@ function animalBody(shape, a, ph) {
       ctx.beginPath(); ctx.ellipse(-4.6, 1.4, 1.6, 1.2, 0, 0, 6.3); ctx.fill();
       leg(-4.4, 1.6, 2.2, 1.4, false);
       leg(3.8, 1.6, 2.2, 1.4, false);
+      frost(-0.6, -2.6, 3.8, 0.9, 0);
       ctx.fillStyle = "#6f7c4c";         // the carapace, domed
       ctx.beginPath(); ctx.ellipse(0, 0.6, 5.6, 3.9, 0, 0, 6.3); ctx.fill();
       ctx.fillStyle = "#87935f";
@@ -995,15 +1016,21 @@ function animalBody(shape, a, ph) {
       // the tail hangs low and heavy, and it is filled
       ctx.fillStyle = body;
       ctx.beginPath();
-      ctx.moveTo(-5.2, 0.0);
-      ctx.quadraticCurveTo(-9.6, 1.4, -8.8, 6.4);
-      ctx.quadraticCurveTo(-7.0, 2.8, -4.8, 1.4);
+      ctx.moveTo(-4.6, -0.6);
+      ctx.quadraticCurveTo(-11.4, 0.6, -10.2, 7.6);
+      ctx.quadraticCurveTo(-9.0, 3.4, -7.6, 2.6);
+      ctx.quadraticCurveTo(-6.2, 1.8, -4.4, 1.8);
       ctx.closePath(); ctx.fill();
-      ctx.fillStyle = body;
-      ctx.beginPath(); ctx.ellipse(6.0, -1.8, 3.0, 2.6, 0, 0, 6.3); ctx.fill();
-      ear(4.8, -3.6, 3.6, 1.5, 0.2);
-      ear(7.2, -3.4, 3.4, 1.5, 0.2);
-      muzzle(6.8, -1.2, 3.4, 1.2);
+      frost(0.2, -2.0, 5.6, 1.1, 0);
+      ctx.fillStyle = body;              // the neck runs into the skull
+      ctx.beginPath();
+      ctx.moveTo(3.2, -2.6); ctx.lineTo(6.0, -3.8);
+      ctx.lineTo(7.0, 1.4); ctx.lineTo(4.0, 2.6);
+      ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(6.2, -2.0, 2.9, 2.4, 0.1, 0, 6.3); ctx.fill();
+      ear(5.2, -4.0, 3.2, 1.0, -0.35);   // narrow, and set back
+      ear(7.3, -3.8, 3.0, 1.0, -0.35);
+      muzzle(7.2, -1.2, 3.2, 1.1);
       ctx.fillStyle = "#20242a";
       ctx.beginPath(); ctx.arc(6.8, -2.2, 0.8, 0, 6.3); ctx.fill();
       if (a.h) {                         // the wolf's hungry eye
