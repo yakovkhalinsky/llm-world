@@ -143,7 +143,7 @@ def _line(world, e):
         bones["L"] = f"{bones_n} {plural}" if is_plant else \
             f"{bones_n} wild {plural}"
     bones["w"] = rules.R["presentation"]["world_word"]
-    bones["edge"] = "the " + rules.R["presentation"]["edge_name"]
+    bones["edge"] = rules.R["presentation"]["edge_name"]
     line = variant.format(**bones)
     return line[0].upper() + line[1:]
 
