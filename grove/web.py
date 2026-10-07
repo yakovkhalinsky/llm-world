@@ -351,6 +351,10 @@ def cmd_web(args):
                     if hasattr(g.args, "__dict__") else False,
                     "current": {sp: t.get("cap") for sp, t in
                                 sorted(rules.R["animals"].items())},
+                    # the reading itself, so a steward who restrains
+                    # itself does not simply look like one who never spoke
+                    "last": g.jobs.get("last_review"),
+                    "review": g.jobs.get("review", 0),
                 }), "application/json")
             elif path == "/api/tuning/accept":
                 pid = _read_pid(self)

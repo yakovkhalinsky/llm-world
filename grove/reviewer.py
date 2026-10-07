@@ -183,27 +183,37 @@ def history(db, n=20):
 
 
 def record(db, world, proposals, verdict, auto):
-    """Validate + store; auto-apply the ones the law allows."""
+    """Validate + store; auto-apply the ones the law allows.
+
+    Returns (outcomes, applied_rule): the one amendment this review
+    actually wrote into the constitution, or None. At most one is ever
+    applied — a rule needs a year's evidence before it is judged again —
+    so the caller knows whether the constitution must be persisted."""
     out = []
-    applied = False
+    applied_rule = None
     for prop in (proposals or [])[:2]:
         ok, value, reason = validate(prop)
+        why = str(prop.get("why", ""))[:160] +             (f" [{reason}]" if reason else "")
         if not ok:
             db.add_amendment(world["tick"], "refused", str(
                 prop.get("rule"))[:80], prop.get("value"),
                 f"refused: {reason}", verdict)
             out.append((False, prop.get("rule"), None, reason))
             continue
-        if auto and not applied:
-            apply_amendment(db, rules, prop["rule"], value)
-            applied = True
-            out.append((True, prop.get("rule"), value, reason))
-            continue
-        why = str(prop.get("why", ""))[:160] +             (f" [{reason}]" if reason else "")
+        # the row goes in first, always: the ledger keeps every reading,
+        # whether it is offered for the viewer or taken at once. In auto
+        # mode `apply_amendment` then marks this same row applied — which
+        # it could not do before, because no row was ever written and the
+        # world changed its own constitution invisibly.
         db.add_amendment(world["tick"], "offered", prop["rule"], value,
                          why, verdict)
-        out.append((True, prop.get("rule"), value, "offered"))
-    return out
+        if auto and applied_rule is None and \
+                apply_amendment(db, rules, prop["rule"], value):
+            applied_rule = prop["rule"]
+            out.append((True, prop.get("rule"), value, reason))
+        else:
+            out.append((True, prop.get("rule"), value, "offered"))
+    return out, applied_rule
 
 
 def apply_amendment(db, rules_mod, path, value):

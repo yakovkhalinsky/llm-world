@@ -88,8 +88,16 @@ $("tabTune").onclick = async () => {
     `<div class="when">wk${p.week} — ${p.why}</div>` +
     `<div><button class="mini" data-a="accept" data-id="${p.id}">⚔ accept</button> ` +
     `<button class="mini" data-a="dismiss" data-id="${p.id}">leave it</button></div></li>`);
-  $("tune").innerHTML = rows.join("") ||
-      "<div class='when'>the steward offers nothing at the moment.</div>";
+  const last = s.last
+      ? `<div class="when" style="margin-bottom:8px">the steward read the ` +
+        `ledger at wk${s.last.week} — ` +
+        (s.last.amendments
+          ? s.last.amendments + " amendment" + (s.last.amendments > 1 ? "s" : "")
+          : "nothing to change") +
+        (s.last.verdict ? `<br><i>“${s.last.verdict}”</i>` : "") + `</div>`
+      : "";
+  $("tune").innerHTML = last + (rows.join("") ||
+      "<div class='when'>the steward offers nothing at the moment.</div>");
   const hrows = (s.history || []).slice(0, 8).map(h =>
     `<li style="opacity:.75"><b>${h.rule}</b> → ${h.value}` +
     ` <span class="when">${h.status} · wk${h.week}</span></li>`);

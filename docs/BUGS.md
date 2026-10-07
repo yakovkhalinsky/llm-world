@@ -750,3 +750,35 @@ constitution) changes a value the engine never consults.
   the forest", "beyond the forest edge" and "beyond the dunes edge".
   (Left alone: `{n} {sp}` makes "4 rabbit slipped in" — a plural bone is
   not a one-liner when the species are deer, boar and sandgrouse.)
+
+- [x] **b41** **the steward had never once spoken.** Every part of the
+  amendment system was built — the bounds' hard law, the proposals
+  table, the world's own `world_rules.json`, the ⚖ tuning tab — and not
+  one piece of it was connected. `Grove._invite_review` was defined and
+  called from nowhere; `_apply_one` handled `op`, `chron` and `voice`
+  and had no `review` branch, so a result could not have been applied
+  even if one arrived; `world["next_review"]` was written once in
+  `load_or_exit` and never advanced or compared again; `reviewer.record`
+  was never called; and `--auto-tune` set `review.auto_tune`, which
+  nothing read. Caught live: **140 simulated years, `next_review` still
+  frozen at 49, zero rows in `proposals`, no `world_rules.json`** — while
+  the soul's own `op_history` showed it working throughout. Fix: the
+  scheduler invites the steward when the year comes due (a refused
+  submit leaves the year owed), the clock advances only on a submitted
+  review, and the result lands through `reviewer.record` — offers for
+  the viewer by default, applied and persisted into the constitution
+  under `--auto-tune`. A review that has come *due* is no longer pushed
+  forward on load: a server restarted often must still get the year it
+  is owed. Three faults fell out with it — in auto mode an applied
+  amendment wrote **no ledger row at all**, so the world changed its own
+  constitution invisibly; `record` reported nothing about what it
+  applied, so the caller could not know whether to persist; and a
+  steward who restrains itself (the expected answer, and the schema
+  carries a `nothing` field for it) left the tab looking untouched, so
+  the last reading — week, verdict, how many amendments — now rides the
+  tuning payload and shows above the offers. Check: with a year due the
+  review is invited and the clock moves 1 → 49; a two-amendment answer
+  stores one offer and one refusal and drops a third; default mode
+  leaves the ruleset untouched with no constitution file, `--auto-tune`
+  moves `animals.rabbit.cap` 24 → 33, marks the row `applied` and writes
+  `world_rules.json`; both page harnesses still pass.

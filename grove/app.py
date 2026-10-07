@@ -87,9 +87,10 @@ class Grove:
         self.pending_chron = {}     # eid -> chronicler batch item
         self.eid = 0
         # live counters, exposed on the dashboard for diagnosis
-        self.jobs = {"op": 0, "chron": 0, "voice": 0,
-                     "op_applied": 0, "chron_ok": 0, "chron_rejected": 0,
-                     "last_reject": None}
+        self.jobs = {"op": 0, "chron": 0, "voice": 0, "review": 0,
+                     "amend": 0, "op_applied": 0, "chron_ok": 0,
+                     "chron_rejected": 0, "last_reject": None,
+                     "last_review": None}
 
     # -- lifecycle ----------------------------------------------------------
     def load_or_exit(self):
@@ -100,8 +101,9 @@ class Grove:
         # restart speaks the same biome the ground was born with
         if self.world.get("biome"):
             rules.select_biome(self.world["biome"])
-        # a restart never opens an overdue steward review: the year
-        # always starts from the moment of loading
+        # the steward's year: a fresh world counts it from the moment it
+        # is loaded. A world whose reading has come DUE keeps it due — a
+        # server restarted often must still get the year it is owed
         evw = rules.R["review"]["every_weeks"]
         if not self.world.get("next_review"):
             self.world["next_review"] = self.world["tick"] + evw
@@ -187,6 +189,12 @@ class Grove:
             lo, hi = self.llm.soul_gap()
             self.next_op_wall = time.time() + random.uniform(lo, hi)
             return
+        # the steward's yearly reading: rare enough that it goes ahead of
+        # the week's prose, and it must never be starved by it — this is
+        # the only road from the world's own census to its constitution
+        if w["tick"] >= w.get("next_review", 0):
+            self._invite_review()
+            return
         if len(self.pending_chron) > 8:      # cap: drop oldest, keep fresh
             for eid in list(self.pending_chron)[:len(self.pending_chron) - 8]:
                 del self.pending_chron[eid]
@@ -203,13 +211,17 @@ class Grove:
             self._flush_chron()
 
     def _invite_review(self):
-        recent = [r[2] for r in self.db.chronicle_lines(4)]
-        digest = reviewer.digest(self.world, self.db, 48)
-        self.worker.submit({
+        """The steward's yearly reading of the world's own constitution."""
+        submitted = self.worker.submit({
             "kind": "review", "system": reviewer.REVIEW_SYSTEM,
-            "user": digest, "schema": reviewer.REVIEW_SCHEMA,
+            "user": reviewer.digest(self.world, self.db, 48),
+            "schema": reviewer.REVIEW_SCHEMA,
             "max_tokens": 220, "temperature": 0.6, "extra": {},
             "retries": 1})
+        if submitted:               # a refused submit leaves the year owed
+            w = self.world
+            w["next_review"] = w["tick"] + rules.R["review"]["every_weeks"]
+            self.jobs["review"] += 1
 
     def _flush_chron(self):
         # small models handle single events far better than event arrays:
@@ -327,6 +339,31 @@ class Grove:
                 }
         elif kind == "voice":
             self._apply_voice(res)
+        elif kind == "review":
+            self._apply_review(res)
+
+    def _apply_review(self, res):
+        """The steward's word: validated against the bounds' hard law and
+        kept as offers for the viewer — or applied at once, and written
+        into the world's own constitution, when the world was started
+        with --auto-tune."""
+        data = res["data"] if res["ok"] else None
+        if not isinstance(data, dict):
+            return
+        verdict = str(data.get("verdict") or "").strip()[:180]
+        auto = bool(rules.R["review"].get("auto_tune"))
+        out, applied = reviewer.record(self.db, self.world,
+                                       data.get("amendments"), verdict, auto)
+        self.jobs["amend"] += len(out)
+        if applied:
+            self.db.save_override(self.args.data, rules)
+        # the reading itself is the news: a steward who restrains itself
+        # offered nothing, and without this the tab would look untouched
+        self.jobs["last_review"] = {"week": self.world["tick"],
+                                    "verdict": verdict,
+                                    "amendments": len(out),
+                                    "applied": applied,
+                                    "nothing": bool(data.get("nothing"))}
 
     def _apply_voice(self, res):
         w = self.world
