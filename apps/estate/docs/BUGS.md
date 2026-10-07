@@ -331,3 +331,20 @@ about unread keys applies to the person writing them too.
   you can follow one person out of their door and back, while at 5 s the
   phases blur into a timelapse, and there is nothing honest between those
   worth a fourth stop.
+
+- [x] **h23** *class 5, the mirror of h21* — **a replacement that matched
+  more than it should.** Adding the watcher's styles used a bare
+  `replace(".feed {", …)`, and `.feed {` occurs **twice** in the stylesheet
+  — once as the rule, once inside the narrow-view media query. So the new
+  rules were inserted into both, and the media query came out holding a
+  duplicate of the watcher's styles and a stray fragment of the main rule.
+  It was still *valid* CSS and still looked approximately right, which is
+  what makes this class dangerous: nothing failed, nothing was reported, and
+  the damage was only visible by reading the end of the file. h21 was a
+  patch that matched nothing; this is a patch that matched everything. Both
+  are the same lesson, and the rule is now the same for both: **assert on
+  the count, then assert on the result** — every replacement in this
+  session names how many times its anchor occurs and fails unless it is
+  exactly once. Found by the next edit's assertion refusing to match inside
+  the corrupted block, which is the first time a check of mine caught a
+  mistake of mine before it landed.

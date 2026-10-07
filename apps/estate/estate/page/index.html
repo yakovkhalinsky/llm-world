@@ -39,32 +39,36 @@
       </div>
     </div>
 
-    <div class="panel ctl">
-      <div class="row">
-        <button id="pauseBtn">⏸ pause</button>
-        <button id="stepBtn">+ day</button>
-        <button id="fsBtn">⛶ full</button>
+    <!-- bottom right holds both, stacked: the card for whatever you
+         clicked sits above the controls rather than over them -->
+    <div class="br">
+      <div id="card" class="card">
+        <div class="cardhead">
+          <h3 id="cardName">…</h3>
+          <span><button class="x" id="cardClose">✕</button></span>
+        </div>
+        <div class="status" id="cardState"></div>
+        <ul class="timeline" id="cardRows"></ul>
       </div>
-      <div class="zoomrow">
-        <button id="zoomFit" class="on">fit</button>
-        <button id="zoom1x">1×</button>
-        <button id="zoom2x">2×</button>
-        <span class="hint" id="hint">click a place to look at it</span>
-      </div>
-      <div class="speedrow">
-        <span class="hint">a day every</span>
-        <span id="speeds"></span>
-      </div>
-    </div>
-  </div>
 
-  <div id="card" class="card">
-    <div class="cardhead">
-      <h3 id="cardName">…</h3>
-      <span><button class="x" id="cardClose">✕</button></span>
+      <div class="panel ctl">
+        <div class="row">
+          <button id="pauseBtn">⏸ pause</button>
+          <button id="stepBtn">+ day</button>
+          <button id="fsBtn">⛶ full</button>
+        </div>
+        <div class="zoomrow">
+          <button id="zoomFit" class="on">fit</button>
+          <button id="zoom1x">1×</button>
+          <button id="zoom2x">2×</button>
+          <span class="hint" id="hint">click a place to look at it</span>
+        </div>
+        <div class="speedrow">
+          <span class="hint">a day every</span>
+          <span id="speeds"></span>
+        </div>
+      </div>
     </div>
-    <div class="status" id="cardState"></div>
-    <ul class="timeline" id="cardRows"></ul>
   </div>
 </div>
 <script src="/pixi.js"></script>

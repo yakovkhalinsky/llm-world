@@ -45,17 +45,37 @@ body.plain #scene { display: none; }
 
 /* ------------------------------------------------------------------ hud */
 
+/* The plan is framed rather than covered: one panel to each corner, and
+   the middle left clear, because the middle is the estate. */
 .hud {
   position: fixed; inset: 0;
   pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
+  padding: 14px 16px;
 }
 
-.hud .panel { pointer-events: auto; }
+.hud .panel, .hud .card { pointer-events: auto; }
+
+.title { grid-area: 1 / 1; justify-self: start; align-self: start; }
+.idbox { grid-area: 1 / 2; justify-self: end;   align-self: start; }
+.feed  { grid-area: 2 / 1; justify-self: start; align-self: end; }
+.br    { grid-area: 2 / 2; justify-self: end;   align-self: end; }
+
+/* the bottom-right corner holds two things — whatever you clicked, and
+   the controls. The card sits *above* them rather than over them. */
+.br {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+  pointer-events: none;
+}
+.br > * { pointer-events: auto; }
 
 .panel {
   background: var(--glass);
@@ -69,7 +89,6 @@ body.plain #scene { display: none; }
 }
 
 .title {
-  align-self: flex-start;
   font-size: 15px;
   letter-spacing: 0.08em;
   text-transform: lowercase;
@@ -80,7 +99,7 @@ body.plain #scene { display: none; }
 .title .mark { color: var(--lamp); }
 .engine-mark { font-size: 11px; color: var(--dim); letter-spacing: 0; }
 
-.idbox { align-self: flex-start; }
+.idbox { max-width: 340px; }
 .idrow {
   display: flex; justify-content: space-between; gap: 12px;
   font-variant-numeric: tabular-nums;
@@ -98,8 +117,6 @@ body.plain #scene { display: none; }
 .voiceline { font-size: 11px; margin-top: 3px; }
 
 .feed {
-  align-self: flex-start;
-  margin-top: auto;
   display: flex;
   flex-direction: column;
   max-height: 42vh;
@@ -126,7 +143,6 @@ body.plain #scene { display: none; }
 }
 .tabs button { flex: 1; }
 
-.ctl { align-self: flex-start; }
 .row { display: flex; gap: 6px; flex-wrap: wrap; }
 .zoomrow { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
 .zoomrow .hint { font-size: 11px; color: var(--dim); margin-left: 4px; }
@@ -153,10 +169,8 @@ button.on { background: rgba(255, 202, 122, 0.18); border-color: var(--lamp); }
 /* ----------------------------------------------------------------- card */
 
 .card {
-  position: fixed;
-  right: 16px; bottom: 16px;
   width: 320px;
-  max-height: 60vh;
+  max-height: 46vh;
   overflow-y: auto;
   background: var(--glass);
   border: 1px solid var(--edge);
@@ -196,18 +210,19 @@ button.on { background: rgba(255, 202, 122, 0.18); border-color: var(--lamp); }
 
 /* ----------------------------------------------------------- narrow view */
 
-@media (max-width: 720px) {
+@media (max-width: 760px) {
+  /* four corners need a corner each, and a phone has none to spare, so
+     the panels stack down one side and the plan keeps what is left */
+  .hud {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    gap: 6px; padding: 8px;
+  }
+  .title { grid-area: 1 / 1; }
+  .idbox { grid-area: 2 / 1; justify-self: stretch; max-width: none; }
+  .feed  { grid-area: 3 / 1; justify-self: stretch;
+           max-height: 24vh; min-width: 0; }
+  .br    { grid-area: 4 / 1; justify-self: stretch; align-items: stretch; }
   .panel { max-width: none; }
-  .watchline {
-  margin-top: 7px; padding-top: 7px; font-size: 12.5px;
-  border-top: 1px solid var(--edge);
-  color: var(--ink);
-}
-.watchline .d { color: var(--lamp); }
-.watchline .dim, .voiceline { color: var(--dim); }
-.voiceline { font-size: 11px; margin-top: 3px; }
-
-.feed { max-height: 30vh; min-width: 0; }
-  .card { left: 10px; right: 10px; width: auto; }
-  .hud { padding: 8px; gap: 6px; }
+  .card  { width: auto; max-height: 34vh; }
 }
