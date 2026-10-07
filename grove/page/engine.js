@@ -370,12 +370,12 @@ function engLineTex(len, rotDeg) {
    every week orphaned five canvas-backed textures every twelve seconds the
    dashboard ran, and none of them was ever released. */
 function engInitWaterTex() {
-  const dash = (len, w) => engTex(engCapture(len + 1, 3, oc => {
+  const dash = len => engTex(engCapture(len + 1, 3, oc => {
     oc.strokeStyle = "rgba(200,225,240,0.20)"; oc.lineWidth = 1;
     oc.beginPath(); oc.moveTo(0, 1.5); oc.lineTo(len, 1.5); oc.stroke();
   }));
-  ENG_FX.dashA = dash(12, 13);
-  ENG_FX.dashB = dash(11, 12);
+  ENG_FX.dashA = dash(12);
+  ENG_FX.dashB = dash(11);
   ENG_FX.foamRim = engLineTex(23, 0);
   ENG_FX.foamIn = engLineTex(21, 0);
   ENG_FX.glintLine = engLineTex(11, 0);
