@@ -59,6 +59,11 @@ class LLM:
         for job in TIE_JOB_ORDER:
             self.job_models[job] = model
             self.job_chains[job] = list(chain)
+        # the voice the world was ASKED for. The chain may step down from
+        # it, but must never lose it: without this the ladder is a ratchet
+        # and one bad pair of calls demotes the grove until it is restarted
+        self.chosen = model
+        self.reprobe_at = 0.0             # when to try the chosen voice again
 
     # -- model resolution ------------------------------------------------
     def _available(self, name):
@@ -95,7 +100,47 @@ class LLM:
         if self.job_models != before:
             self.notes.append("the grove's voice moved to "
                               + self.job_models["soul"])
+            if self.job_models["soul"] != self.chosen:
+                # the ladder only steps down; start the clock on the way
+                # back up the moment we leave the voice we were asked for
+                self.reprobe_at = time.time() + self._reprobe_seconds()
         self.notes = self.notes[-4:]
+        return True
+
+    def _settled(self):
+        """The chosen voice answered — say so. Otherwise the dashboard
+        reads 'the grove tries X again' for the rest of the run, sitting
+        beside X's own name in the status line like a contradiction."""
+        if self.job_models.get("soul") != self.chosen or not self.notes:
+            return
+        if self.notes[-1] == "the grove tries " + self.chosen + " again":
+            self.notes[-1] = ("the grove speaks with " + self.chosen
+                              + " again")
+
+    def _reprobe_seconds(self):
+        """How long the grove stays on a fallback before trying the
+        chosen voice again."""
+        return rules.R["pacing"].get("reprobe_seconds", 900)
+
+    def _reconsider(self):
+        """Go back to the voice the world was asked for, on a cadence. The
+        chain was one-way: `_resolve` runs once, at construction, and
+        `_swap_job_model` only ever walks forward, so a single pair of
+        failed calls demoted every job for the life of the process. Here
+        the grove tries its chosen model again; if it is still unwell it
+        fails twice more and steps back down the same ladder."""
+        chosen = self.chosen
+        if not chosen or self.job_models.get("soul") == chosen:
+            return False
+        if time.time() < self.reprobe_at or self.over_budget():
+            return False
+        for job in TIE_JOB_ORDER:
+            if chosen in self.job_chains.get(job, ()):
+                self.job_models[job] = chosen
+        self.job_fails.clear()            # the fallback's record is spent
+        self.notes.append("the grove tries " + chosen + " again")
+        self.notes = self.notes[-4:]
+        self.reprobe_at = time.time() + self._reprobe_seconds()
         return True
 
     # -- ollama i/o --------------------------------------------------------
@@ -123,6 +168,7 @@ class LLM:
         model may swap after repeated failures."""
         if not self.enabled:
             return None
+        self._reconsider()               # has the chosen voice earned another try?
         attempts = retries + 1
         model = self.job_models.get(job, "llama3.2:3b")
         # the flash-class clouds reason in a hidden channel: no `think`
@@ -154,6 +200,7 @@ class LLM:
                     out = json.loads(content)
                     self.job_fails[job] = 0
                     self.reason = ""
+                    self._settled()
                     return out
                 except json.JSONDecodeError:
                     m = re.search(r"\{[\s\S]*\}", content)
@@ -162,6 +209,7 @@ class LLM:
                             out = json.loads(m.group(0))
                             self.job_fails[job] = 0
                             self.reason = ""
+                            self._settled()
                             return out
                         except json.JSONDecodeError:
                             pass
@@ -170,6 +218,10 @@ class LLM:
             if self.job_fails[job] >= 2:
                 self._swap_job_model(job)
                 payload["model"] = self.job_models.get(job, model)
+                # the ceiling rides the model: a cloud's reasoning head-
+                # room must not follow the voice down onto the llama
+                headroom = 3000 if ":cloud" in payload["model"] else 0
+                payload["options"]["num_predict"] = max_tokens + headroom
                 deadline = time.time() + self.timeout
                 self.job_fails[job] = 0
         return None

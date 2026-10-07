@@ -690,3 +690,63 @@ constitution) changes a value the engine never consults.
   was tried and **rejected**: with fruit lasting three weeks the run is
   otherwise healthy but seed 6 loses its boars at the end, the same
   signature as b19. The fix is a retuning job, not a one-liner.
+
+## Found in the field (the long-running dashboard)
+
+- [x] **b38** the grove's voice could only ever fall, never climb. When
+  b18 tied every job to one chain, `_resolve` kept running once — at
+  construction — and `_swap_job_model` only ever filtered the current
+  model out of its chain and took the new head. Those two are the *only*
+  places `job_models` is written in the whole file, and `job_chains` is
+  never reordered. So two failed calls anywhere stepped the whole voice
+  down one rung (`glm-5.3-flash:cloud` → `glm-5.2:cloud` →
+  `deepseek-v4-pro:cloud` → `llama3.2:3b`) **for the life of the
+  process**, and the only way back was a restart. Caught live: a server
+  up 19 h 44 m was speaking `glm-5.2:cloud` while `glm-5.3-flash:cloud`
+  sat right there in `/api/tags`, its own dashboard reading "the grove's
+  voice moved to glm-5.2:cloud". Aggravating it: the demotion is
+  tier-wide, so one bad *naming* call takes the World Soul with it; one
+  fully-failed call is enough to trigger it; and the evidence erases
+  itself — the swap zeroes `job_fails` and `reason` is overwritten by
+  the next good call, which is why the move looked spontaneous.
+  Fix: the voice the world was **asked** for is remembered
+  (`LLM.chosen`), and after `pacing.reprobe_seconds` (900) on a fallback
+  the grove tries it again, stepping back down if it is still unwell.
+  The dashboard says which it is doing. Two smaller faults went with it:
+  the mid-call swap kept the *old* `num_predict`, so a demotion onto the
+  local llama carried cloud-sized reasoning headroom down with it; and a
+  successful retry left "tries X again" standing beside X's own name in
+  the status line for the rest of the run. Check: two bad calls demote,
+  the cadence holds, the cadence elapsing promotes, a still-unwell
+  chosen voice demotes again, and a recovered one stays put for good —
+  `--model` still pins a chain of one that cannot slide, `--tier local`
+  still stays local, and the gate's census is unmoved.
+
+- [x] **b39** the departing visitor crashed the week. `animals.py:29`
+  wrote the departure event's `who` as the **species string**
+  (`a["sp"]`) where the other deaths write `a["id"]`, and
+  `app.py:168` runs `int(oid)` over it to write the biography row. The
+  moment a transient visitor (stag, wolf, bighorn, lion) left, the
+  ledger at the end of `Grove.step()` raised
+  `invalid literal for int() with base 10: 'stag'` — caught by the
+  runner, so the world survived, but that beat's `apply_results` and
+  `maybe_schedule` were skipped with it: the week's LLM results were
+  dropped and the soul was not invited. Found in the live server's own
+  log, then reproduced end to end. Fix: the departure names its
+  creature's id like every other death, and the ledger skips an id it
+  cannot read rather than taking the beat down with it. Check: a visitor
+  spawns, departs, the step returns cleanly, and the stag's biography
+  holds its departure line.
+
+- [x] **b40** *found by reading the departure the fix above printed* —
+  the chronicle's edge said "the the". `chronicler.py:146` built its
+  `{edge}` bone as `"the " + presentation.edge_name`, but both packs
+  already write the article into the value (`'the forest'`,
+  `'the dunes'`), so the two templates that use it read "The visitor
+  stag moved on, beyond **the the** forest" and — on every one of the
+  grove's 22–29 recolonizations per gate run — "slipped in from beyond
+  **the the** forest edge". Fix: the bone is the pack's value as
+  written. Check: all three variants of both templates render "beyond
+  the forest", "beyond the forest edge" and "beyond the dunes edge".
+  (Left alone: `{n} {sp}` makes "4 rabbit slipped in" — a plural bone is
+  not a one-liner when the species are deer, boar and sandgrouse.)

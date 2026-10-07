@@ -67,6 +67,13 @@ Animals:
 - `LLM.soul_gap()` (grove/llm.py): the wall-seconds band between soul
   invitations, by tier — the local soul speaks every 60–120 s rolled,
   the cloud's every 40–80.
+- `pacing.reprobe_seconds` (default 900): how long the grove stays on a
+  fallback voice before trying the model it was **asked** for again.
+  The chain steps down after two failed calls and used to be a ratchet —
+  `_resolve` runs once, at construction — so a single bad pair demoted
+  every job until the process was restarted. The chosen voice is retried
+  on this cadence and steps back down if it is still unwell. `--model`
+  pins a chain of one, which can never slide.
 - `maybe_schedule` (grove/app.py): the chronicle flushes when ≥ 4 events
   backlog (and the flush takes its slot on a three-week rotation); the
   naming budget is 3/week, ≤ 14/season.

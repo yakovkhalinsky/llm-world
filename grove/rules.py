@@ -57,6 +57,7 @@ R = {
         "tick_seconds": {"run": 12.0, "web": 12.0},
         "soul_gap_local": (60, 120),          # wall s between invitations
         "soul_gap_cloud": (40, 80),
+        "reprobe_seconds": 900,               # before retrying the chosen voice
         "chron_flush_need": 4,                # backlog to outweigh naming
         "chron_max_per_tick": 10,
         "naming_budget_per_week": 3,
