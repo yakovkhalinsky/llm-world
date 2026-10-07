@@ -43,7 +43,8 @@ def parse(result, fallback, existing):
         cand = re.sub(r"[^A-Za-z\-]", "", parts[0]) if parts else ""
         if cand and NAME_RE.match(cand) and cand not in existing:
             name = cand
-        diary = str(result.get("diary", "")).strip()[:80]
+        d = result.get("diary")     # a model's null/number is no diary either
+        diary = d.strip()[:80] if isinstance(d, str) else ""
     return name[0].upper() + name[1:] if name else fallback, diary
 
 

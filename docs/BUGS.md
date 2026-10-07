@@ -856,7 +856,7 @@ constitution) changes a value the engine never consults.
   reports "unparseable JSON" with the raw text kept, and a clean reply
   clears it; both page harnesses pass.
 
-- [ ] **b45** the diary a model never wrote read as the word "None".
+- [x] **b45** the diary a model never wrote read as the word "None".
   `voice.parse` guards the *name* against a model's `null` — b11 put that
   there, with the comment "a model's null/None is no name" — but the line
   below it did `str(result.get("diary", ""))`, so a `null`, a number or a
