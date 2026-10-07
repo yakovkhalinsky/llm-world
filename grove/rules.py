@@ -73,7 +73,10 @@ R = {
     "bounds": {
         "animals.*.cap": (2, 60),
         "animals.*.lifespan": (20, 400),
-        "animals.*.hunger_drain": (0.2, 0.5),
+        # the shipped packs run 0.25 (tortoise) to 0.8 (rabbit): a band
+        # that stopped at 0.5 silently clamped every steward that named a
+        # real value into a 37% cut nobody asked for
+        "animals.*.hunger_drain": (0.2, 1.0),
         "animals.*.lit_prob": (0.02, 0.6),
         "animals.*.hunt_prob": (0.1, 0.8),
         "plants.*.seed_prob": (0.02, 0.6),
@@ -83,7 +86,7 @@ R = {
         "pop.recolonize_after": (8, 40),
         "pop.robins_return_prob": (0.4, 1.0),
     },
-    "review": {"every_weeks": 48, "auto_tune": False},
+    "review": {"every_weeks": 48, "auto_tune": True},
 }
 
 

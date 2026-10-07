@@ -981,3 +981,35 @@ merely plain, and all of them were the same animal in another colour.
   vector work in Python, which is exactly the duplication that let the
   terrain recipe drift twice (b25, b28: "the twin matched the wrong branch
   first trip"). Worth a decision rather than a reflex.
+
+- [x] **b51** the steward could only *offer*, and could only see two of
+  the eleven rules it was allowed to change — so nothing it proposed ever
+  reached the ecology. Three faults, all of them in the way of the thing's
+  whole purpose:
+  - `review.auto_tune` defaulted to **False**, so every amendment waited
+    in the ledger for a keeper to click accept on the tuning tab. The
+    intent is an LLM that tunes the running ecology; it now applies its
+    first lawful amendment by default (`--no-auto-tune` keeps the old
+    offers-only flow, and the dashboard reports the ruleset's truth rather
+    than what argv said).
+  - `rules_current()` showed it `animals.<sp>.cap` and
+    `plants.<sp>.seed_prob` — **two of the eleven declared bounds**. A
+    steward cannot amend a constitution it cannot read, so the digest now
+    lists every lawful path with its current value and its band, and the
+    paths that do not exist on a species are left out (`plants.fern` has
+    no `seed_prob`; naming it only invited a change to a key nothing
+    reads).
+  - **the band was wrong, and making auto-tune the default would have
+    turned that into damage.** `animals.*.hunger_drain` was declared
+    `(0.2, 0.5)` while the shipped packs run 0.25 to 0.8 — the grove's
+    rabbit, deer, fox, stag and wolf and the desert's jackrabbit, kit-fox,
+    bighorn and lion all sit **above** it. `validate` clamps into the band,
+    so a steward proposing to nudge the rabbit's hunger drain from 0.8 to
+    0.75 would have had it silently clamped to **0.5** — a 37% cut that
+    starves the warren, applied automatically and recorded in the ledger as
+    though the steward had asked for it. The band is `(0.2, 1.0)` now.
+  Check: every bound contains every shipped value for both packs; each of
+  the six values above validates **unchanged**; an end-to-end review with
+  auto-tune on moves `animals.rabbit.hunger_drain` 0.8 → 0.75, marks the
+  row `applied`, persists it to `world_rules.json`, refuses an unlawful
+  path, and takes only the first of two amendments.

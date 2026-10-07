@@ -350,8 +350,7 @@ def cmd_web(args):
                     "history": [{"id": i, "week": wk, "status": s,
                                  "rule": rp, "value": v}
                                 for i, wk, s, rp, v in hist],
-                    "auto_tune": bool(g.args.__dict__.get("auto_tune"))
-                    if hasattr(g.args, "__dict__") else False,
+                    "auto_tune": bool(rules.R["review"].get("auto_tune")),
                     "current": {sp: t.get("cap") for sp, t in
                                 sorted(rules.R["animals"].items())},
                     # the reading itself, so a steward who restrains

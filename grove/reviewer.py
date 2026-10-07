@@ -7,10 +7,14 @@ soil's bank, and the recent chronicle. It proposes AT MOST TWO rule
 amendments with reasons (or no change at all: restraint is expected).
 
 Proposals are validated against rules.R["bounds"] before anything
-happens: out-of-laws are refused with the reason. Default flow keeps
-them pending in the amendments' ledger for the viewer to accept on the
-dashboard; `--auto-tune` applies instead, and the accepted/automated
-changes persist in the world's own override file.
+happens: out-of-laws are refused with the reason, and a value outside
+its band is clamped into it. By default the steward's first lawful
+amendment is APPLIED — the point of it is to actually tune the ecology
+— and every change, offered or taken, is written to the world's own
+override file so it outlives the run. `--no-auto-tune` keeps it to
+offers, which the keeper accepts on the dashboard's tuning tab; a second
+amendment is always left as an offer, because a rule needs a year to be
+judged.
 
 The tone: a steward, not a tinkerer. Only one rule in flight at a time
 (a rule needs a year to be judged); the reviewer may also simply say
@@ -111,23 +115,46 @@ def digest(world, db, weeks=48):
     return "\n".join(lines)
 
 
+def _value_at(path):
+    """The live value at a dotted path, or None if the path names nothing."""
+    node = rules.R
+    for step in path.split("."):
+        if not isinstance(node, dict) or step not in node:
+            return None
+        node = node[step]
+    return None if isinstance(node, dict) else node
+
+
 def rules_current():
-    """The lawful paths' current values — what a steward may propose on.
+    """The lawful paths, their current values and the bands they may move
+    within — the whole surface a steward may propose on.
 
     These must be the very dotted paths `validate` accepts and
-    `apply_amendment` walks, section and all. They were not: the list read
-    `boar.cap=5` while the law demands `animals.boar.cap`, and since this
-    digest is the concrete data the steward actually reads — its system
-    prompt's example is fully qualified, this list was not — it proposed
-    exactly what it was shown and every amendment it ever offered was
-    refused as an unlawful path."""
+    `apply_amendment` walks, section and all: they were once not, and every
+    amendment the steward offered was refused as an unlawful path. And it
+    has to be shown all of them — it was shown two knobs of the eleven, and
+    a constitution you cannot read is one you cannot amend."""
+    law = rules.R.get("bounds", {})
     out = []
-    for sp, t in sorted(rules.R["animals"].items()):
-        if t.get("visitor"):
-            continue
-        out.append(f"animals.{sp}.cap={t.get('cap')}")
-    for sp, t in sorted(rules.R["plants"].items()):
-        out.append(f"plants.{sp}.seed_prob={t.get('seed_prob')}")
+    for section, key in (("animals", "cap"), ("plants", "seed_prob")):
+        for sp, t in sorted(rules.R[section].items()):
+            if t.get("visitor") or key not in t:
+                continue                     # only what actually exists
+            band = law.get(section + ".*." + key)
+            out.append(f"{section}.{sp}.{key}={t[key]}"
+                       + (f" (lawful {band[0]}..{band[1]})" if band else ""))
+    also = []
+    for path, band in sorted(law.items()):
+        if "*" in path:
+            section, _sp, key = path.split(".")
+            if key in ("cap", "seed_prob"):
+                continue
+            also.append(f"{section}.<species>.{key} "
+                        f"({band[0]}..{band[1]})")
+        else:
+            also.append(f"{path}={_value_at(path)} ({band[0]}..{band[1]})")
+    if also:
+        out.append("also amendable — " + "; ".join(also))
     return out
 
 
