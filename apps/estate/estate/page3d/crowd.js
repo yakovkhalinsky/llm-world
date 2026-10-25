@@ -315,7 +315,8 @@
           var f = fixAt[cc[0] + ',' + cc[1]];
           var b = f && grid.solid[cc[1] * grid.W + cc[0]] && bodyAt(fixAt, cc[0], cc[1]);
           if (!b || b[0] !== 1) return;
-          r = Walk.around(r, cc[0] + 0.5, cc[1] + 0.5, b[1] + R + ROUND_GAP);
+          r = Walk.around(r, cc[0] + 0.5, cc[1] + 0.5, b[1] + R + ROUND_GAP,
+                         grid, R);
         });
       }
       return { route: r, fallback: false, from: [scx, scy] };

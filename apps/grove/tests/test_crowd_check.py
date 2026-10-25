@@ -6,7 +6,8 @@ built from a real one (`tools/crowd_scene.js`): six creatures of mixed
 sizes in one cell, four beside a standing trunk, the flyers together, four
 walking the same way and two pairs meeting head-on; and on made-up glades
 (a creature beside a trunk, one in a trunk's quarter, one on a bank, each
-brushed by a walker from every side; a head-on pair a little to the wrong
+brushed by a walker from every side; a file of walkers pressing past one
+on a bank; a head-on pair a little to the wrong
 side; a flyer past the edge). It judges them with an oracle of its own —
 the water from the snapshot's cells, each trunk a disk where the page
 draws it — never with the clearAt it is checking. It needs Node, so this
@@ -14,7 +15,8 @@ skips without it.
 
 The other tests prove the check can fail, each on a mutant of the page:
 spacing taken out; keeping right taken out; the trunk keep-out taken out
-of the per-frame push; and a push that ignores what the ground allows.
+of the per-frame push; a push that ignores what the ground allows; and
+the push's look at the ground cut to the next cell only.
 """
 
 import json
@@ -83,6 +85,12 @@ def _centre_only(src):
                  "Walk.groundKeepOuts(grid, K, t, gx, gz, 0, home, NEAR)")
 
 
+def _near_one(src):
+    """forest.js whose per-frame push looks at the water only in the next
+    cell, not two out (a crowd pressing one off a bank pushes it in)."""
+    return _swap(src, "var NEAR = 2;", "var NEAR = 1;")
+
+
 @unittest.skipUnless(NODE, "node is not installed")
 class CrowdCheckTest(unittest.TestCase):
     @classmethod
@@ -129,7 +137,7 @@ class CrowdCheckTest(unittest.TestCase):
     def test_the_scenes_ran(self):
         out = self._run().stdout
         self.assertIn("scenes: trunk ", out)
-        for tag in ("in-trunk", "bank", "head-on", "edge"):
+        for tag in ("in-trunk", "bank", "bank-crowd", "head-on", "edge"):
             self.assertIn("; " + tag + " ", out)
 
     def test_without_spacing_the_check_fails(self):
@@ -149,6 +157,11 @@ class CrowdCheckTest(unittest.TestCase):
 
     def test_a_push_of_an_edge_into_the_water_fails(self):
         out = self._mutant(_centre_only, FOREST, "GROVE_FOREST")
+        self.assertIn("into the water", out)
+
+    def test_a_push_that_looks_only_one_cell_out_fails(self):
+        out = self._mutant(_near_one, FOREST, "GROVE_FOREST")
+        self.assertIn("FAIL bank-crowd: ", out)
         self.assertIn("into the water", out)
 
     def test_a_push_that_ignores_the_ground_fails(self):
