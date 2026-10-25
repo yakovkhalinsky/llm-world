@@ -30,7 +30,14 @@ import { OrbitControls } from '/3d/vendor/OrbitControls.js';
 const Walk = (typeof globalThis !== 'undefined' && globalThis.EstateWalk) ||
              null;
 
-const PHASE_NAMES = ['dawn', 'morning', 'afternoon', 'evening', 'night'];
+/* The day's clock and the light table are `clock.js`, loaded as a classic
+ * script before this module: pure functions with no THREE, so the property
+ * that matters — the light never jumps at the turn — is testable in Node
+ * (`tools/clock_check.js`) rather than only by a replica that ships
+ * nowhere. */
+const Clock = (typeof globalThis !== 'undefined' && globalThis.EstateClock) ||
+              null;
+
 const FLOOR_H = 1.35;          // world units per storey
 const TILE_TOP = 0.12;         // the walking surface: top of a ground tile
 const WALK_Y = TILE_TOP + 0.005;
@@ -67,56 +74,6 @@ const BUILDING_STYLE = {
 const ROLE_COLOUR = { child: 0xf2c14e, adult: 0x9ecbf0, elder: 0xd9b8e8 };
 const SKIN = [0xf1d5b5, 0xe8c39a, 0xc68863, 0x8d5524];
 
-/* The day's light as keyframes on a continuous clock. `at` is the fraction
- * of the day, 0 being midnight — the darkest hour, the middle of the night
- * that straddles the day's turn — and 1 the same hour again, so the table
- * wraps without a seam: the last key is the first key's light. The five
- * named phases are equal fifths of the clock, each starting half a fifth
- * before its anchor (night 0.9..1.0 and 0.0..0.1, dawn 0.1..0.3, morning
- * 0.3..0.5, afternoon 0.5..0.7, evening 0.7..0.9), so a phase's anchor is
- * its middle and a frozen `?phase=` shows that phase's own light.
- *
- * `dark` is how much of the night is on: it drives the lamps, the windows
- * and the figures' warmth, and it crosses from 0 to 1 over a long dusk
- * and back over a long dawn rather than at a threshold. Everything between
- * two keys — colour, intensity, sun position, darkness — is eased with a
- * smoothstep, so the sun travels its arc and the light changes pace at the
- * ends of each run instead of stepping at the day's turn. Colours are sRGB
- * hex and become linear when three reads them.
- *
- * `offset` is the sun from the estate's centre, so the same table works on
- * a plan of any size. Dawn and evening keep the warm light but not a
- * grazing sun: below about 25° the shadow camera sees the estate edge-on
- * and a low sun throws long rectangles across everything beyond it. The
- * colour says the hour; the elevation stays high enough for the light to
- * fall like light. */
-const LIGHT = [
-  /* Night is dark, not black: the plan page lays a 52%-alpha navy over a
-   * drawing that is still there, and the 3D page keeps the same bargain —
-   * enough blue light to read the blocks, with the lamps and the lived-in
-   * windows doing the rest. A literally unlit estate is not night, it is a
-   * rendering failure. The last key repeats the first so the wrap from 1 to
-   * 0 has no jump in any channel. */
-  { at: 0.00, sun: 0x9fb4e6, sunI: 0.55, offset: [-20, 28, -28],
-    sky: 0x17243f, hemiSky: 0x6e86b8, hemiGround: 0x2a3038, hemiI: 1.05,
-    dark: 1.0 },
-  { at: 0.20, sun: 0xffb27a, sunI: 1.15, offset: [28, 20, 20],
-    sky: 0xe6b28c, hemiSky: 0xffd6ae, hemiGround: 0x4a4034, hemiI: 0.55,
-    dark: 0.35 },
-  { at: 0.40, sun: 0xfff2dc, sunI: 2.35, offset: [24, 40, 26],
-    sky: 0x9fcdf2, hemiSky: 0xdcecff, hemiGround: 0x4e5648, hemiI: 0.82,
-    dark: 0.0 },
-  { at: 0.60, sun: 0xffe0b0, sunI: 2.15, offset: [-24, 36, 18],
-    sky: 0xa9d6f5, hemiSky: 0xe4f0ff, hemiGround: 0x55584a, hemiI: 0.78,
-    dark: 0.0 },
-  { at: 0.80, sun: 0xff8a4c, sunI: 1.35, offset: [-30, 20, -14],
-    sky: 0xd98a62, hemiSky: 0xffc9a8, hemiGround: 0x40372e, hemiI: 0.48,
-    dark: 0.50 },
-  { at: 1.00, sun: 0x9fb4e6, sunI: 0.55, offset: [-20, 28, -28],
-    sky: 0x17243f, hemiSky: 0x6e86b8, hemiGround: 0x2a3038, hemiI: 1.05,
-    dark: 1.0 },
-];
-
 /* A weather is a fact about the sky, so it tints the sky (and the fog that
  * matches it) rather than only the ground. Clear days keep the phase's own
  * blue; rain and storm pull it to grey, frost to a cold haze, heat to a
@@ -142,19 +99,17 @@ function hash01(n, salt) {
   return (x >>> 0) / 4294967295;
 }
 
-const clamp01 = v => Math.max(0, Math.min(1, v));
-const mixNum = (x, y, f) => x + (y - x) * f;
+/* the clock's own helper; the fallback only keeps unrelated geometry code
+ * running if clock.js failed to load, and `createWorld` refuses to start
+ * without the light table anyway */
+const clamp01 = (Clock && Clock.clamp01) ||
+                (v => Math.max(0, Math.min(1, v)));
 
 function stringHash(s) {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
   return h >>> 0;
 }
-
-/* Ease the run between two keys: the light leaves an anchor and arrives at
- * the next one at rest, which is what gives a dusk a beginning and an end
- * rather than a constant rate from noon to midnight. */
-const smooth01 = t => t * t * (3 - 2 * t);
 
 function doorFace(b) {
   const dx = b.door[0], dy = b.door[1];
@@ -166,12 +121,14 @@ function doorFace(b) {
 
 export function createWorld(ground, canvas, opts) {
   opts = opts || {};
+  if (!Clock) throw new Error('the day clock (clock.js) did not load');
   const forcedPhase = Number.isFinite(opts.forcedPhase) ? opts.forcedPhase
                                                           : -1;
   /* `?clock=0.15` pins the day's fraction for screenshots of mid-dawn or
-   * mid-dusk; it is finer than a phase and wins if both are given */
-  const clockPin = Number.isFinite(opts.clockFrac) && opts.clockFrac >= 0
-    ? clamp01(opts.clockFrac) : -1;
+   * mid-dusk; it is finer than a phase and wins if both are given. The
+   * clock owns both pins and the day's own anchoring. */
+  const clock = Clock.makeClock({ clockPin: opts.clockFrac,
+                                  forcedPhase: forcedPhase });
   const staticMode = !!opts.staticMode;
   const W = ground.width, H = ground.height;
   const centre = new THREE.Vector3(W / 2, 1.4, H / 2);
@@ -230,11 +187,11 @@ export function createWorld(ground, canvas, opts) {
 
   const maxDim = Math.max(W, H);
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(LIGHT[3].sky);
+  scene.background = new THREE.Color(Clock.LIGHT[3].sky);
   /* Fog turns the ground past the estate into sky. It starts beyond the
    * estate's own footprint so the blocks stay crisp, and its colour is the
    * sky's every frame. */
-  scene.fog = new THREE.Fog(LIGHT[3].sky, maxDim * 1.3, maxDim * 2.8);
+  scene.fog = new THREE.Fog(Clock.LIGHT[3].sky, maxDim * 1.3, maxDim * 2.8);
 
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
   /* from the south-east, where both views look in, and high enough to
@@ -743,34 +700,22 @@ export function createWorld(ground, canvas, opts) {
   const hemiGround = new THREE.Color();
   let weather = 'clear';
   let darkNow = 0;
-  /* the table's colours, read as linear once rather than once a frame */
-  const lightC = LIGHT.map(k => ({
-    sun: new THREE.Color(k.sun), sky: new THREE.Color(k.sky),
-    hemiSky: new THREE.Color(k.hemiSky),
-    hemiGround: new THREE.Color(k.hemiGround),
-  }));
 
-  /* The whole sky from one number: the day's fraction. Find the keys either
-   * side of it, ease across, and write the same colour into the background
-   * and the fog so the apron past the last tile disappears into the sky at
-   * every hour, not only at noon. Nothing here allocates: the colours and
-   * the light objects are the ones made above. */
+  /* The whole sky from one number: the day's fraction. The keyframes and
+   * the easing are `clock.js`; this only writes the result into the light
+   * objects and the sky. Nothing here allocates: the colours and the light
+   * objects are the ones made above. */
   function updateSky(dayFrac) {
-    let i = 0;
-    while (i < LIGHT.length - 2 && dayFrac >= LIGHT[i + 1].at) i++;
-    const a = LIGHT[i], b = LIGHT[i + 1];
-    const ca = lightC[i], cb = lightC[i + 1];
-    const span = b.at - a.at;
-    const f = span > 0 ? smooth01(clamp01((dayFrac - a.at) / span)) : 0;
+    const l = Clock.lightAt(dayFrac);
 
-    sun.intensity = mixNum(a.sunI, b.sunI, f);
-    hemi.intensity = mixNum(a.hemiI, b.hemiI, f);
-    sunColour.lerpColors(ca.sun, cb.sun, f);
+    sun.intensity = l.sunI;
+    hemi.intensity = l.hemiI;
+    sunColour.setRGB(l.sun[0], l.sun[1], l.sun[2]);
     sun.color.copy(sunColour);
-    skyColour.lerpColors(ca.sky, cb.sky, f);
-    hemiSky.lerpColors(ca.hemiSky, cb.hemiSky, f);
-    hemiGround.lerpColors(ca.hemiGround, cb.hemiGround, f);
-    darkNow = mixNum(a.dark, b.dark, f);
+    skyColour.setRGB(l.sky[0], l.sky[1], l.sky[2]);
+    hemiSky.setRGB(l.hemiSky[0], l.hemiSky[1], l.hemiSky[2]);
+    hemiGround.setRGB(l.hemiGround[0], l.hemiGround[1], l.hemiGround[2]);
+    darkNow = l.dark;
 
     /* the weather is a property of the sky, so it greys the sky itself
      * (and the fog, which is the same colour) rather than only dimming
@@ -791,9 +736,9 @@ export function createWorld(ground, canvas, opts) {
      * low by evening, then the moon's blue from the north. The floor on
      * the elevation is the shadow camera's, not the sky's — see SUN_MIN_Y */
     sun.position.set(
-      centre.x + mixNum(a.offset[0], b.offset[0], f),
-      Math.max(SUN_MIN_Y, mixNum(a.offset[1], b.offset[1], f)),
-      centre.z + mixNum(a.offset[2], b.offset[2], f));
+      centre.x + l.offset[0],
+      Math.max(SUN_MIN_Y, l.offset[1]),
+      centre.z + l.offset[2]);
   }
 
   /* ----------------------------------------------------------- residents */
@@ -875,20 +820,13 @@ export function createWorld(ground, canvas, opts) {
    * next walk from the seat rather than the cell's centre, and somebody who
    * stays on the same bench is not sent walking at all */
   let prevSeat = {};
-  /* The day is the clock, not the poll. The page is polled several times
-   * per day, and resetting these on every state made the light restart
-   * toward dawn and the walk restart toward the old position before either
-   * had got anywhere. `dayStart` is the client's own start of the current
-   * day: the clock runs from it at one day per `dayMs`, and the next state
-   * with a new `day` re-anchors it to the fraction already reached. The
-   * light is a periodic function of that fraction, so the wrap back to 0
-   * at the day's turn is the same night it wraps from — there is no frame
-   * where the sky jumps. */
-  let dayMs = 6000;
-  let dayStart = 0;            // performance.now() at the client's day 0
-  let daySeen = -1;
-  let paused = false;
-  let pausedFrac = 0;          // the fraction the clock is frozen at
+  /* The day is the clock, not the poll: `clock` (clock.js) owns the anchor
+   * and the pins. The page is polled several times per day, and resetting
+   * on every state made the light restart toward dawn and the walk restart
+   * toward the old position before either had got anywhere. The next state
+   * with a new `day` re-anchors at the fraction already reached; the light
+   * is a periodic function of that fraction, so the wrap back to 0 at the
+   * day's turn is the same night it wraps from. */
 
   function ensureResidents(n) {
     if (bodyMesh && n <= capacity) return;
@@ -944,7 +882,7 @@ export function createWorld(ground, canvas, opts) {
      * times per day, so a route is rebuilt on the day's arrival and left
      * alone in between: rebuilding it on every poll restarted the walk from
      * its beginning before it had arrived. */
-    const fresh = !routesBuilt || st.day !== daySeen;
+    const fresh = !routesBuilt || st.day !== clock.daySeen;
     const seatWas = prevSeat;
 
     for (let i = 0; i < people.length; i++) {
@@ -1021,15 +959,11 @@ export function createWorld(ground, canvas, opts) {
     occupancyDirty = true;
 
     const now = performance.now();
-    const nextDayMs = Math.max(300, (st.tick_seconds || 6) * 1000);
-    if (nextDayMs !== dayMs) {
-      /* a pace change alters the rate, not the hour: keep the fraction
-       * already reached, so switching from a minute a day to five seconds
-       * makes the rest of the day shorter rather than jumping the light */
-      const frac = dayNow(now);
-      dayMs = nextDayMs;
-      if (daySeen >= 0) dayStart = now - frac * dayMs;
-    }
+    /* a pace change alters the rate, not the hour: the clock keeps the
+     * fraction already reached, so switching from a minute a day to five
+     * seconds makes the rest of the day shorter rather than jumping the
+     * light (see Clock.setPace) */
+    Clock.setPace(clock, now, st.tick_seconds);
 
     /* Each changed position becomes a walk over the plan's own ground. A
      * resident leaving a block starts at its door; a resident already on a
@@ -1077,8 +1011,8 @@ export function createWorld(ground, canvas, opts) {
         }
         routes[i] = route;
         routeT0[i] = now;
-        routeDur[i] = Walk ? Walk.duration(route.total, dayMs)
-                           : Math.max(120, dayMs * 0.9);
+        routeDur[i] = Walk ? Walk.duration(route.total, clock.dayMs)
+                           : Math.max(120, clock.dayMs * 0.9);
         if (route.total > 1e-4 && route.n > routeMaxPoints) {
           routeMaxPoints = route.n;
         }
@@ -1092,29 +1026,9 @@ export function createWorld(ground, canvas, opts) {
       if (traceMesh) rebuildTrace();
     }
 
-    if (!!st.paused !== paused) {
-      /* freeze at the hour the page is showing, not at the hour the poll
-       * happened to land on: the clock is continuous, so this is the same
-       * light the last frame drew */
-      if (st.paused) pausedFrac = dayNow(now);
-      else dayStart = now - pausedFrac * dayMs;
-      paused = !!st.paused;
-    }
-    if (st.day !== daySeen) {
-      const first = daySeen < 0;
-      daySeen = st.day;
-      /* The poll reports the turn some time after it happened. Re-anchor
-       * the clock at the fraction it has already reached rather than at
-       * zero: the light keeps running through the turn (the table's first
-       * and last keys are the same night) and is not dragged backwards by
-       * the poll's lateness. A stepped day while paused is a new day too,
-       * and its clock starts at midnight, the day's own turn. */
-      if (paused) pausedFrac = first ? 0.2 : 0;
-      /* a fresh page opens in the dawn, the middle of the first phase, as
-       * it did when phase 0 was the dawn anchor */
-      else if (first) dayStart = now - 0.2 * dayMs;
-      else dayStart = now - dayNow(now) * dayMs;
-    }
+    /* freeze at the hour the page is showing; re-anchor at the fraction
+     * already reached when the day turns (Clock.onState). */
+    Clock.onState(clock, now, st);
   }
 
   function updateResidents(now) {
@@ -1480,11 +1394,10 @@ export function createWorld(ground, canvas, opts) {
   /* --------------------------------------------------------------- state */
 
   let groundKey = '';
-  let haveState = false;
   let lastNow = 0;
 
   function setState(st) {
-    haveState = true;
+    clock.haveState = true;
     weather = st.weather || 'clear';
     const key = st.day + ':' + st.season;
     if (key !== groundKey) {
@@ -1510,24 +1423,12 @@ export function createWorld(ground, canvas, opts) {
                       dayFrac: 0.5 };
   let windowStep = -1;
 
-  /* the client's own clock: the fraction of a day since `dayStart`. It is
-   * taken modulo one day, so a late poll can let the clock run through the
-   * turn before the state arrives without ever stopping or jumping: the
-   * light at the seam is the same night on both sides. */
-  function dayNow(now) {
-    const t = (now - dayStart) / dayMs;
-    return t <= 0 ? 0 : t - Math.floor(t);
-  }
-
-  /* Where the day is, 0..1. A frozen phase is shown at its midpoint,
-   * which is also its key in the light table (dawn 0.2, morning 0.4,
-   * afternoon 0.6, evening 0.8, night 0.0); `?clock=` pins the clock
+  /* Where the day is, 0..1 (clock.js): a frozen phase is shown at its
+   * midpoint, which is also its key in the light table (dawn 0.2, morning
+   * 0.4, afternoon 0.6, evening 0.8, night 0.0); `?clock=` pins the clock
    * outright; a paused day does not keep turning its light. */
   function dayFraction(now) {
-    if (clockPin >= 0) return clockPin;
-    if (forcedPhase >= 0) return ((forcedPhase + 1) % 5) / 5;
-    if (!haveState) return 0.2;     // the dawn the first state opens in
-    return paused ? pausedFrac : dayNow(now);
+    return Clock.fraction(clock, now);
   }
 
   function frame(now) {
@@ -1559,16 +1460,12 @@ export function createWorld(ground, canvas, opts) {
     controls.update();
     renderer.render(scene, camera);
 
-    /* the five names are equal fifths of the same clock the light reads,
-     * each starting half a fifth before its anchor, so the HUD cannot call
-     * it night while the estate is still at dusk. Night straddles the day's
-     * turn: the hour either side of midnight is one phase, not two. */
-    let names = f - 0.1;
-    if (names < 0) names += 1;
-    const idx = Math.min(4, Math.floor(names * 5));
-    phaseInfo.phase = names * 5;
-    phaseInfo.index = idx;
-    phaseInfo.name = PHASE_NAMES[idx];
+    /* the five names are equal fifths of the same clock the light reads;
+     * Clock.phaseAt is where that fact lives. */
+    const info = Clock.phaseAt(f);
+    phaseInfo.phase = info.phase;
+    phaseInfo.index = info.index;
+    phaseInfo.name = info.name;
     phaseInfo.darkness = dark;
     phaseInfo.dayFrac = f;
     return phaseInfo;
@@ -1577,7 +1474,7 @@ export function createWorld(ground, canvas, opts) {
   /* -------------------------------------------------------------- pick */
 
   function pick(clientX, clientY, rect) {
-    if (!haveState) return null;
+    if (!clock.haveState) return null;
     ndc.set(((clientX - rect.left) / rect.width) * 2 - 1,
             -((clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
@@ -1752,7 +1649,7 @@ export function createWorld(ground, canvas, opts) {
     phaseIndex: () => phaseInfo.index,
     phaseName: () => phaseInfo.name,
     dayFraction: () => phaseInfo.dayFrac,
-    hasState: () => haveState,
+    hasState: () => clock.haveState,
     staticMode,
   };
 }
