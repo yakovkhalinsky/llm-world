@@ -136,6 +136,8 @@ html, body {
 .speedrow { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
 .speedrow .hint { font-size: 11px; color: var(--dim); }
 .speedrow #speeds { display: flex; gap: 4px; }
+.speedrow #shows { display: flex; gap: 3px; flex-wrap: wrap; }
+.speedrow #shows button { padding-left: 5px; padding-right: 5px; }
 
 button {
   font: inherit;

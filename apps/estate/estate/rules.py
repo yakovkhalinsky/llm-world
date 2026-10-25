@@ -117,6 +117,61 @@ R = {
         "home_by": ["night"],
     },
 
+    # The school day (engine/daytime.py). Society again, like the family
+    # rules: a pack decides whether there *is* a school on the plan (its
+    # recipe's `gen.school`), and these say what the estate does with it.
+    "school": {
+        # Pupils are this old: from five up to (not including) sixteen. The
+        # under-tens are walked there and back by a guardian; the 10-15s
+        # walk on their own (`families.young_under` is the split).
+        "ages": [5, 16],
+        # the days it is open, as weekday indices (Monday 0): weekdays,
+        # every week of the year — there are no term holidays yet
+        "days": [0, 1, 2, 3, 4],
+        # The school run is made in this phase: everyone due at school (and
+        # whoever is walking the little ones) walks to the gate, and a
+        # pupil who reaches it goes in. The run is an obligation, not a
+        # whim: it is walked with the whole of the plan's `engine.scan`
+        # rather than an errand's step budget, so a sixth-floor family is
+        # never "late" because the stairs ate the phase.
+        "run": "dawn",
+        # ... and the pupils are in school through these phases, inside the
+        # fence with their teachers. The first phase after them is home
+        # time: the 10-15s come out of the gate, and the under-tens wait
+        # inside (still supervised) until a guardian collects them.
+        "hours": ["morning"],
+        # What a phase at school does for a pupil, as a share of a whole
+        # need, the way a fixture's affords are: dinner, friends and the
+        # playground at break.
+        "meets": {"food": 0.6, "company": 0.7, "play": 0.6},
+        # How many pupils one cell of the yard holds (`daytime.yard_spots`):
+        # the 6×4 yard so holds 48, and the most ever in at once across 8
+        # seeds × 3 years is 28 (`tools/family_check.py` max_in_school, and
+        # its yard_over counts any cell over its share).
+        "per_yard_cell": 2,
+    },
+
+    # Work: the working-age adults who leave the estate on a weekday by the
+    # bus at the ring road and come back on it (engine/daytime.py).
+    "work": {
+        # The share of working-age adults (people.ages adult .. elder) with
+        # a job, drawn once per person from the seed, so the same resident
+        # works in every run.
+        "share": 0.6,
+        # A worker walks to the stop in this phase and is gone once there ...
+        "commute": "dawn",
+        # ... is away through these phases, and steps off the bus at the
+        # start of the first phase after them.
+        "shift": ["morning", "afternoon"],
+        # A household with young children keeps one adult as their carer.
+        # With a child under school age at home the carer does not work at
+        # all; with only pupils, the carer works school hours — after the
+        # run, back for home time.
+        "school_hours": ["morning"],
+        # what a shift does for a worker: lunch, and the people at work
+        "meets": {"food": 0.5, "company": 0.5},
+    },
+
     "pacing": {
         # The paces the estate may be watched at, slowest first: how many
         # wall seconds one day takes. A day is five phases, so at 60 s a

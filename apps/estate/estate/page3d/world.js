@@ -73,11 +73,14 @@ const SEASONS = [
 const SITE_COLOUR = {
   road: 0x3a4048, path: 0x938a7b, paved: 0x6d6a63, lawn: 0x6f8f52,
   play: 0xb5945a, water: 0x3d6f88, building: 0x2f3640,
+  yard: 0x86817a,
 };
 
 const BUILDING_STYLE = {
   block: { wall: 0xb7b0a1, roof: 0x444b52, trim: 0x8f887b },
   shop: { wall: 0xcf9f60, roof: 0x7c4038, trim: 0xf0c98a },
+  /* red brick and a slate roof: a school looks like nothing else here */
+  school: { wall: 0xa8654a, roof: 0x3e4650, trim: 0xe3d6bf },
 };
 
 /* A person is coloured by what they are, never by which household they
@@ -439,6 +442,14 @@ export function createWorld(ground, canvas, opts) {
   const lampBulbMat = new THREE.MeshStandardMaterial({
     color: 0x4a4234, emissive: 0xffca7a, emissiveIntensity: 0.05,
     roughness: 0.5 });
+  const schoolTrimMat = new THREE.MeshStandardMaterial({
+    color: BUILDING_STYLE.school.trim, roughness: 0.9 });
+  const schoolSignMat = new THREE.MeshStandardMaterial({
+    color: 0x24486b, roughness: 0.7 });
+  const fenceMat = new THREE.MeshStandardMaterial({
+    color: 0x3d5a4a, roughness: 0.75 });
+  const lineMat = new THREE.MeshStandardMaterial({
+    color: 0xe9e4d8, roughness: 0.95 });
   const shopSignMat = new THREE.MeshStandardMaterial({
     color: 0x5a3a24, emissive: 0xffb45c, emissiveIntensity: 0.1,
     roughness: 0.7 });
@@ -459,6 +470,102 @@ export function createWorld(ground, canvas, opts) {
   function addWindow(px, py, pz, ry, unit, shop, sx, sy) {
     windowSlots.push({ px, py, pz, ry, unit, shop: !!shop,
                        sx: sx || 1, sy: sy || 1 });
+  }
+
+  /* The school: a two-storey brick building with a row of tall classroom
+   * windows on every floor, its name board over the door, and its yard
+   * fenced on the three sides the building does not close, with a gap at
+   * the gate (the gate's pillars are the `school` fixture). Pupils inside
+   * the fence are at school; the fence is what makes that visible. */
+  function buildSchool(g, b, face, along) {
+    /* the name board, white-edged navy, above the door canopy */
+    if (face.axis === 'z') {
+      addBox(g, schoolSignMat, 2.0, 0.32, 0.08, along,
+             TILE_TOP + 1.3, face.at + face.sign * 0.06);
+      addBox(g, schoolTrimMat, 2.12, 0.42, 0.04, along,
+             TILE_TOP + 1.3, face.at + face.sign * 0.025);
+    } else {
+      addBox(g, schoolSignMat, 0.08, 0.32, 2.0,
+             face.at + face.sign * 0.06, TILE_TOP + 1.3, along);
+      addBox(g, schoolTrimMat, 0.04, 0.42, 2.12,
+             face.at + face.sign * 0.025, TILE_TOP + 1.3, along);
+    }
+    /* classroom windows: tall, many, evenly along both long faces; the
+     * ground floor leaves the door and its board clear */
+    const longX = b.w >= b.h;
+    const len = longX ? b.w : b.h;
+    const start = longX ? b.x : b.y;
+    const n = Math.max(2, Math.floor((len - 0.6) / 1.05));
+    for (let f = 1; f <= b.floors; f++) {
+      const y = TILE_TOP + (f - 1) * FLOOR_H + FLOOR_H * 0.52;
+      for (let i = 0; i < n; i++) {
+        const pos = start + 0.3 + (i + 0.5) * (len - 0.6) / n;
+        [-1, 1].forEach(side => {
+          const onDoor = f === 1 && face.sign === side &&
+            ((longX && face.axis === 'z') || (!longX && face.axis !== 'z')) &&
+            Math.abs(pos - along) < 1.1;
+          if (onDoor) return;
+          if (longX) {
+            addWindow(pos, y, side < 0 ? b.y - 0.02 : b.y + b.h + 0.02,
+                      side < 0 ? Math.PI : 0, null, false, 0.7, 1.3);
+          } else {
+            addWindow(side < 0 ? b.x - 0.02 : b.x + b.w + 0.02, y, pos,
+                      side < 0 ? -Math.PI / 2 : Math.PI / 2, null, false,
+                      0.7, 1.3);
+          }
+        });
+      }
+    }
+    /* the yard's fence: posts every cell, two rails, and the gap at the
+     * gate */
+    if (!b.yard) return;
+    const [yx, yy, yw, yh] = b.yard.map(Number);
+    const gx = b.gate ? Number(b.gate[0]) : -99;
+    const postH = 1.0;
+    function rail(x0, z0, x1, z1) {
+      const lx = Math.abs(x1 - x0), lz = Math.abs(z1 - z0);
+      const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
+      [0.38, 0.86].forEach(h => {
+        addBox(g, fenceMat, Math.max(0.05, lx), 0.05, Math.max(0.05, lz),
+               mx, TILE_TOP + h, mz).castShadow = false;
+      });
+      /* thin palings between the rails, a few per cell */
+      const len = Math.max(lx, lz);
+      for (let t = 0.25; t < len; t += 0.25) {
+        const px = lx ? Math.min(x0, x1) + t : x0;
+        const pz = lz ? Math.min(z0, z1) + t : z0;
+        addBox(g, fenceMat, 0.03, 0.82, 0.03, px,
+               TILE_TOP + 0.45, pz).castShadow = false;
+      }
+    }
+    function post(x, z) {
+      addBox(g, fenceMat, 0.08, postH, 0.08, x, TILE_TOP + postH / 2, z);
+    }
+    /* north side, either side of the gate's gap */
+    const north = yy;
+    if (gx > yx) rail(yx, north, gx, north);
+    const after = gx >= yx && gx < yx + yw ? gx + 1 : yx;
+    if (after < yx + yw) rail(after, north, yx + yw, north);
+    rail(yx + yw, yy, yx + yw, yy + yh);              // east
+    rail(yx, yy + yh, yx + yw, yy + yh);              // south
+    for (let x = yx; x <= yx + yw; x++) {
+      if (x !== gx && x !== gx + 1) post(x, north);
+      post(x, yy + yh);
+    }
+    for (let z = yy + 1; z < yy + yh; z++) post(yx + yw, z);
+    /* the yard's markings: a painted court, so it reads as a playground
+     * from above rather than a car park */
+    const cx0 = yx + 0.7, cx1 = yx + yw - 0.7;
+    const cz0 = yy + 0.7, cz1 = yy + yh - 0.7;
+    const ly = TILE_TOP + 0.012;
+    [[cx0, cz0, cx1, cz0], [cx0, cz1, cx1, cz1],
+     [cx0, cz0, cx0, cz1], [cx1, cz0, cx1, cz1],
+     [(cx0 + cx1) / 2, cz0, (cx0 + cx1) / 2, cz1]].forEach(l => {
+      const m = addBox(g, lineMat, Math.max(0.05, Math.abs(l[2] - l[0])),
+                       0.012, Math.max(0.05, Math.abs(l[3] - l[1])),
+                       (l[0] + l[2]) / 2, ly, (l[1] + l[3]) / 2);
+      m.castShadow = false;
+    });
   }
 
   (ground.buildings || []).forEach(b => {
@@ -483,7 +590,8 @@ export function createWorld(ground, canvas, opts) {
 
     if (b.kind !== 'shop') {
       for (let f = 1; f < b.floors; f++) {
-        addBox(g, trimMat, b.w + 0.06, 0.055, b.h + 0.06,
+        addBox(g, b.kind === 'school' ? schoolTrimMat : trimMat,
+               b.w + 0.06, 0.055, b.h + 0.06,
                cx, TILE_TOP + f * FLOOR_H, cz);
       }
       /* a stair housing and a water tank, so a roof reads as a roof */
@@ -505,7 +613,7 @@ export function createWorld(ground, canvas, opts) {
 
     /* Door on the cell the engine named, with a step and a canopy. */
     const face = doorFace(b);
-    const doorW = b.kind === 'shop' ? 0.8 : 0.55;
+    const doorW = b.kind === 'shop' || b.kind === 'school' ? 0.8 : 0.55;
     const doorH = b.kind === 'shop' ? 1.15 : 0.92;
     const along = face.axis === 'z'
       ? Math.max(b.x + 0.55, Math.min(b.x + b.w - 0.55, b.door[0] + 0.5))
@@ -566,6 +674,8 @@ export function createWorld(ground, canvas, opts) {
         }
       });
     }
+
+    if (b.kind === 'school') buildSchool(g, b, face, along);
 
     /* Windows: one pane per flat on each long face, at its own fraction of
      * the face, so the pane belongs to the flat it is drawn for. */
@@ -903,6 +1013,63 @@ export function createWorld(ground, canvas, opts) {
     return b ? { x: b.door[0], y: b.door[1] } : null;
   }
 
+  /* The school gate, where every walk in or out of the yard goes through
+   * the fence: the yard is not walkable ground (nobody crosses it on the
+   * way somewhere else), so the router takes a walk to the gate and the
+   * last steps are through it to the pupil's place inside. */
+  const schoolB = (ground.buildings || [])
+    .find(b => b.kind === 'school' && b.gate);
+  const schoolGate = schoolB
+    ? { x: Number(schoolB.gate[0]), y: Number(schoolB.gate[1]) } : null;
+  let lastViewKey = '';
+
+  function cellsBetween(sx, sy, tx, ty) {
+    if (!grid) return null;
+    const c = Walk.findPath(grid, sx, sy, tx, ty);
+    return c ? Array.from(c) : null;
+  }
+
+  /* the cells of a walk that starts or ends inside the fence */
+  function schoolCells(scx, scy, gx, gy, wasIn, isIn) {
+    const G = schoolGate;
+    const inner = [G.x, G.y + 1];
+    if (wasIn && isIn) return [scx, scy, gx, gy];
+    if (isIn) {
+      const c = cellsBetween(scx, scy, G.x, G.y);
+      return c ? c.concat(inner, [gx, gy]) : null;
+    }
+    const c = cellsBetween(G.x, G.y, gx, gy);
+    return c ? [scx, scy].concat(inner, c) : null;
+  }
+
+  /* A walk into or out of the yard, shaped like Crowd.route's: from the
+   * door or where the walker last stood, to their place (`tx`, `tz`) as
+   * Crowd.place set it, through the gate. */
+  function schoolRoute(p, tx, tz, prev, door) {
+    let scx, scy, sx, sz;
+    if (door) {
+      scx = door.x; scy = door.y;
+      sx = scx + 0.5; sz = scy + 0.5;
+    } else {
+      scx = p.px == null ? p.x : p.px;
+      scy = p.py == null ? p.y : p.py;
+      sx = scx + 0.5; sz = scy + 0.5;
+      const was = prev && prev[p.id];
+      if (was && was.cell === scx + ',' + scy) { sx = was.x; sz = was.z; }
+      else if (scx === p.x && scy === p.y) return null;
+    }
+    if (Math.abs(sx - tx) < 1e-3 && Math.abs(sz - tz) < 1e-3) return null;
+    const isIn = p.mode === 'school', wasIn = p.pmode === 'school';
+    const cells = schoolCells(scx, scy, Math.floor(tx), Math.floor(tz),
+                              wasIn, isIn);
+    if (cells) {
+      return { route: Walk.routePoints(cells, sx, sz, tx, tz),
+               fallback: false, from: [scx, scy] };
+    }
+    return { route: Walk.straight(sx, sz, tx, tz), fallback: true,
+             from: [scx, scy] };
+  }
+
   function syncResidents(st) {
     people = st.people || [];
     ensureResidents(people.length);
@@ -926,7 +1093,11 @@ export function createWorld(ground, canvas, opts) {
      * times per day, so a route is rebuilt on the day's arrival and left
      * alone in between: rebuilding it on every poll restarted the walk from
      * its beginning before it had arrived. */
-    const fresh = !routesBuilt || st.day !== clock.daySeen;
+    /* the scrubber's view of another phase is a new picture too */
+    const viewKey = st.viewKey || '';
+    const fresh = !routesBuilt || st.day !== clock.daySeen ||
+                  viewKey !== lastViewKey;
+    lastViewKey = viewKey;
     const spotWas = prevSpot;
     /* the fixtures first: where a crowd may stand depends on them */
     if (fresh && grid) Walk.setFixtures(grid, st.fixtures || []);
@@ -1001,7 +1172,12 @@ export function createWorld(ground, canvas, opts) {
          * to their own place on the tile. Somebody whose place did not
          * move stays put. */
         const door = p.pin ? doorSpot(p.punit) : null;
-        const got = Crowd ? Crowd.route(Walk, grid, p, toX[i], toZ[i],
+        /* a walk into or out of the school yard goes through its gate
+         * (schoolRoute); every other walk is the crowd's (crowd.js) */
+        const school = Walk && schoolGate &&
+                       (p.mode === 'school' || p.pmode === 'school');
+        const got = school ? schoolRoute(p, toX[i], toZ[i], spotWas, door)
+                  : Crowd ? Crowd.route(Walk, grid, p, toX[i], toZ[i],
                                         spotWas, door, crowdFix)
                           : null;
         if (!got) continue;
@@ -1357,6 +1533,45 @@ export function createWorld(ground, canvas, opts) {
       addBox(g, metal.mat, 0.05, 1.1, 0.05, 0.53, 0.55, -0.28);
       addBox(g, red.mat, 0.16, 0.04, 0.12, 0.18, 0.42, -0.28);
       addBox(g, red.mat, 0.16, 0.04, 0.12, 0.38, 0.42, -0.28);
+    } else if (f.kind === 'school') {
+      /* the school gate: two brick pillars with caps in the gap of the
+       * yard's fence (the fence line is the cell's south edge) and an
+       * open green leaf folded back against the fence */
+      const brick = fixtureMaterial(BUILDING_STYLE.school.wall, 0.9);
+      const cap = fixtureMaterial(BUILDING_STYLE.school.trim, 0.9);
+      const leaf = fixtureMaterial(0x3d5a4a, 0.75);
+      mats.push(brick, cap, leaf);
+      [-0.46, 0.46].forEach(px => {
+        addBox(g, brick.mat, 0.2, 1.15, 0.2, px, 0.575, 0.5);
+        addBox(g, cap.mat, 0.26, 0.07, 0.26, px, 1.18, 0.5);
+      });
+      addBox(g, leaf.mat, 0.04, 0.8, 0.6, 0.38, 0.5, 0.82);
+    } else if (f.kind === 'bus_stop') {
+      /* a bus shelter: two posts, a roof, a glass back, a perch seat, and
+       * the stop's own pole with its round sign */
+      const metal = fixtureMaterial(0x4a5158, 0.65);
+      const glass = fixtureMaterial(0x9fb7c4, 0.3);
+      const sign = fixtureMaterial(0xc8453c, 0.6);
+      const roofM = fixtureMaterial(0x30363d, 0.8);
+      mats.push(metal, glass, sign, roofM);
+      glass.mat.transparent = true;
+      glass.mat.opacity = 0.55;
+      addBox(g, metal.mat, 0.06, 1.3, 0.06, -0.42, 0.65, -0.3);
+      addBox(g, metal.mat, 0.06, 1.3, 0.06, 0.42, 0.65, -0.3);
+      addBox(g, roofM.mat, 1.0, 0.06, 0.55, 0, 1.32, -0.12);
+      addBox(g, glass.mat, 0.86, 1.0, 0.03, 0, 0.75, -0.32)
+        .castShadow = false;
+      addBox(g, metal.mat, 0.7, 0.05, 0.16, 0, 0.45, -0.22);
+      const pole = new THREE.Mesh(cylGeo, metal.mat);
+      pole.scale.set(0.035, 1.6, 0.035);
+      pole.position.set(0.62, 0.8, 0.12);
+      pole.castShadow = true;
+      g.add(pole);
+      const disc = new THREE.Mesh(cylGeo, sign.mat);
+      disc.scale.set(0.17, 0.03, 0.17);
+      disc.rotation.x = Math.PI / 2;
+      disc.position.set(0.62, 1.55, 0.12);
+      g.add(disc);
     } else if (f.kind === 'shop') {
       const wood = fixtureMaterial(0xcf9f60, 0.8);
       mats.push(wood);
@@ -1786,6 +2001,13 @@ export function createWorld(ground, canvas, opts) {
     return true;
   }
 
+  /* Which of today's phases the page is showing (-1: the live frame). The
+   * light follows it unless the page pinned an hour of its own; the
+   * frame itself is the caller's (hud.js `phaseView`). */
+  function setPhaseView(i) {
+    clock.forcedPhase = i >= 0 ? i : forcedPhase;
+  }
+
   /* What the route machinery is doing, for the page's debug hook: how many
    * walks are in flight, the longest one's waypoints, and how many positions
    * ever had to fall back to a straight line. */
@@ -1803,7 +2025,7 @@ export function createWorld(ground, canvas, opts) {
   return {
     scene, camera, renderer, controls,
     setState, frame, resize, pick, stateSummary, focusBench, focusPerimeter,
-    focusCell, routeStats,
+    focusCell, routeStats, setPhaseView,
     phaseIndex: () => phaseInfo.index,
     phaseName: () => phaseInfo.name,
     dayFraction: () => phaseInfo.dayFrac,

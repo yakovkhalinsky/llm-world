@@ -44,10 +44,20 @@ def _open(args):
 
 def cmd_new(args):
     path = os.path.join(args.data, "estate.db")
+    if os.path.exists(path) and not args.force:
+        sys.exit(f"'{args.data}' already holds an estate; "
+                 f"use --force to start over")
+    # planted before anything is archived: a plan the recipe cannot fill
+    # says why and leaves the old estate where it was
+    try:
+        w, h = (int(n) for n in (args.size or "40x30").lower().split("x"))
+    except ValueError:
+        sys.exit(f"--size {args.size!r}: expected WxH, e.g. 40x30")
+    try:
+        world = gen.generate(args.seed, w, h, biome=args.biome)
+    except ValueError as e:
+        sys.exit(f"cannot plant a {w}×{h} estate: {e}")
     if os.path.exists(path):
-        if not args.force:
-            sys.exit(f"'{args.data}' already holds an estate; "
-                     f"use --force to start over")
         # archived, not destroyed — the old estate's record outlives it
         stamp = time.strftime("%Y%m%d-%H%M%S")
         old = "?"
@@ -58,8 +68,6 @@ def cmd_new(args):
         archive = os.path.join(args.data, f"archive-{stamp}-d{old}.db")
         os.rename(path, archive)
         print(f"previous estate archived at {archive}")
-    w, h = (args.size or "40x30").lower().split("x")
-    world = gen.generate(args.seed, int(w), int(h), biome=args.biome)
     db = dbm.DB(path)
     db.save_world(world)
     db.close()

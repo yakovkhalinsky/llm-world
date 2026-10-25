@@ -2,8 +2,9 @@
 
 Draws a plan, not a landscape: a ring road with a footpath along its inner
 edge, one row of residential blocks along the north facing open ground, a
-shop, a pond, a playground, and the fixtures and households that fill
-them. Everything comes from (seed, 0, "gen") in a fixed order, so the same
+shop, a pond, a playground, a school with its yard south of the
+courtyard, a bus stop on the ring road, and the fixtures and households
+that fill them. Everything comes from (seed, 0, "gen") in a fixed order, so the same
 seed is the same estate in any process.
 """
 
@@ -44,7 +45,17 @@ def generate(seed: int, width: int = None, height: int = None,
     # the courtyard leaves a clear band above and below it (y = cy0-1 and
     # cy1+1) — that band is where the benches, lamps and bins stand, and
     # the blocks must not reach into it
-    cy0, cy1 = h // 2 - 2, h // 2 + 1
+    #
+    # In the row the courtyard sits just below the blocks' doors, not on
+    # the plan's middle: the shop and the playground stand on its top edge
+    # and must stay within `families.older_range` of every door, so a
+    # taller plan puts its extra ground south of the courtyard, where the
+    # school and the way to the bus are, rather than between the doors and
+    # the shop (on the default 40×30 plan the two are the same row).
+    cy0 = h // 2 - 2
+    if g.get("layout", "quad") == "row":
+        cy0 = min(cy0, rw + rw + g["block_gap"] + 6 + 1)
+    cy1 = cy0 + 3
     cx0, cx1 = rw + 6, w - rw - 7
     _rect(cells, cx0, cy0, cx1, cy1, "paved")
 
@@ -56,7 +67,7 @@ def generate(seed: int, width: int = None, height: int = None,
     # row lays every block along the north, doors south, so the ground in
     # front — the courtyard with its shop, pond, playground and tables, and
     # the perimeter path — is open and visible from either view.
-    bw, bh = 12, 6
+    bw, bh = 12, 6                 # (the courtyard above assumes bh = 6)
     gap = g["block_gap"]
     layout = g.get("layout", "quad")
     blocks = []
@@ -147,23 +158,49 @@ def generate(seed: int, width: int = None, height: int = None,
         _rect(cells, inner, inner, inner, far_y, "path")       # west
         _rect(cells, far_x, inner, far_x, far_y, "path")       # east
 
-    # --- the shop and the playground, together, in the middle -----------
+    # --- the shop and the playground, apart, either side of the middle ---
     # Where these stand is not decoration. A need is only served if the
     # place that serves it can be *reached*: with the shop at the west end
     # of the courtyard and the playground at the east, the far blocks were
     # 22 cells from food and 18 from play — past the scan — so a whole
     # corner of the estate could not eat, whatever it chose, and the need
-    # sat at its ceiling all year. Both go in the middle now, and the plan
-    # is checked for reach below rather than trusted.
+    # sat at its ceiling all year. Then both went shoulder to shoulder in
+    # the middle, which met the reach and left a wall of shop and swings
+    # across the courtyard: no room round either, the tables squeezed
+    # against them, and nothing to see past them in the 3D view.
+    #
+    # Now they stand apart, either side of a clear middle, each with a ring
+    # of open paving round it, and each still inside `families.older_range`
+    # of *both* doors (the 10-15s go to them alone) — checked below, not
+    # trusted:
+    #
+    #   band      L  :  L          L    :  L   (y = cy0-1: no seat by either)
+    #   courtyard ...:.[###]....[pppp]...:...   (the shop; the playground)
+    #             ...:.[###]....[pppp]...:...
+    #             ~~~~..S..........  ....:...   (S: the shop's door, south)
+    #             ~~~~...............  ..:...   (the pond in the west)
+    #   band         :             :        :   (y = cy1+1)
+    #
+    # The middle between them is left open: the walk from the courtyard to
+    # the school gate runs down it, and both views look straight through
+    # it to the row.
     mid = (cx0 + cx1) // 2
+    clear = set()                    # the ring of open paving round each
+
+    def ring(x0, y0, x1, y1):
+        return {(x, y) for y in range(y0 - 1, y1 + 2)
+                for x in range(x0 - 1, x1 + 2)}
+
     shop_b = None
     if g["shop"]:
-        sx, sy = mid - 1, cy0
+        sx, sy = mid - 4, cy0
         _rect(cells, sx, sy, sx + 2, sy + 1, "building")
         bid = st["next_id"]; st["next_id"] += 1
+        # open on the courtyard, facing the school and both views
         shop_b = W.new_building(bid, "The Shop", "shop", sx, sy, 3, 2, 1,
-                                (sx + 1, sy + 2))    # open on the walkway
+                                (sx + 1, sy + 2))
         st["buildings"][str(bid)] = shop_b
+        clear |= ring(sx, sy, sx + 2, sy + 1)
 
     # --- the pond, and the playground -----------------------------------
     # the pond sits in the courtyard's west, clear of the doors' paths
@@ -172,9 +209,75 @@ def generate(seed: int, width: int = None, height: int = None,
         _rect(cells, px, py, px + 3, py + 1, "water")
     play_at = None
     if g["playgrounds"]:
-        px, py = mid + 2, cy0
+        px, py = mid + 3, cy0
         _rect(cells, px, py, px + 3, py + 1, "play")
         play_at = (px, py)
+        clear |= ring(px, py, px + 3, py + 1)
+    # and the middle between them stays open paving, the way through
+    clear |= {(x, y) for y in range(cy0, cy1 + 1)
+              for x in range(mid, mid + 2)}
+
+    # --- the school, and the way to the bus -----------------------------
+    # The family rules gave the children somewhere they may not go alone
+    # and nowhere they must go; the week had weekdays and nothing happened
+    # on them. A school and a bus stop are what make a weekday a weekday
+    # (engine/daytime.py). Both stand on the open ground *south* of the
+    # courtyard, below the row: in front of the blocks as both views look,
+    # so nothing tall hides the school run, and off every block's own path.
+    #
+    #   courtyard ...............................
+    #   band             :              :       (y = cy1+1, paths cross it)
+    #   gate row         ::::G          :       (door path to the gate G)
+    #   school        #######yyyyyy     :       (the school, its fenced yard)
+    #                 #######yyyyyy     :
+    #   perimeter ::::::::::::::::::::::::::::  (the footpath by the road)
+    #   bench row                       S       (S: the bus stop)
+    #
+    # The gate is on the courtyard's middle, so it is within
+    # `families.older_range` of every door in the row: a 10-15 walking
+    # home from school is never further out than the rules let them be.
+    reserved = set()
+    school_b = None
+    if g.get("school"):
+        sbw, sbh, yw = 7, 4, 6
+        sx, sy = mid - sbw + 1, cy1 + 3
+        far = h - rw * 2 - 2              # the perimeter path's row
+        if sy + sbh > far or sx + sbw + yw > w - rw * 2 - 2 or sx < rw * 2:
+            raise ValueError(
+                f"the recipe asks for a school but this {w}×{h} plan has no "
+                f"room for it south of the courtyard — widen the plan or "
+                f"set gen.school to False")
+        _rect(cells, sx, sy, sx + sbw - 1, sy + sbh - 1, "building")
+        _rect(cells, sx + sbw, sy, sx + sbw + yw - 1, sy + sbh - 1, "yard")
+        door = (sx + sbw // 2, sy - 1)
+        gate = (sx + sbw, sy - 1)         # in the yard's fence, by the door
+        bid = st["next_id"]; st["next_id"] += 1
+        school_b = W.new_building(bid, "Highfield School", "school",
+                                  sx, sy, sbw, sbh, 2, door)
+        school_b["yard"] = [sx + sbw, sy, yw, sbh]
+        school_b["gate"] = list(gate)
+        st["buildings"][str(bid)] = school_b
+        # a path from the courtyard down to the door, and along to the gate
+        _rect(cells, door[0], cy1 + 1, door[0], door[1], "path")
+        _rect(cells, door[0], door[1], gate[0], gate[1], "path")
+        reserved |= {(door[0], cy1 + 1)}
+    stop_at = None
+    if g.get("bus_stop"):
+        # the stop is on the ring road, on the south side, straight down
+        # from the east block's door: a path runs from the courtyard to the
+        # perimeter footpath, and the stop stands in the band beside the
+        # road, where the perimeter's benches stand
+        far = h - rw * 2 - 2
+        bx = buildings[-1]["door"][0]
+        for y in range(cy1 + 1, far):
+            if cells[y][bx]["site"] not in ("lawn", "path"):
+                raise ValueError(
+                    f"the bus stop's path down x={bx} meets "
+                    f"{cells[y][bx]['site']!r} at y={y} — the plan has no "
+                    f"clear way from the blocks to the road")
+        _rect(cells, bx, cy1 + 1, bx, far - 1, "path")
+        reserved |= {(bx, cy1 + 1)}
+        stop_at = (bx, far + 1)
 
     # --- the fixtures ---------------------------------------------------
     st["fixtures"] = {}
@@ -196,6 +299,10 @@ def generate(seed: int, width: int = None, height: int = None,
 
     if play_at:
         place("playground", *play_at)
+    if school_b:
+        place("school", *school_b["gate"])
+    if stop_at:
+        place("bus_stop", *stop_at)
 
     def free(x, y):
         return (0 <= x < w and 0 <= y < h and (x, y) not in taken
@@ -208,8 +315,14 @@ def generate(seed: int, width: int = None, height: int = None,
     edge = [(x, y) for y in (cy0 - 1, cy1 + 1)
             for x in range(cx0, cx1 + 1) if free(x, y)]
     rng.shuffle(edge)
+    # the school's and the bus stop's paths cross the band: a bench is not
+    # put down across a footpath. Dropped *after* the shuffle, so the rest
+    # of the band keeps the order (and the seed its cells) it had.
+    edge = [p for p in edge if p not in reserved and p not in clear]
+    # the tables keep off the open ring round the shop and the playground
     inner = [(x, y) for y in range(cy0, cy1 + 1)
-             for x in range(cx0 + 1, cx1) if free(x, y)]
+             for x in range(cx0 + 1, cx1)
+             if free(x, y) and (x, y) not in clear]
     rng.shuffle(inner)
 
     plan = (("bench", edge[:g["benches"]]),
@@ -228,8 +341,9 @@ def generate(seed: int, width: int = None, height: int = None,
     while planted < g["trees"] and tries < 400:
         tries += 1
         x, y = rng.randrange(w), rng.randrange(h)
-        if cells[y][x]["site"] != "lawn" or (x, y) in taken:
-            continue
+        if cells[y][x]["site"] != "lawn" or (x, y) in taken \
+                or (x, y) in clear:
+            continue                   # nor in the ring round the shop
         near = any((x + dx, y + dy) in taken for dx in (-1, 0, 1)
                    for dy in (-1, 0, 1) if (dx or dy))
         if near:
@@ -312,7 +426,9 @@ def generate(seed: int, width: int = None, height: int = None,
     asked = {"bench": g["benches"] + perimeter_benches, "lamp": g["lamps"],
              "table": g["tables"], "tree": g["trees"],
              "playground": g["playgrounds"] if play_at else 0,
-             "shop": 1 if shop_b else 0}
+             "shop": 1 if shop_b else 0,
+             "school": 1 if school_b else 0,
+             "bus_stop": 1 if stop_at else 0}
     short = {k: (v, got.get(k, 0)) for k, v in asked.items()
              if got.get(k, 0) != v}
     if short:
@@ -321,6 +437,7 @@ def generate(seed: int, width: int = None, height: int = None,
             f"(asked, placed) — widen the plan or lower the recipe")
 
     _check_reach(st, cells, buildings)
+    _check_older(st, buildings)
 
     st["cells"] = cells
 
@@ -405,3 +522,28 @@ def _check_reach(st, cells, buildings):
                     f"the door at {d} cannot reach anywhere affording "
                     f"{need!r} within {scan} steps — nobody in that building "
                     f"can meet it, whatever they choose")
+
+
+def _check_older(st, buildings):
+    """The places the 10-15s may go alone (`families.older_places`) must be
+    within `families.older_range` of every door, or a whole block's older
+    children have a playground on the plan and none they are allowed to.
+    Spreading the shop and the playground apart is only allowed as far as
+    this holds; it fails named rather than as a need nobody can meet."""
+    f = rules.R.get("families")
+    if not f:
+        return
+    doors = [tuple(b["door"]) for b in buildings]
+    for kind in f["older_places"]:
+        spots = [(x["x"], x["y"]) for x in st["fixtures"].values()
+                 if x["kind"] == kind]
+        if not spots:
+            continue
+        for d in doors:
+            near = min(abs(x - d[0]) + abs(y - d[1]) for x, y in spots)
+            if near > f["older_range"]:
+                raise ValueError(
+                    f"the door at {d} is {near} cells from the nearest "
+                    f"{kind}, past families.older_range "
+                    f"({f['older_range']}) — the 10-15s there could never "
+                    f"go to one")

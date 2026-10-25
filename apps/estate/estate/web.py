@@ -36,7 +36,9 @@ from . import sim
 from . import watcher
 from . import webguard
 from . import world as W
+from .engine import daytime
 from .engine import families
+from .engine import residents
 
 POLL_MS = 700          # what the page is told to wait between polls
 
@@ -221,7 +223,10 @@ def ground(est):
     for bid, b in w["buildings"].items():
         buildings.append({"id": int(bid), "name": b["name"], "kind": b["kind"],
                           "x": b["x"], "y": b["y"], "w": b["w"], "h": b["h"],
-                          "floors": b["floors"], "door": b["door"]})
+                          "floors": b["floors"], "door": b["door"],
+                          # the school's fenced yard [x, y, w, h] and the
+                          # gate in its fence (gen.py), None for the flats
+                          "yard": b.get("yard"), "gate": b.get("gate")})
         per = {}
         for u in sorted(b["units"]):
             per.setdefault(w["units"][str(u)]["floor"], []).append(u)
@@ -294,19 +299,17 @@ def _small(vals, scale=9.0):
 
 
 def _walking_with(w, r):
-    """The guardian a young child out on the plan is beside: on their own
-    cell first, then the nearest, then the lowest id. None indoors, for
-    anyone who is not a young child, and for a child with nobody beside
-    them (which the family rules mean never happens)."""
-    if r["where"]["mode"] != "at" or not families.is_young(r):
+    """engine/families.py owns who a child is walking with; the page asks
+    it rather than keeping a second copy of the rule."""
+    return families.walking_with(w, r)
+
+
+def _phases(w):
+    book = w.get("day_phases") or {}
+    if book.get("day") != w["day"]:
         return None
-    near = [g for g in families.guardians_of(w, r) if families.together(r, g)]
-    if not near:
-        return None
-    wx, wy = r["where"]["x"], r["where"]["y"]
-    g = min(near, key=lambda g: (max(abs(g["where"]["x"] - wx),
-                                     abs(g["where"]["y"] - wy)), g["id"]))
-    return g["id"]
+    return {"day": book["day"], "order": list(residents.PHASES),
+            "at": book.get("phases", {})}
 
 
 def snapshot(est, runner, lock):
@@ -327,13 +330,23 @@ def snapshot(est, runner, lock):
             people.append({
                 "id": int(rid), "name": r["name"], "role": r["role"],
                 "kind": hh.get("kind"), "age": r["age"],
-                "x": wh["x"], "y": wh["y"], "in": wh["mode"] == "in",
+                # "in" is "not drawn on the plan": indoors, or away at work
+                # for the whole of the view (a worker is drawn walking to
+                # the stop, then gone; hud.js makes the same call)
+                "x": wh["x"], "y": wh["y"],
+                "in": wh["mode"] == "in" or (wh["mode"] == pmode == "away"),
+                # "in", "at", "school" (inside the school fence) or "away"
+                # (off the estate at work): engine/daytime.py
+                "mode": wh["mode"],
+                "pupil": daytime.is_pupil(r),
+                "job": bool(r.get("job")),
                 "unit": wh.get("unit"),
                 # the fixture this resident last used, so a view can seat
                 # them only where they chose to sit rather than wherever a
                 # walk happened to end
                 "fixture": wh.get("fixture"),
-                "px": px, "py": py, "pin": pmode == "in", "punit": punit,
+                "px": px, "py": py, "pin": pmode == "in", "pmode": pmode,
+                "punit": punit,
                 "habit": r["habit"], "stress": round(r["stress"], 1),
                 "needs": {k: round(v, 2) for k, v in r["needs"].items()},
                 # the rest of the household, for the card; and, for a young
@@ -383,6 +396,13 @@ def snapshot(est, runner, lock):
             "waiting": len(w["waiting"]),
             "people": people, "fixtures": fixtures,
             "buildings": buildings,
+            # the school's and the bus stop's numbers for their cards
+            "daytime": daytime.roll(w),
+            # where everybody was at the end of each of today's phases
+            # (engine/daytime.py `record`): the live frame is always the
+            # end of the night, and this is how the page shows a weekday
+            # morning that has already happened
+            "phases": _phases(w),
             "shade": shade, "light": light,
             "events": [dict(e, say=render.say(e)) for e in evs],
             "days": day_feed(w, day_events, runner.daybooks,

@@ -36,6 +36,9 @@ NOT_READER_DIRS = ("biomes",)
 # wildcard that swallowed whole sections would be the audit lying.
 DYNAMIC_READERS = {
     "fixtures.*.perimeter_bonus.*": "perimeter_bonus",
+    # a phase at school or at work, need by need (engine/daytime.py)
+    "school.meets.*": "_meet",
+    "work.meets.*": "_meet",
 }
 
 

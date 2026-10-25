@@ -8,7 +8,13 @@ household aged `families.guardian_from` or over. A young child is
 - **out alone** when they are out on the plan and no guardian of theirs is
   out within `families.near` cells (Chebyshev) of them;
 - **home alone** when they are indoors and no guardian of theirs is
-  indoors in the same flat.
+  indoors in the same flat;
+- **at school** (inside the fence, with the teachers) is supervised, and
+  is counted on its own line — while the school is open: the run's phase
+  and the school hours of a school day (`rules.school`). A young child
+  still inside the fence after that is **left at school**, and fails the
+  check like a child home alone. A guardian away at work is not near
+  anyone.
 
 The curfew and the evening range are measured where people actually
 end up, not where they meant to go:
@@ -63,10 +69,34 @@ def _door(w, hh):
     return w["buildings"][str(u["building"])]["door"]
 
 
+def _school_open(w, phase):
+    """Is anyone at school to mind the children this phase? (The rules'
+    own words; an engine with no school has none open.)"""
+    s = rules.R.get("school")
+    if not s:
+        return False
+    from estate import world as W
+    weekday = W.weekday(w["day"])
+    return (weekday in s["days"]
+            and (phase == s["run"] or phase in s["hours"]))
+
+
 def look(w, phase, tally, cases=None):
     """Count, for one settled phase, every young child out alone or home
     alone and every older child out of bounds."""
     f = law()
+    # the yard: how many are in, and whether any cell of it holds more than
+    # `school.per_yard_cell` (#14 review: 27 pupils on 24 spots)
+    held = {}
+    for r in w["residents"].values():
+        if r["where"]["mode"] == "school":
+            p = (r["where"]["x"], r["where"]["y"])
+            held[p] = held.get(p, 0) + 1
+    tally["max_in_school"] = max(tally["max_in_school"],
+                                 sum(held.values()))
+    per = rules.R.get("school", {}).get("per_yard_cell", 1)
+    if any(n > per for n in held.values()):
+        tally["yard_over"] += 1
     for hh in w["households"].values():
         folk = [w["residents"][str(m)] for m in hh["members"]
                 if str(m) in w["residents"]]
@@ -82,7 +112,14 @@ def look(w, phase, tally, cases=None):
             wk = k["where"]
             if k["age"] < f["young_under"]:
                 tally["young_phases"] += 1
-                if wk["mode"] == "in":
+                if wk["mode"] == "school":
+                    # inside the school fence, with the teachers: minded,
+                    # and nobody's guardian needs to be there — while
+                    # there are teachers
+                    tally["young_school"] += 1
+                    ok = _school_open(w, phase)
+                    kind = "left_at_school"
+                elif wk["mode"] == "in":
                     tally["young_in"] += 1
                     ok = any(g["where"]["mode"] == "in"
                              and g["where"].get("unit") == wk.get("unit")
@@ -130,10 +167,12 @@ def look(w, phase, tally, cases=None):
 
 def new_tally():
     return {"young_phases": 0, "young_in": 0, "young_out": 0,
-            "out_alone": 0, "home_alone": 0,
+            "young_school": 0,
+            "out_alone": 0, "home_alone": 0, "left_at_school": 0,
             "young_out_at_night": 0, "household_out_at_night": 0,
             "evening_far": 0,
-            "older_phases": 0, "older_out_of_bounds": 0}
+            "older_phases": 0, "older_out_of_bounds": 0,
+            "max_in_school": 0, "yard_over": 0}
 
 
 def run(seeds, days):
@@ -168,11 +207,13 @@ def main(argv=None):
     yp = max(1, t["young_phases"])
     print(f"seeds {seeds}, {a.days} days, law {law()}")
     print(f"young-child phases: {t['young_phases']}  "
-          f"(indoors {t['young_in']}, out {t['young_out']})")
+          f"(indoors {t['young_in']}, out {t['young_out']}, "
+          f"at school {t['young_school']})")
     print(f"  out with no guardian near: {t['out_alone']} "
           f"({100 * t['out_alone'] / yp:.1f}% of young-child phases)")
     print(f"  home alone:                {t['home_alone']} "
           f"({100 * t['home_alone'] / yp:.1f}%)")
+    print(f"  left at school after hours: {t['left_at_school']}")
     print(f"  out at night:              {t['young_out_at_night']} "
           f"(household members out at night: "
           f"{t['household_out_at_night']})")
@@ -180,14 +221,17 @@ def main(argv=None):
           f"{t['evening_far']}")
     print(f"older-child phases: {t['older_phases']}, out of bounds "
           f"{t['older_out_of_bounds']}")
+    print(f"the yard: at most {t['max_in_school']} in at once, "
+          f"{t['yard_over']} phases with a cell over its share")
     return 1 if failures(t) else 0
 
 
 def failures(t):
     """The counts that must be zero."""
-    return sum(t[k] for k in ("out_alone", "home_alone",
+    return sum(t[k] for k in ("out_alone", "home_alone", "left_at_school",
                               "young_out_at_night", "household_out_at_night",
-                              "evening_far", "older_out_of_bounds"))
+                              "evening_far", "older_out_of_bounds",
+                              "yard_over"))
 
 
 if __name__ == "__main__":

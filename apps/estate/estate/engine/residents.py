@@ -15,6 +15,7 @@ rather than a diff:
 
 from .. import rules
 from .. import world as W
+from . import daytime
 from . import families
 from . import places
 from . import weather
@@ -340,11 +341,14 @@ def _walk(w, r, tx, ty, steps):
     return r["where"]["x"] == tx and r["where"]["y"] == ty
 
 
-def _set_off(w, r):
+def _set_off(w, r, budget=None):
     """Where a walk starts and how many steps it has this phase: from the
     door, less the stairs, for someone indoors. None if they cannot get
-    out (no flat, or the stairs took the whole phase)."""
-    budget = rules.R["engine"]["steps_per_phase"] * r["mobility"]
+    out (no flat, or the stairs took the whole phase). `budget` overrides
+    the phase's ordinary stroll: the school run and the commute are made
+    with the whole phase to make them in."""
+    if budget is None:
+        budget = rules.R["engine"]["steps_per_phase"] * r["mobility"]
     if r["where"]["mode"] != "in":
         return r["where"]["x"], r["where"]["y"], max(1, int(budget))
     unit = _unit_of(w, r)
@@ -361,7 +365,7 @@ def _set_off(w, r):
     return b["door"][0], b["door"][1], max(1, int(budget))
 
 
-def _go_to(w, r, c, route=False, sure=False):
+def _go_to(w, r, c, route=False, sure=False, budget=None):
     """Leave home if inside, walk, and arrive — or run out of the phase.
 
     `route` walks the shortest way (`_route_walk`) rather than by feel, for
@@ -370,14 +374,17 @@ def _go_to(w, r, c, route=False, sure=False):
     cap: the phase's budget is how far someone strolls, not how far they
     will go to get the children home to bed. It is bounded by the size of
     the estate (width × height steps, more than any shortest way), not by
-    the phase: the stairs and the walker's mobility are not charged to it."""
+    the phase: the stairs and the walker's mobility are not charged to it.
+    A duty walk (`c["duty"]`: the school gate, the bus) is a walk made
+    every day by the way anyone knows, so it too goes the shortest way,
+    with `budget` steps."""
     # `r["side"]` is a way round a wall still being walked (see `_walk`):
     # it is kept only while the walk is to the same place
     # a walk starts from where you were; until you arrive and use a place,
     # `where.fixture` is not a claim about this phase (the views seat only
     # the residents whose chosen fixture is the bench they stand on)
     r["where"]["fixture"] = None
-    off = _set_off(w, r)
+    off = _set_off(w, r, budget)
     if off is None:
         return False                       # the stairs took the whole phase
     sx, sy, budget = off
@@ -387,7 +394,7 @@ def _go_to(w, r, c, route=False, sure=False):
                       "fixture": None}
     if sure:
         arrived = _route_walk(w, r, c["x"], c["y"], w["width"] * w["height"])
-    elif route:
+    elif route or c.get("duty"):
         arrived = _route_walk(w, r, c["x"], c["y"], budget)
     else:
         arrived = _walk(w, r, c["x"], c["y"], budget)
@@ -449,6 +456,8 @@ def drain(w, phase):
                 if r["where"]["mode"] == "in":
                     unit = _unit_of(w, r)
                     noise = places.unit_noise(w, unit) if unit else 0.0
+                elif r["where"]["mode"] == daytime.AWAY:
+                    noise = 0.0            # not the estate's noise to bear
                 else:
                     noise = w["cells"][r["where"]["y"]][r["where"]["x"]]["noise"]
                 r["needs"][need] += noise * rules.R["engine"]["quiet_gain"]
@@ -579,8 +588,9 @@ def _fray(r, line):
         r["stress"] *= rules.R["engine"]["stress_decay"]
 
 
-def _live(w, party, cand, phase, line):
-    """One phase for a resident and whoever they are minding."""
+def _live(w, party, cand, phase, line, fetch=()):
+    """One phase for a resident and whoever they are minding. `fetch` is
+    the young children this resident is collecting from school."""
     r = party[0]
     minding = len(party) > 1
     # a resident re-deciding is not competing with themselves for the seat
@@ -591,6 +601,24 @@ def _live(w, party, cand, phase, line):
         if h is not None:
             h["occupants"].remove(p["id"])
         held.append((p, h))
+    # somewhere they have to be — the school gate, the bus — comes before
+    # anything they would choose (engine/daytime.py)
+    # The duty walk has the whole `engine.scan` of steps, and `_set_off`
+    # with a budget given does not scale it by the walker's mobility (only
+    # the stairs come off it). That is safe because duties fall by day and
+    # near home: the gate is a few path cells from every door, the run is
+    # at dawn and the pickup in the afternoon or evening, never at night
+    # (tests/test_school.py PickupTimeTest).
+    duty = daytime.duty(w, party, phase, fetch)
+    if duty is not None:
+        arrived = _go_to(w, r, duty, budget=rules.R["engine"]["scan"])
+        for k in party[1:]:
+            families.follow(k, r)
+        if arrived:
+            party = daytime.arrive(w, party, duty, phase, fetch)
+        for p in party:
+            _fray(p, line)
+        return
     rng = W.rng_for(w["seed"], w["day"], f"whim:{r['id']}:{phase}")
     wanted = {}
     best, need_of, who = _choose(w, party, cand, phase, rng, wanted)
@@ -638,9 +666,12 @@ def update_residents(w, evs):
     line = rules.R["engine"]["stress_at"]
     # a world saved before the family rules, or anything the slow layer
     # left: every young child starts the day beside a guardian
+    daytime.overnight(w)
     families.settle(w, evs)
     for phase in PHASES:
         drain(w, phase)
+        # the bus brings the day's workers back, the school lets out
+        daytime.begin(w, phase)
         # A seat is held from the moment it is taken until its holder gets
         # up: whoever is still sitting from the last phase counts against
         # the bench before anyone else chooses. Clearing the lists and
@@ -650,13 +681,23 @@ def update_residents(w, evs):
         _seat_holders(w)
         # who minds the young children this phase: they live it as their
         # minder's party, on the minder's turn, and never on their own
-        leads = families.plan(w, lambda g: _top_press(w, g, phase))
+        leads = families.plan(w, lambda g: _top_press(w, g, phase),
+                              busy=lambda g: daytime.busy(w, g, phase))
         led = {k["id"] for ks in leads.values() for k in ks}
+        fetch = daytime.collectors(w, phase)
         for rid in sorted(w["residents"], key=lambda k: int(k)):
             r = w["residents"].get(rid)
             if r is None or r["id"] in led:
                 continue
-            _live(w, [r] + leads.get(r["id"], []), cand, phase, line)
+            if r["where"]["mode"] in families.OFF_PLAN:
+                _fray(r, line)             # at school, or at work
+                continue
+            got = fetch.get(r["id"], ())
+            _live(w, [r] + leads.get(r["id"], []), cand, phase, line, got)
+            # the children collected at the gate lived this phase as the
+            # collector's party; a lower-id collector must not leave them
+            # a turn of their own to walk home alone on
+            led.update(k["id"] for k in got)
         for f in w["fixtures"].values():
             f["occupants"] = []
         # how full the estate was at its fullest hour, which is the one
@@ -666,5 +707,6 @@ def update_residents(w, evs):
             out = sum(1 for x in w["residents"].values()
                       if x["where"]["mode"] == "at")
             w["daybook"]["out"] = max(w["daybook"]["out"], out)
+        daytime.record(w, phase)
         for watch in PHASE_WATCHERS:
             watch(w, phase)

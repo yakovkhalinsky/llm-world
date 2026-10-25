@@ -141,7 +141,7 @@ class MutantTest(unittest.TestCase):
     """Take the rule away and the invariant has to catch it."""
 
     def test_without_the_rule_children_are_left_alone(self):
-        with mock.patch.object(families, "plan", lambda w, press: {}), \
+        with mock.patch.object(families, "plan", lambda w, press, busy=None: {}), \
                 mock.patch.object(families, "settle", lambda w, evs=None: 0), \
                 mock.patch.object(families, "allows",
                                   lambda *a, **k: True), \
@@ -153,7 +153,7 @@ class MutantTest(unittest.TestCase):
 
     def test_without_the_minder_alone_the_check_fails(self):
         """Curfews stay, only the minding party goes: still caught."""
-        with mock.patch.object(families, "plan", lambda w, press: {}), \
+        with mock.patch.object(families, "plan", lambda w, press, busy=None: {}), \
                 mock.patch.object(families, "settle", lambda w, evs=None: 0):
             tally, _ = _measure((42,), 60)
         self.assertGreater(tally["out_alone"] + tally["home_alone"], 0)

@@ -37,7 +37,8 @@
    * its walk); these are the renderer's solids, and every one of them is
    * still enterable as a route's *endpoint* — a destination is where you
    * were going, not an obstacle on the way. */
-  var SOLID = { tree: 1, lamp: 1, table: 1, playground: 1, shop: 1 };
+  var SOLID = { tree: 1, lamp: 1, table: 1, playground: 1, shop: 1,
+                bus_stop: 1 };
   /* The list above is the estate's, and the default. Another world names
    * its own solids when it builds its grid (`buildGrid(ground, {solid:
    * {...}})`) — the grove's are its standing trunks — so the search has no

@@ -16,6 +16,12 @@
  *     fixture card carries its wear
  *   · a resident card lists the household, and who a young child is out
  *     with (engine/families.py)
+ *   · a school's card counts pupils rather than flats, the school gate and
+ *     the bus stop each get a card that counts their people, and a count
+ *     is written with thousands separators
+ *   · today's phases make frames of their own (`phaseView`): a weekday
+ *     morning has pupils at school and workers away, and the scrubber has
+ *     a button per phase
  *   · every string from the server is escaped where it is written, and
  *     numbers never reach innerHTML as anything but a number
  *
@@ -244,6 +250,138 @@ if (!cell) {
      els.cardRows.innerHTML.indexOf('shade') >= 0 &&
      els.cardRows.innerHTML.indexOf('lamp') >= 0,
      els.cardRows.innerHTML);
+}
+
+/* --- the school, the bus stop and the day's phases -------------------- */
+
+ok('numbers get thousands separators',
+   EstateHUD.num(1234567) === '1,234,567' && EstateHUD.num(999) === '999' &&
+   EstateHUD.num(-1200) === '-1,200' && EstateHUD.num('x') === '0',
+   EstateHUD.num(1234567));
+{
+  const st = clone(state);
+  st.residents = 12345;
+  EstateHUD.update(st);
+  ok('the header writes a big count with a comma',
+     els.pops.innerHTML.indexOf('12,345') >= 0, els.pops.innerHTML);
+  EstateHUD.update(state);
+}
+
+const school = (ground.buildings || []).find(b => b.kind === 'school');
+ok('the ground has a school', !!school);
+if (school) {
+  EstateHUD.card(state, { kind: 'building', id: school.id });
+  const rows = els.cardRows.innerHTML;
+  ok('the school card counts pupils, not flats',
+     rows.indexOf('pupils on the roll') >= 0 && rows.indexOf('flats') < 0 &&
+     rows.indexOf('lived in') < 0, rows);
+  ok('the school card says where its gate is',
+     els.cardState.innerHTML.indexOf('gate at') >= 0, els.cardState.innerHTML);
+}
+const shop = (ground.buildings || []).find(b => b.kind === 'shop');
+if (shop) {
+  EstateHUD.card(state, { kind: 'building', id: shop.id });
+  ok('the shop card has no flats', els.cardRows.innerHTML.indexOf('flats') < 0,
+     els.cardRows.innerHTML);
+}
+for (const [kind, word, row] of [['school', 'school gate', 'pupils'],
+                                 ['bus_stop', 'bus stop', 'work']]) {
+  const f = (state.fixtures || []).find(x => x.kind === kind);
+  ok('the frame has a ' + word, !!f);
+  if (!f) continue;
+  EstateHUD.card(state, { kind: 'fixture', id: f.id });
+  ok('the ' + word + ' card is named and counts its people',
+     els.cardName.textContent.indexOf(word) >= 0 &&
+     els.cardRows.innerHTML.indexOf(row) >= 0,
+     els.cardName.textContent + ' ' + els.cardRows.innerHTML.slice(0, 120));
+}
+
+const ph = state.phases;
+ok('the frame carries today\'s phases',
+   ph && ph.order && ph.order.length === 5 &&
+   ph.order.every(n => ph.at && ph.at[n]), JSON.stringify(ph && ph.order));
+if (ph && ph.order) {
+  const live = EstateHUD.phaseView(state, -1);
+  ok('the live view is the frame itself', live === state);
+  const mi = ph.order.indexOf('morning');
+  const morning = EstateHUD.phaseView(state, mi);
+  ok('a phase view is its own frame', morning !== state &&
+     morning.viewPhase === 'morning' &&
+     morning.viewKey === state.day + ':morning' &&
+     morning.people.length === (state.people || []).length);
+  const rec = ph.at.morning;
+  ok('a phase view puts everyone where the phase left them',
+     morning.people.every(p => !rec[String(p.id)] ||
+       (p.x === rec[String(p.id)][0] && p.y === rec[String(p.id)][1])));
+  ok('a phase view walks from the phase before',
+     morning.people.every(p => {
+       const b = ph.at[ph.order[mi - 1]][String(p.id)];
+       return !b || (p.px === b[0] && p.py === b[1]);
+     }));
+  const modes = morning.people.map(p => p.mode);
+  const weekend = /^(Saturday|Sunday)$/.test(String(state.weekday));
+  ok(weekend ? 'a weekend morning has nobody at school or at work'
+             : 'a weekday morning has pupils at school and workers away',
+     weekend ? modes.indexOf('school') < 0 && modes.indexOf('away') < 0
+             : (!state.daytime || state.daytime.enrolled === 0 ||
+                (modes.indexOf('school') >= 0 &&
+                 modes.indexOf('away') >= 0)),
+     state.weekday + ': ' + modes.join(','));
+  ok('nobody at school or away is drawn indoors, or away and walking',
+     morning.people.every(p =>
+       (p.mode !== 'school' || !p.in) &&
+       (p.mode !== 'away' || p.pmode !== 'away' || p.in)));
+  EstateHUD.update(morning);
+  ok('the header says which phase is shown',
+     els.when.textContent.indexOf('morning') >= 0, els.when.textContent);
+  const pupil = morning.people.find(p => p.mode === 'school');
+  if (pupil) {
+    EstateHUD.card(morning, { kind: 'resident', id: pupil.id });
+    ok('a pupil\'s card says they are at school',
+       els.cardState.innerHTML.indexOf('at school') >= 0,
+       els.cardState.innerHTML);
+  }
+  /* #14 review: the header never said 'at school' or 'at work', because
+   * the live frame is the end of a night. Live it counts the clock's
+   * phase; a phase picked on the scrubber counts that phase. */
+  if (!weekend && state.daytime && state.daytime.enrolled > 0) {
+    const pops = () => els.pops.innerHTML;
+    const n = (word) => { const m = pops().match(
+      new RegExp('<b>([\\d,]+)</b> ' + word)); return m ? m[1] : null; };
+    const want = (f, mode) => String(f.people.filter(
+      p => p.mode === mode).length);
+    EstateHUD.setClock(null);
+    EstateHUD.update(state);
+    ok('live, at the end of the night, nobody is at school or at work',
+       n('at school') === null && n('at work') === null, pops());
+    EstateHUD.setClock('morning');
+    EstateHUD.update(state);
+    ok('live, with the clock at morning, the header counts the morning',
+       n('at school') === want(morning, 'school') &&
+       n('at work') === want(morning, 'away'), pops());
+    ok('the live frame itself is still the end of the night',
+       els.when.textContent.indexOf('morning') < 0, els.when.textContent);
+    EstateHUD.setClock('night');
+    EstateHUD.update(state);
+    ok('live, with the clock at night, nobody is at school or at work',
+       n('at school') === null && n('at work') === null, pops());
+    EstateHUD.setClock('night');
+    EstateHUD.update(morning);
+    ok('a phase picked on the scrubber counts that phase, whatever the clock',
+       n('at school') === want(morning, 'school') &&
+       n('at work') === want(morning, 'away'), pops());
+    const ev = EstateHUD.phaseView(state, ph.order.indexOf('evening'));
+    EstateHUD.setClock('morning');
+    EstateHUD.update(ev);
+    ok('the scrubber\'s evening has nobody at school or at work',
+       n('at school') === null && n('at work') === null, pops());
+    EstateHUD.setClock(null);
+  }
+  const bar = EstateHUD.scrubber(state, mi);
+  ok('the scrubber has live and one button per phase',
+     count(bar, '<button') === 6 && count(bar, 'class="on"') === 1 &&
+     bar.indexOf('data-i="' + mi + '" class="on"') >= 0, bar);
+  EstateHUD.update(state);
 }
 
 /* closing is a state too: no selection, no card */

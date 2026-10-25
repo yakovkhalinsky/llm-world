@@ -26,6 +26,11 @@
  *                   hold its benches and the people on them.
  *   ?focus=x,y     frames a named cell instead, for a close-up of a
  *                   particular place.
+ *   ?show=morning  draw where everybody was at the end of one of today's
+ *                   phases (the scrubber's buttons do the same), with the
+ *                   light at that phase unless `phase` or `clock` say
+ *                   otherwise: the live frame is always the end of a
+ *                   day's night, and this is how a school morning is seen.
  *   ?trace=1       draw every current walking route as a line on the ground;
  *                   ?trace=<id> draws one resident's route only. The lines
  *                   are rebuilt when the day arrives, never inside a frame.
@@ -73,8 +78,13 @@ const FOCUS = (params.get('focus') || '').toLowerCase();
 const TRACE = params.get('trace') || '';
 const parsedPhase = Object.prototype.hasOwnProperty.call(PHASE_ALIAS, phaseArg)
   ? PHASE_ALIAS[phaseArg] : -1;
-/* static with no named phase freezes at afternoon for a legible shot */
+/* one of today's phases to show rather than the live frame (-1: live) */
+const showArg = (params.get('show') || '').toLowerCase();
+const showPhase = PHASES.indexOf(showArg);
+/* static with no named phase freezes at afternoon for a legible shot; a
+ * shown phase is lit as itself */
 const forcedPhase = parsedPhase >= 0 ? parsedPhase
+                   : showPhase >= 0 ? showPhase
                    : (STATIC ? 2 : -1);
 /* a pinned fraction of the day, for a screenshot of any hour; -1 is unset */
 const clockArg = params.get('clock');
@@ -92,7 +102,36 @@ const S = {
   pointerY: 0,
   hoverDirty: false,
   phaseLabel: -1,
+  show: showPhase,      // which of today's phases is drawn; -1 is live
 };
+
+/* the frame the scene and the panels draw: the live state, or one of
+ * today's phases laid over it (hud.js `phaseView`) */
+function framed(st) {
+  return HUD && st ? HUD.phaseView(st, S.show) : st;
+}
+
+function drawShows(st) {
+  const box = $('shows');
+  if (!box || !HUD) return;
+  box.innerHTML = HUD.scrubber(st, S.show);
+  Array.prototype.forEach.call(box.querySelectorAll('button'), b => {
+    b.onclick = () => {
+      S.show = Number(b.dataset.i);
+      if (S.world) S.world.setPhaseView(S.show);
+      if (S.state) show(S.state);
+    };
+  });
+}
+
+function show(st) {
+  const f = framed(st);
+  S.world.setState(f);
+  updateHUD(f);
+  drawShows(st);
+  if (S.selected) drawCard();
+  if (STATIC) S.world.frame(performance.now());
+}
 
 window.__estate3d = { ready: false };
 
@@ -162,6 +201,9 @@ function phaseLabel(info) {
   if (info.index === S.phaseLabel) return;
   S.phaseLabel = info.index;
   const name = PHASES[info.index];
+  /* the live header counts who is at school and at work in the phase the
+   * clock is at (hud.js `countFrame`) */
+  if (HUD && HUD.setClock(name) && S.state) HUD.head(framed(S.state));
   $('phase').textContent = name;
   const glyph = $('phaseGlyph');
   glyph.textContent = PHASE_GLYPH[name] || '·';
@@ -171,7 +213,7 @@ function phaseLabel(info) {
 /* ------------------------------------------------------------- the card */
 
 function drawCard() {
-  if (HUD) HUD.card(S.state, S.selected);
+  if (HUD) HUD.card(framed(S.state), S.selected);
   else $('card').classList.remove('on');
 }
 
@@ -278,8 +320,9 @@ function poll() {
   fetchJSON('/api/state').then(st => {
     S.state = st;
     if (S.world) {
-      S.world.setState(st);
-      updateHUD(st);
+      S.world.setState(framed(st));
+      updateHUD(framed(st));
+      drawShows(st);
       if (S.selected) drawCard();
       /* The first state is drawn here rather than waiting for the next
        * animation frame. A headless check may never get one — and

@@ -34,11 +34,13 @@
   var GAP = 0.04;
   /* how far from a solid fixture's middle a body's edge must stay, by kind:
    * the table top is 0.82 square, the stall 0.9; a lamp or a tree is only
-   * its pole (0.045 across the radius) or trunk (0.13 at its foot). The playground is for climbing on, so children may
+   * its pole (0.045 across the radius) or trunk (0.13 at its foot); the bus
+   * shelter its posts at ±0.42 and its glass at 0.32 behind the middle, so
+   * the queue waits round it (daytime.stop_spots). The playground is for climbing on, so children may
    * stand in its frame. A kind the page has never seen keeps a small
    * plinth's distance. */
   var KEEP = { table: 0.42, shop: 0.46, lamp: 0.06, tree: 0.14,
-               playground: 0 };
+               playground: 0, bus_stop: 0.44 };
   var KEEP_OTHER = 0.26;
   /* seats along a bench, centre to centre; a stander past its end */
   var SEAT_STEP = 0.42;
@@ -280,11 +282,12 @@
   /* What world.js draws on a solid fixture's cell, about its middle, for
    * the per-frame push: a box's half-size or a disk's radius (Walk's
    * KEEP_BOX / KEEP_DISK) — a table top 0.82 square, a stall 0.9, a lamp's
-   * pole, a tree's trunk at its foot. The playground is for climbing on: no
+   * pole, a tree's trunk at its foot, the bus shelter's posts and glass
+   * (±0.42 by −0.32). The playground is for climbing on: no
    * body. A solid kind the page has never seen is a small plinth. A body's
    * edge keeps BODY_GAP clear of any of them. */
   var BODY = { table: [0, 0.41], shop: [0, 0.45], lamp: [1, 0.045],
-               tree: [1, 0.13], playground: null };
+               tree: [1, 0.13], playground: null, bus_stop: [0, 0.43] };
   var BODY_OTHER = [0, 0.25];
   var BODY_GAP = 0.01;
   function bodyAt(fixAt, x, y) {
