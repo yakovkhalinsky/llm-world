@@ -1,6 +1,6 @@
-/* Highfield 3D — the plan page's palette over a real horizon.
-   Slate, paper, and lamplight; the same glass panels, so the two views of
-   the estate read as two views of one place rather than two products. */
+/* Highfield — slate, paper and lamplight over a real horizon.
+   The glass panels are the estate's own palette, so the picture and the
+   words around it read as one place rather than as two products. */
 
 :root {
   --ink: #e9e5dc;
@@ -66,15 +66,6 @@ html, body {
 }
 .title .mark { color: var(--lamp); }
 .engine-mark { font-size: 11px; color: var(--dim); letter-spacing: 0; }
-.viewlink {
-  margin-left: 8px;
-  font-size: 11.5px;
-  letter-spacing: 0;
-  color: var(--dim);
-  text-decoration: none;
-  border-bottom: 1px dotted var(--edge);
-}
-.viewlink:hover { color: var(--lamp); border-color: var(--lamp); }
 
 .idbox { top: 14px; right: 16px; }
 .idrow {

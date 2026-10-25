@@ -21,7 +21,6 @@
   <div class="panel title">
     <span class="mark">▤</span> highfield
     <span class="engine-mark" id="engine">loading</span>
-    <a class="viewlink" href="/">← plan</a>
   </div>
 
   <div class="panel idbox">
@@ -71,10 +70,9 @@
   </div>
 </div>
 
-<!-- the walk router, shared with the plan page. Classic script before the
-     module: modules are deferred, so `EstateWalk` exists by the time the
-     viewer runs. -->
-<script src="/walk.js"></script>
+<!-- the walk router. Classic script before the module: modules are deferred,
+     so `EstateWalk` exists by the time the viewer runs. -->
+<script src="/3d/walk.js"></script>
 <!-- the day clock and light table, pure and testable: classic script before
      the module, like the router -->
 <script src="/3d/clock.js"></script>

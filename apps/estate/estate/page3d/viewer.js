@@ -1,9 +1,9 @@
 /* viewer — the page's spine for the 3D view.
  *
- * The same bargain the plan page makes: the simulation owns every fact and
- * this page only asks. It fetches the ground once, polls the day, and hands
- * the frame to the world. The HUD reads the same frame, so a number in a
- * panel and a shape in the scene can never disagree.
+ * The bargain the estate makes: the simulation owns every fact and this page
+ * only asks. It fetches the ground once, polls the day, and hands the frame
+ * to the world. The HUD reads the same frame, so a number in a panel and a
+ * shape in the scene can never disagree.
  *
  * These query parameters exist for the headless checks that look at this
  * page:

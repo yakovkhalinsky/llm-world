@@ -1,15 +1,14 @@
 /* walk — the route a resident takes across the plan.
  *
  * The engine walks its people cell by cell, around walls, and then saves only
- * where each of them ended the day. The pages used to draw that as a straight
+ * where each of them ended the day. The view used to draw that as a straight
  * glide from one cell to the next, which sent everybody through the blocks.
  * This is the missing half: the same ground, read the same way, searched
  * rather than slid across.
  *
- * It is one file for both viewers. The plan page inlines it and the 3D page
- * loads it as a classic script before its module, so there is one search and
- * one set of costs — a second copy in the other renderer would drift from
- * this one the first time either was touched (grove b2/b34).
+ * The 3D page loads it as a classic script before its module, so there is
+ * one search and one set of costs — a second copy inside the module would
+ * drift from this one the first time either was touched (grove b2/b34).
  *
  * The ground is /api/ground: `rows` names a site per cell, `codes` names the
  * sites, and `walk` is the pack's own step cost (or null where nobody may
@@ -17,9 +16,9 @@
  * the price of a lawn is the pack's fact, and a page that guessed it would be
  * the second home for it.
  *
- * `EstateWalk` is a plain global, deliberately: the plan page is classic
- * scripts and the 3D page is modules, and a plain global is the one shape
- * both can read without a build step.
+ * `EstateWalk` is a plain global, deliberately: the 3D page's router is a
+ * classic script loaded ahead of its module, and a plain global is the one
+ * shape both can read without a build step.
  */
 (function (root) {
   'use strict';

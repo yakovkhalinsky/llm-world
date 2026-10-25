@@ -1,6 +1,6 @@
 """The router's test, run where Node exists.
 
-`tools/walk_check.js` is the committed check for `page/walk.js`. It needs
+`tools/walk_check.js` is the committed check for `page3d/walk.js`. It needs
 Node, which the Python test suite cannot assume, so this wrapper skips when
 `node` is absent and otherwise plants a fresh seed-42 estate, writes the
 same two payloads the server serves, and runs the check over them.

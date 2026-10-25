@@ -1,15 +1,15 @@
 """estate web — a zero-dependency dashboard for the estate.
 
-Serves one hand-written HTML page (no build step, works fully offline) plus
-a small JSON state API. The simulation keeps running in a background thread;
+Serves one hand-written page (no build step, works fully offline) plus a
+small JSON state API. The simulation keeps running in a background thread;
 visitors get pause / step / speed controls.
 
-The plan is drawn by **PixiJS**, vendored beside the page — the same engine
-grove's island uses, and for the same reason: this is a living picture of a
-place, not a chart of its numbers, and a world you cannot see is a world you
-cannot judge (grove's b26/b48 — several bugs were found only by looking at
-the artifact). A plain glyph map remains as the honest fallback, exactly as
-it does for the grove.
+The estate is drawn in **three dimensions** by the Three.js scene in
+`page3d/`, vendored beside the page: this is a living picture of a place,
+not a chart of its numbers, and a world you cannot see is a world you cannot
+judge (grove's b26/b48 — several bugs were found only by looking at the
+artifact). The server-side glyph map remains as the honest fallback for a
+browser that cannot draw it.
 
   estate web [--port 8787] [--public] [--tick-seconds 20] [--offline]
 
@@ -368,64 +368,6 @@ def snapshot(est, runner, lock):
         }
 
 
-def _load_page():
-    """Assemble the served page: the skeleton, the style, and the page's
-    scripts joined in boot order."""
-    dd = os.path.join(os.path.dirname(__file__), "page")
-
-    def read(name):
-        with open(os.path.join(dd, name)) as f:
-            return f.read()
-
-    return (read("index.html")
-            .replace("{{STYLE}}", "\n" + read("style.css"))
-            .replace("{{SCRIPT}}", read("walk.js") + read("boot.js")
-                     + read("scene.js") + read("panels.js")))
-
-
-WALK_JS = os.path.join(os.path.dirname(__file__), "page", "walk.js")
-
-_WALK_CACHE = None
-
-
-def _walk_bytes():
-    """The router the 3D page loads, and the plan page inlines.
-
-    One file, two pages: the 3D view is modules and the plan is classic
-    scripts, so it publishes itself as a global and is served rather than
-    imported. Served as JavaScript, never text/plain — a module (or a
-    script) the browser refuses to execute looks exactly like a broken
-    page.
-    """
-    global _WALK_CACHE
-    if _WALK_CACHE is None:
-        try:
-            with open(WALK_JS, "rb") as f:
-                _WALK_CACHE = f.read()
-        except OSError:
-            _WALK_CACHE = b""
-    return _WALK_CACHE
-
-
-PIXI_JS = os.path.join(os.path.dirname(__file__), "page",
-                       "vendor", "pixi.min.js")
-
-_PIXI_CACHE = None
-
-
-def _pixi_bytes():
-    """The scene's engine, vendored — the file the head may never fetch
-    from a CDN at runtime."""
-    global _PIXI_CACHE
-    if _PIXI_CACHE is None:
-        try:
-            with open(PIXI_JS, "rb") as f:
-                _PIXI_CACHE = f.read()
-        except OSError:
-            _PIXI_CACHE = b""
-    return _PIXI_CACHE
-
-
 PAGE3D = os.path.join(os.path.dirname(__file__), "page3d")
 
 # one suffix, one content type. A module served as text/plain is a module
@@ -512,7 +454,7 @@ def _ip_hint(host):
         return "lan ip undetectable — check hostname -I"
 
 
-def make_handler(page, est, lock, runner):
+def make_handler(est, lock, runner):
     """Build the request handler around a planted estate.
 
     A factory rather than a closure inside `cmd_web`: the tests start a
@@ -553,23 +495,12 @@ def make_handler(page, est, lock, runner):
 
         def do_GET(self):
             path = urlparse(self.path).path
-            if path == "/":
-                self._send(200, page, "text/html; charset=utf-8")
-            elif path == "/pixi.js":
-                b = _pixi_bytes()
-                if b:
-                    self._send(200, b, "application/javascript; charset=utf-8")
-                else:
-                    self._send(404, "the engine's file is missing", "text/plain")
-            elif path == "/walk.js":
-                # shared by both viewers: the plan inlines it, the 3D page
-                # loads it as a classic script before its module
-                b = _walk_bytes()
-                if b:
-                    self._send(200, b, "application/javascript; charset=utf-8")
-                else:
-                    self._send(404, "the router is missing", "text/plain")
-            elif path in ("/3d", "/3d/"):
+            # The 3D view is the estate's only view and `/` is its address.
+            # `/3d` and `/3d/` stay as aliases rather than redirects: old
+            # links and the `?phase=` / `?focus=` screenshot URLs keep their
+            # query string, and every asset the page names is absolute under
+            # `/3d/`, so it resolves from either address.
+            if path in ("/", "/3d", "/3d/"):
                 f = _page3d("index.html")
                 if f:
                     self._send(200, f[0], f[1])
@@ -623,7 +554,6 @@ def make_handler(page, est, lock, runner):
 
 
 def cmd_web(args):
-    page = _load_page()          # loaded once, so a broken script fails here
     est = Estate(args)
     lock = threading.Lock()
     runner = SimRunner(est, lock, args.tick_seconds, est.llm)
@@ -638,7 +568,7 @@ def cmd_web(args):
     runner.daybooks = {d["day"]: d["book"] for d in est.past_days if d["book"]}
     runner.start()
 
-    Handler = make_handler(page, est, lock, runner)
+    Handler = make_handler(est, lock, runner)
 
     host = "0.0.0.0" if args.public else "127.0.0.1"
     httpd = ThreadingHTTPServer((host, args.port), Handler)
