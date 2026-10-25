@@ -136,6 +136,8 @@ function phaseLabel(info) {
 /* ------------------------------------------------------------- the card */
 
 let bioAsked = 0;
+let bioCtl = null;      // the ask in flight, aborted when a newer one starts
+let bioWaiting = 0;     // that ask's number until it answers or times out
 /* how long the card waits on the ledger before it says it did not answer */
 const BIO_TIMEOUT_MS = 4000;
 
@@ -151,7 +153,10 @@ function drawCard() {
  * clicked (and again, quietly, each new week while it stays open). The
  * answer is kept in `S.ledger`, so the card's every redraw — one per frame
  * poll — carries it; a slow or failed ask ends in a plain line, never a
- * spinner that stays. */
+ * spinner that stays. A newer ask supersedes an older one (its answer is
+ * dropped, its fetch aborted), which is why the poll never re-asks while
+ * an ask is still waiting: with weeks shorter than BIO_TIMEOUT_MS that
+ * would restart the clock every week and the card would never give up. */
 function askBio(sel, quiet) {
   if (!sel || (sel.kind !== 'animal' && sel.kind !== 'plant')) return;
   const ask = ++bioAsked;
@@ -162,10 +167,26 @@ function askBio(sel, quiet) {
   if (!quiet || !S.ledger || S.ledger.id !== id) {
     S.ledger = { id, state: 'wait' };
   }
+  if (bioCtl) bioCtl.abort();
   const ctl = typeof AbortController !== 'undefined'
     ? new AbortController() : null;
-  const timer = window.setTimeout(() => { if (ctl) ctl.abort(); },
-                                  BIO_TIMEOUT_MS);
+  bioCtl = ctl;
+  bioWaiting = ask;
+  const fail = () => {
+    if (!mine()) return;
+    /* a quiet re-ask that fails keeps the rows it already has */
+    if (!(quiet && S.ledger && S.ledger.state === 'ok')) {
+      S.ledger = { id, state: 'fail' };
+    }
+    drawCard();
+  };
+  /* the timer gives up by itself too, so a browser without
+   * AbortController still ends in the plain line */
+  const timer = window.setTimeout(() => {
+    if (bioWaiting === ask) bioWaiting = 0;
+    if (ctl) ctl.abort();
+    fail();
+  }, BIO_TIMEOUT_MS);
   fetch('/api/bio?id=' + encodeURIComponent(id),
         { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
     .then(r => {
@@ -177,15 +198,12 @@ function askBio(sel, quiet) {
       S.ledger = { id, state: 'ok', b };
       drawCard();
     })
-    .catch(() => {
-      if (!mine()) return;
-      /* a quiet re-ask that fails keeps the rows it already has */
-      if (!(quiet && S.ledger && S.ledger.state === 'ok')) {
-        S.ledger = { id, state: 'fail' };
-      }
-      drawCard();
-    })
-    .finally(() => window.clearTimeout(timer));
+    .catch(fail)
+    .finally(() => {
+      window.clearTimeout(timer);
+      if (bioCtl === ctl) bioCtl = null;
+      if (bioWaiting === ask) bioWaiting = 0;
+    });
 }
 
 function select(sel) {
@@ -296,7 +314,10 @@ function poll() {
     updateHUD(st);
     if (S.selected) {
       drawCard();
-      if (S.ledger && st.tick !== S.ledgerTick) askBio(S.selected, true);
+      /* once a week, and never over an ask that is still waiting */
+      if (S.ledger && !bioWaiting && st.tick !== S.ledgerTick) {
+        askBio(S.selected, true);
+      }
     }
     if (!ready) {
       phaseLabel(S.world.frame(performance.now()));

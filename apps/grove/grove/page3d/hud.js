@@ -217,11 +217,21 @@
       'events yet; its story is still quiet.</li>';
   }
 
-  /* A living creature's needs, from the ledger's answer (0–10 scales). */
+  /* A living creature's needs, from the ledger's answer. Energy is kept
+   * on 0–10 by the sim; hunger is not capped (it climbs by the species'
+   * drain each week and only hurts past 9 — the seed-42 run peaks near
+   * 27), so it is shown as a number and a word, never "/ 10". The words
+   * follow the sim: past 5 the frame marks it hungry, past 9 it loses
+   * health. */
+  function hungerWord(h) {
+    return h > 9 ? 'starving' : h > 5 ? 'hungry' : h >= 0 ? 'fed' : '';
+  }
   function needRows(b) {
     if (!b || !b.alive || b.hunger === undefined) return '';
-    return '<li><span>hunger</span><span>' + Number(b.hunger).toFixed(1) +
-      ' / 10</span></li>' +
+    var h = Number(b.hunger);
+    var word = hungerWord(h);
+    return '<li><span>hunger</span><span>' + h.toFixed(1) +
+      (word ? ' · ' + word : '') + '</span></li>' +
       '<li><span>energy</span><span>' + Number(b.energy).toFixed(1) +
       ' / 10</span></li>';
   }

@@ -1,8 +1,8 @@
 """The card's ask: `/api/bio`, the request the page makes when a creature or
-a plant is clicked. It must be answered — through the guard, with the
-page's own request shape, on the loopback name and on the station's tailnet
-name — and answered straight away from the world and the chronicle, never
-waiting on a model, so a dead or absent LLM still fills the card:
+a plant is clicked. It must be answered — with the page's own request
+shape, on the loopback name and on the station's tailnet name — and
+answered straight away from the world and the chronicle, never waiting on
+a model, so a dead or absent LLM still fills the card:
 
     python3 -m unittest tests.test_card
 """
@@ -87,6 +87,13 @@ class CardTest(CardServer):
         self.assertEqual(code, 200, b)
         self.assertTrue(b["gone"])
 
+    def test_an_id_past_sqlite_integers_is_answered(self):
+        # sqlite raised OverflowError on these and the connection dropped
+        for oid in ("99999999999999999999", "-99999999999999999999"):
+            code, b = self.get("/api/bio?id=" + oid)
+            self.assertEqual(code, 200, b)
+            self.assertTrue(b["gone"])
+
     def test_an_origin_header_does_not_block_it(self):
         # some browsers send Origin on a same-origin fetch too
         a = self.some("animals")
@@ -96,7 +103,10 @@ class CardTest(CardServer):
 
 
 class CardPublicTest(CardServer):
-    """`--public`, as station runs it: the tailnet name is answered."""
+    """`--public`, as station runs it: the tailnet name is answered. GETs do
+    not go through `webguard` (it guards POSTs only) and check no Host, so
+    this passes because nothing refuses it, not because the name is on the
+    guard's list: don't lean on a guard that isn't there."""
 
     def setUp(self):
         self.hosts = set()

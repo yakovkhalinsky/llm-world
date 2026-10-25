@@ -243,13 +243,25 @@ ok('the biography\'s weeks are numbers',
    els.cardRows.innerHTML.indexOf('wkNaN') >= 0 &&
    els.cardRows.innerHTML.indexOf('wk4') >= 0, els.cardRows.innerHTML);
 ok('the needs are numbers',
-   els.cardRows.innerHTML.indexOf('<span>hunger</span><span>NaN / 10') >= 0 &&
+   els.cardRows.innerHTML.indexOf('<span>hunger</span><span>NaN<') >= 0 &&
    els.cardRows.innerHTML.indexOf('<span>energy</span><span>NaN / 10') >= 0,
    els.cardRows.innerHTML);
 ok('the card is not left consulting',
    els.cardRows.innerHTML.indexOf('consulting') < 0, els.cardRows.innerHTML);
 ok('the frame\'s facts stay on the card',
    els.cardState.innerHTML.indexOf('age NaNwk') === 0, els.cardState.innerHTML);
+/* hunger has no cap in the sim (the seed-42 run reaches 27.4), so the card
+ * never puts it over 10 */
+[[27.4, '27.4 · starving'], [6.2, '6.2 · hungry'], [1.1, '1.1 · fed']]
+  .forEach(([h, want]) => {
+    step('hunger ' + h, () =>
+      H.card(state, { kind: 'animal', id: 7 },
+             { id: 7, state: 'ok', b: { id: 7, alive: true, hunger: h,
+                                        energy: 10, events: [] } }));
+    ok('hunger ' + h + ' reads "' + want + '", not out of 10',
+       els.cardRows.innerHTML.indexOf('<span>hunger</span><span>' + want +
+                                      '</span>') >= 0, els.cardRows.innerHTML);
+  });
 step('the next poll redraws the card', () =>
   H.card(state, { kind: 'animal', id: 7 }, { id: 7, state: 'ok', b: BIO }));
 ok('the redraw keeps the biography',
