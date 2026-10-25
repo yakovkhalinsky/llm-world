@@ -105,10 +105,15 @@ R = {
         # against 5 before the rule)
         "older_daytime": ["dawn", "morning", "afternoon"],
         # Whoever is minding stays this close to home in the evening (an
-        # errand round the corner, not a trip across the estate) ...
+        # errand round the corner, not a trip across the estate): Manhattan
+        # from the door, and counted where the party ends the evening, so an
+        # outing is allowed only if the party can actually get there in the
+        # phase, and a party already further out walks home ...
         "evening_range": 10,
         # ... and every member of a household with young children is home
         # in these phases: nobody leaves the little ones for a night out.
+        # Enforced, not preferred: the walk home then is the shortest way
+        # with no step cap (`residents._go_to(sure=True)`), so it arrives.
         "home_by": ["night"],
     },
 

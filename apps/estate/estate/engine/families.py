@@ -21,8 +21,12 @@ model anywhere), and they read every number from `rules.R["families"]`.
   place, so a child's longing to play is a playground trip with a parent
   and a parent's hunger is the shop run with the children along. The
   children walk on the minder's cell and arrive when the minder does.
-- **curfew.** A household with young children is home in `home_by`; the
-  minder keeps within `evening_range` of the door in the evening.
+- **curfew.** A household with young children is home in `home_by`: they
+  may choose nowhere else, and the walk home is made with no step cap, so
+  it always arrives. The minder ends the evening within `evening_range`
+  of the door: an outing then must be both that near and reachable in the
+  phase, and a party that is further out (the afternoon ended far away)
+  heads home, again with no step cap.
 - **the 10-15s.** Alone they may use only `older_places`, within
   `older_range` of their own door, and only in `older_daytime`; otherwise
   they go home.
@@ -146,6 +150,8 @@ def settle(w, evs=None):
     already home if there is, otherwise the eldest guardian comes home to
     them. Returns how many children were mended.
     """
+    # a guardian of 16-17 may mind the children day to day, but a household
+    # needs an adult (18, `people.ages.adult`) to stay on the estate at all
     adult = rules.R["people"]["ages"]["adult"]
     for hid in sorted(w["households"], key=int):
         hh = w["households"].get(hid)
@@ -201,16 +207,26 @@ def _dist_home(w, r, c):
     return abs(c["x"] - door[0]) + abs(c["y"] - door[1])
 
 
-def allows(w, r, c, phase, minding):
+def reach_matters(phase):
+    """Is a minder's outing this phase held to where they can get to?"""
+    return phase == "evening"
+
+
+def allows(w, r, c, phase, minding, reach=None):
     """May `r` choose candidate `c` this phase? Home is always allowed.
-    `minding` is True for a minder choosing for their party."""
+    `minding` is True for a minder choosing for their party. In the evening
+    a minder's outing must be within `evening_range` of the door *and*
+    reachable this phase (`reach(c)`), because the range is about where the
+    party ends the evening, and a target in range that the walk cannot get
+    to leaves them out on the way there."""
     if c["kind"] == "home":
         return True
     f = law()
     if phase in f["home_by"] and (minding or has_young(w, r)):
         return False
-    if minding and phase == "evening":
-        return _dist_home(w, r, c) <= f["evening_range"]
+    if minding and reach_matters(phase):
+        return (_dist_home(w, r, c) <= f["evening_range"]
+                and (reach is None or reach(c)))
     if is_older_child(r):
         return (phase in f["older_daytime"]
                 and c["kind"] in f["older_places"]
@@ -219,8 +235,21 @@ def allows(w, r, c, phase, minding):
 
 
 def curfew(w, r, phase, minding):
-    """Must `r` head home this phase even with nothing to do there?"""
+    """Must `r` head home this phase even with nothing to do there? At
+    `home_by` with young children; a minder out beyond `evening_range` in
+    the evening; an older child out of `older_daytime`."""
     f = law()
     if phase in f["home_by"] and (minding or has_young(w, r)):
         return True
+    if minding and reach_matters(phase) and r["where"]["mode"] == "at" \
+            and _dist_home(w, r, r["where"]) > f["evening_range"]:
+        return True
     return is_older_child(r) and phase not in f["older_daytime"]
+
+
+def sure_home(w, r, phase, minding):
+    """Must `r`'s walk home this phase arrive, however far it is? The
+    curfew's, and a minder's in the evening (a capped walk home could end
+    the evening further out than the range)."""
+    return curfew(w, r, phase, minding) or \
+        (minding and reach_matters(phase))

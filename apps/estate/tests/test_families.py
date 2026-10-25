@@ -11,6 +11,11 @@ single parent, the newly arrived family, the guardian who dies or leaves,
 the baby born while everyone is out, the sixteen-year-old sibling, and the
 10-15s' limited independence.
 
+The curfew and the evening range are measured where people end up, and their
+mutants (no evening range; the walk home capped by the phase) must fail.
+The walk tests pin the way round the block row that used to trap a family
+behind it, and the walk home at night that must arrive however far it is.
+
 Run from `apps/estate`:
 
     python3 -m unittest discover -s tests
@@ -100,6 +105,17 @@ class InvariantTest(unittest.TestCase):
         self.assertEqual(tally["home_alone"], 0, cases[:5])
         self.assertEqual(tally["older_out_of_bounds"], 0)
 
+    def test_the_night_curfew_and_the_evening_range_hold(self):
+        """Measured where people end up: nobody from a household with young
+        children is out at the end of the night, and no young child (so no
+        minder) ends the evening beyond `evening_range` of the door. Seed 1
+        is the one the review traced a family stranded behind the row on."""
+        tally, cases = _measure(self.SEEDS, self.DAYS)
+        self.assertEqual(tally["young_out_at_night"], 0, cases[:5])
+        self.assertEqual(tally["household_out_at_night"], 0, cases[:5])
+        self.assertEqual(tally["evening_far"], 0, cases[:5])
+        self.assertEqual(family_check.failures(tally), 0)
+
     def test_the_day_starts_with_nothing_to_mend(self):
         """The slow layer settles at the end of each day, so the day's own
         settle never has anything left to do."""
@@ -128,7 +144,7 @@ class MutantTest(unittest.TestCase):
         with mock.patch.object(families, "plan", lambda w, press: {}), \
                 mock.patch.object(families, "settle", lambda w, evs=None: 0), \
                 mock.patch.object(families, "allows",
-                                  lambda w, r, c, phase, minding: True), \
+                                  lambda *a, **k: True), \
                 mock.patch.object(families, "curfew",
                                   lambda w, r, phase, minding: False):
             tally, _ = _measure((42,), 60)
@@ -141,6 +157,132 @@ class MutantTest(unittest.TestCase):
                 mock.patch.object(families, "settle", lambda w, evs=None: 0):
             tally, _ = _measure((42,), 60)
         self.assertGreater(tally["out_alone"] + tally["home_alone"], 0)
+
+
+class EveningMutantTest(unittest.TestCase):
+    """The evening range and the curfew walk, each taken away, are caught."""
+
+    def test_without_the_evening_range_minders_end_the_evening_far(self):
+        real = families.allows
+
+        def no_range(w, r, c, phase, minding, reach=None):
+            if minding and phase == "evening" and c["kind"] != "home":
+                return True                    # families.py's range check
+            return real(w, r, c, phase, minding, reach)
+
+        with mock.patch.object(families, "allows", no_range):
+            tally, _ = _measure((42,), 120)
+        self.assertGreater(tally["evening_far"], 0)
+
+    def test_without_the_sure_walk_home_the_curfew_fails(self):
+        """The walk home capped by the phase's budget, as it was."""
+        with mock.patch.object(families, "sure_home",
+                               lambda *a, **k: False), \
+                mock.patch.object(families, "reach_matters",
+                                  lambda phase: False):
+            tally, _ = _measure((1,), 120)
+        self.assertGreater(tally["young_out_at_night"]
+                           + tally["evening_far"], 0)
+
+
+class WalkTest(unittest.TestCase):
+    """The walk round a wall, and the walk home that must arrive."""
+
+    def test_the_trap_behind_the_row_is_walked_out_of(self):
+        """Seed 1: north of the row at (26,5), for the door at (27,12) on
+        its south side. The old side-step swung between (25,5) and (26,5)
+        for the whole walk; now it goes round the block's end."""
+        w = gen.generate(1)
+        r = next(iter(w["residents"].values()))
+        r["where"] = {"mode": "at", "x": 26, "y": 5, "fixture": None}
+        self.assertFalse(W.passable(w, 26, 6))
+        seen = []
+        for _ in range(10):
+            if residents._walk(w, r, 27, 12, 3):
+                break
+            seen.append((r["where"]["x"], r["where"]["y"]))
+        self.assertEqual((r["where"]["x"], r["where"]["y"]), (27, 12))
+        self.assertEqual(len(seen), len(set(seen)), seen)   # never back
+
+    def test_a_walk_never_steps_on_a_wall(self):
+        w = gen.generate(42)
+        r = next(iter(w["residents"].values()))
+        rng = random.Random(5)
+        cells = [(x, y) for y in range(w["height"]) for x in range(w["width"])
+                 if W.passable(w, x, y)]
+        for _ in range(200):
+            (sx, sy), (tx, ty) = rng.sample(cells, 2)
+            r["where"] = {"mode": "at", "x": sx, "y": sy, "fixture": None}
+            for _ in range(200):
+                done = residents._walk(w, r, tx, ty, 1)
+                self.assertTrue(W.passable(w, r["where"]["x"],
+                                           r["where"]["y"]))
+                if done:
+                    break
+            self.assertEqual((r["where"]["x"], r["where"]["y"]), (tx, ty))
+
+    def test_the_walk_home_at_night_arrives_however_far(self):
+        """A slow minder at the far corner of the estate with the children
+        at nightfall: one phase later they are all indoors."""
+        w = gen.generate(42)
+        hh = _family_with_young(w)
+        folk = families.members(w, hh)
+        guards = [g for g in folk if families.is_guardian(g)]
+        for g in folk:
+            g["mobility"] = 0.3
+            _out(g, w["width"] - 2, w["height"] - 2)
+        lead = min(guards, key=lambda g: g["id"])
+        cand = residents.candidates(w)
+        kids = families.young_in(w, hh)
+        others = [g for g in folk if g is not lead and g not in kids]
+        residents._live(w, [lead] + kids, cand, "night", 99)
+        for o in others:
+            residents._live(w, [o], cand, "night", 99)
+        for r in folk:
+            self.assertEqual(r["where"]["mode"], "in", r["id"])
+            self.assertEqual(r["where"]["unit"], hh["unit"])
+
+    def test_an_evening_outing_is_one_the_party_can_reach(self):
+        w = gen.generate(42)
+        hh = _family_with_young(w)
+        g = next(r for r in families.members(w, hh) if families.is_guardian(r))
+        _add(w, hh, 4)
+        u = w["units"][str(hh["unit"])]
+        door = w["buildings"][str(u["building"])]["door"]
+        c = {"kind": "bench", "x": door[0] + 2, "y": door[1],
+             "fixture": None, "unit": None}
+        self.assertTrue(families.allows(w, g, c, "evening", True,
+                                        lambda c: True))
+        self.assertFalse(families.allows(w, g, c, "evening", True,
+                                         lambda c: False))
+        far = dict(c, x=door[0] + rules.R["families"]["evening_range"] + 1)
+        self.assertFalse(families.allows(w, g, far, "evening", True,
+                                         lambda c: True))
+        # out beyond the range already: the minder heads home
+        _out(g, far["x"], far["y"])
+        self.assertTrue(families.curfew(w, g, "evening", True))
+        self.assertTrue(families.sure_home(w, g, "evening", True))
+        _out(g, c["x"], c["y"])
+        self.assertFalse(families.curfew(w, g, "evening", True))
+
+
+class FrictionTest(unittest.TestCase):
+    def test_each_resident_is_ranked_once_a_phase(self):
+        """The gate's friction samples `ranked_needs`; a party member
+        ranked again for `_also` was counted twice."""
+        w = gen.generate(1)
+        real = residents.ranked_needs
+        seen = []
+
+        def spy(w_, r, phase):
+            seen.append((w_["day"], phase, r["id"]))
+            return real(w_, r, phase)
+
+        with mock.patch.object(residents, "ranked_needs", spy):
+            for _ in range(30):
+                sim.tick(w)
+        self.assertGreater(len(seen), 1000)
+        self.assertEqual(len(seen), len(set(seen)))
 
 
 class EdgeCaseTest(unittest.TestCase):
@@ -254,6 +396,27 @@ class EdgeCaseTest(unittest.TestCase):
         self.assertEqual(sorted(k["id"] for k in leads[b["id"]]),
                          sorted(k["id"] for k in kids))
         self.assertNotIn(a["id"], leads)
+
+    def test_a_child_stays_with_the_guardian_beside_them(self):
+        """Minding passes hand to hand: a guardian out across the estate,
+        however unpressed, does not take over a child at home with the
+        other one (`plan` picks only from the guardians together with the
+        child)."""
+        w, hh = self.w, self.hh
+        kids = families.young_in(w, hh)
+        a, b = _add(w, hh, 35), _add(w, hh, 36)
+        for r in families.members(w, hh):
+            if r is not b:
+                _home(r, hh)
+        _out(b, 3, 3)
+        others = [g for g in self._guards() if g not in (a, b)]
+        for g in others:
+            _out(g, 4, 4)
+        press = {a["id"]: 5.0, b["id"]: 0.0}
+        leads = families.plan(w, lambda g: press.get(g["id"], 9.0))
+        self.assertEqual(sorted(k["id"] for k in leads.get(a["id"], [])),
+                         sorted(k["id"] for k in kids))
+        self.assertNotIn(b["id"], leads)
 
     def test_the_party_moves_together(self):
         """A minder's errand takes the children along: after any phase they

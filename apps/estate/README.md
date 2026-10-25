@@ -262,16 +262,25 @@ is present, planting a fresh seed-42 estate for them.
   is a playground trip with a parent, a parent's hunger is the shop run
   with the children along, and a busy parent's errand is covered by the
   other adult at home. A household with young children keeps near home in
-  the evening and is home at night. The 10–15s may go alone only to the
+  the evening and is home at night, and both are enforced where people end
+  up rather than preferred: an evening outing must be one the party can
+  reach within `evening_range` of the door in the phase, a minder already
+  further out walks home, and the walk home at night is the shortest way
+  with no step cap, so it always arrives. The 10–15s may go alone only to the
   playground or the shop near their own door, and only in daylight. A
   household left with children and no adult leaves whole. The 3D view
   walks a young child at their guardian's side, and a resident's card
   lists the household. `python3 tools/family_check.py --seeds 42 --days
-  364` measures it.
+  364` measures it: children out alone or home alone, anyone from such a
+  household out at night, a young child beyond the evening range, older
+  children out of bounds. Every count is 0 on seeds 1–8 over three years,
+  and the script exits non-zero otherwise.
 - **A walk goes round a wall.** Movement is a greedy step toward the
   target, priced by the ground — but a building is impassable, so when
-  every step forward is a wall the walk commits to a side and holds it
-  until the way opens.
+  every step forward is a wall the walk takes the shortest way round from
+  where it stands, and keeps to it into the next phase if the phase ends
+  half-way. (It used to pick a side and hold it until a step forward
+  opened, which swung between two cells behind the block row for good.)
 
 ### What keeps it from settling into a metronome
 

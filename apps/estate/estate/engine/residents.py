@@ -197,15 +197,85 @@ def _utility(w, r, c, need, phase, rng):
     return eff - cost + habit + rng.random() * rules.R["engine"]["whim"]
 
 
-def _can_step(w, x, y, tx, ty):
-    """Is there a passable step from here toward the target? This is how a
-    walk knows its detour around a wall has ended."""
-    dx = (tx > x) - (tx < x)
-    dy = (ty > y) - (ty < y)
-    for cx, cy in ((x + dx, y + dy), (x + dx, y), (x, y + dy)):
-        if (cx, cy) != (x, y) and W.passable(w, cx, cy):
-            return True
-    return False
+# the eight ways a step can go, in the order a tie is broken
+_STEPS = ((0, -1), (1, 0), (0, 1), (-1, 0), (1, -1), (1, 1), (-1, 1), (-1, -1))
+
+
+def _path(w, sx, sy, tx, ty):
+    """The shortest way from one cell to another over walkable ground: the
+    cells to step on, the target last (the target itself need not be
+    walkable — a fixture's own cell is where you arrive). A plain
+    breadth-first search, eight ways, ties broken in `_STEPS` order, so it
+    is the same way every time. None when there is no way at all."""
+    if (sx, sy) == (tx, ty):
+        return []
+    came = {(sx, sy): None}
+    frontier = [(sx, sy)]
+    while frontier:
+        nxt = []
+        for cx, cy in frontier:
+            for ox, oy in _STEPS:
+                n = (cx + ox, cy + oy)
+                if n in came:
+                    continue
+                if n != (tx, ty) and not W.passable(w, *n):
+                    continue
+                came[n] = (cx, cy)
+                if n == (tx, ty):
+                    out = []
+                    while n != (sx, sy):
+                        out.append(n)
+                        n = came[n]
+                    out.reverse()
+                    return out
+                nxt.append(n)
+        frontier = nxt
+    return None
+
+
+def _reach(w, sx, sy):
+    """How many steps every walkable cell is from here (the same search as
+    `_path`, run to the end): what a walk can still get to this phase."""
+    dist = {(sx, sy): 0}
+    frontier = [(sx, sy)]
+    d = 0
+    while frontier:
+        d += 1
+        nxt = []
+        for cx, cy in frontier:
+            for ox, oy in _STEPS:
+                n = (cx + ox, cy + oy)
+                if n in dist:
+                    continue
+                dist[n] = d          # a fixture's cell is reached, not crossed
+                if W.passable(w, *n):
+                    nxt.append(n)
+        frontier = nxt
+    return dist
+
+
+def _follow(r, path, steps):
+    for x, y in path[:steps]:
+        r["where"]["x"], r["where"]["y"] = x, y
+    return len(path) <= steps
+
+
+def _hold(r, tx, ty, path, steps):
+    """Keep what is left of the way round once `steps` of it are walked."""
+    rest = path[steps:]
+    r["side"] = ({"to": [tx, ty], "path": [list(p) for p in rest]}
+                 if rest else None)
+
+
+def _route_walk(w, r, tx, ty, steps):
+    """Walk the shortest way there, up to `steps` steps: the walk a minder
+    makes in the evening (it was chosen because it can be made in the
+    phase), and the walk home at curfew (made with no step cap at all)."""
+    r["side"] = None
+    path = _path(w, r["where"]["x"], r["where"]["y"], tx, ty)
+    if path is None:
+        return False                      # walled in: no way there at all
+    return _follow(r, path, steps)
 
 
 def _walk(w, r, tx, ty, steps):
@@ -215,33 +285,36 @@ def _walk(w, r, tx, ty, steps):
     Grove's world had no walls, so a walk that only ever stepped *toward*
     its target always arrived. The estate has blocks, and a building is not
     merely dear to cross, it is impassable: every step toward the shop's
-    door from the cell just above it is the shop's own roof. Worse, the
-    first way round that suggested itself was the cell it had just come
-    from, so a walk beside the shop stepped back and forth between two
-    cells for forty steps and got nowhere — three children stood there for
-    a year.
+    door from the cell just above it is the shop's own roof.
 
-    So going round is a *maneuver*, not a per-step choice: once a walk has
-    picked a side it keeps going that way until the way toward the target
-    opens again, and only then resumes the direct walk.
+    Going round used to be a maneuver: pick a side and keep going that way
+    until a step toward the target opened. That is a trap at any wall
+    whose way round is not straight along it. North of the row, heading
+    for a door on its south side, the side step west opens a step back
+    east — to the cell the walk just left — so the walk swung between two
+    cells behind the block for the rest of the phase, and a family
+    stranded there spent the night out (seed 1, three nights in its first
+    two months). Now a walk that meets a wall takes the shortest way round
+    it from where it stands (`_path`): the whole remaining walk, not a
+    guess at a side. The way round is kept (`r["side"]`) until it has been
+    walked, so a walk that runs out of phase half-way round carries on
+    round next phase rather than stepping "toward" the target back into
+    the pocket it was leaving.
     """
-    for _ in range(steps):
+    held = r.get("side")
+    r["side"] = None
+    if isinstance(held, dict) and held.get("to") == [tx, ty] and held["path"]:
+        path = [tuple(p) for p in held["path"]]
+        wx, wy = r["where"]["x"], r["where"]["y"]
+        if max(abs(path[0][0] - wx), abs(path[0][1] - wy)) == 1:
+            _hold(r, tx, ty, path, steps)
+            return _follow(r, path, steps)
+    for n in range(steps):
         wx, wy = r["where"]["x"], r["where"]["y"]
         if wx == tx and wy == ty:
-            r["side"] = None
             return True
         dx = (tx > wx) - (tx < wx)
         dy = (ty > wy) - (ty < wy)
-        side = r["side"]
-        if side:
-            nx, ny = wx + side[0], wy + side[1]
-            if not W.passable(w, nx, ny):
-                r["side"] = None          # that way is shut too; choose again
-            else:
-                r["where"]["x"], r["where"]["y"] = nx, ny
-                if _can_step(w, nx, ny, tx, ty):
-                    r["side"] = None      # the wall has ended
-                continue
         forward = []
         if dx and dy:
             forward.append((wx + dx, wy + dy))
@@ -250,64 +323,69 @@ def _walk(w, r, tx, ty, steps):
         if dy:
             forward.append((wx, wy + dy))
         forward.sort(key=lambda p: W.walk_cost(w, *p) or 99)
-        moved = False
         for cx, cy in forward:
             if W.passable(w, cx, cy):
                 r["where"]["x"], r["where"]["y"] = cx, cy
-                r["side"] = None
-                moved = True
                 break
-        if moved:
-            continue
-        # every step toward the target is a wall. Go round: the ways round
-        # are exactly the directions that do not face it, and the shortest
-        # way round is the one that leaves the least walk afterwards.
-        toward = set()
-        if dx and dy:
-            toward.add((dx, dy))
-        if dx:
-            toward.add((dx, 0))
-        if dy:
-            toward.add((0, dy))
-        opts = []
-        for sx, sy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            if (sx, sy) in toward:
-                continue
-            cx, cy = wx + sx, wy + sy
-            if W.passable(w, cx, cy):
-                opts.append((abs(cx - tx) + abs(cy - ty), sx, sy, cx, cy))
-        if not opts:
-            return False                  # walled in on every side
-        opts.sort()
-        _, sx, sy, cx, cy = opts[0]
-        r["where"]["x"], r["where"]["y"] = cx, cy
-        r["side"] = (sx, sy)
+        else:
+            # every step toward the target is a wall: the way round it
+            path = _path(w, wx, wy, tx, ty)
+            if path is None:
+                return False              # walled in on every side
+            _hold(r, tx, ty, path, steps - n)
+            return _follow(r, path, steps - n)
     return r["where"]["x"] == tx and r["where"]["y"] == ty
 
 
-def _go_to(w, r, c):
-    """Leave home if inside, walk, and arrive — or run out of the phase."""
+def _set_off(w, r):
+    """Where a walk starts and how many steps it has this phase: from the
+    door, less the stairs, for someone indoors. None if they cannot get
+    out (no flat, or the stairs took the whole phase)."""
     budget = rules.R["engine"]["steps_per_phase"] * r["mobility"]
-    r["side"] = None                       # a new walk chooses its own way
+    if r["where"]["mode"] != "in":
+        return r["where"]["x"], r["where"]["y"], max(1, int(budget))
+    unit = _unit_of(w, r)
+    if unit is None:
+        return None
+    b = w["buildings"][str(unit["building"])]
+    # the stairs, priced by whatever the estate is doing today: a power
+    # cut is the lift going out, and a sixth floor with no lift is a
+    # longer walk than a sixth floor (the plan's own rider)
+    budget -= (unit["floor"] * rules.R["engine"]["stair_step"]
+               * W.stair_mult(w, b))
+    if budget <= 0:
+        return None
+    return b["door"][0], b["door"][1], max(1, int(budget))
+
+
+def _go_to(w, r, c, route=False, sure=False):
+    """Leave home if inside, walk, and arrive — or run out of the phase.
+
+    `route` walks the shortest way (`_route_walk`) rather than by feel, for
+    a walk that was chosen because it can be made in the phase. `sure` is
+    a walk that must arrive — the walk home at curfew — so it has no step
+    cap: the phase's budget is how far someone strolls, not how far they
+    will go to get the children home to bed."""
+    # `r["side"]` is a way round a wall still being walked (see `_walk`):
+    # it is kept only while the walk is to the same place
     # a walk starts from where you were; until you arrive and use a place,
     # `where.fixture` is not a claim about this phase (the views seat only
     # the residents whose chosen fixture is the bench they stand on)
     r["where"]["fixture"] = None
+    off = _set_off(w, r)
+    if off is None:
+        return False                       # the stairs took the whole phase
+    sx, sy, budget = off
     if r["where"]["mode"] == "in":
         unit = _unit_of(w, r)
-        if unit is None:
-            return False
-        b = w["buildings"][str(unit["building"])]
-        # the stairs, priced by whatever the estate is doing today: a
-        # power cut is the lift going out, and a sixth floor with no lift
-        # is a longer walk than a sixth floor (the plan's own rider)
-        budget -= (unit["floor"] * rules.R["engine"]["stair_step"]
-                   * W.stair_mult(w, b))
-        if budget <= 0:
-            return False                   # the stairs took the whole phase
-        r["where"] = {"mode": "at", "unit": unit["id"], "x": b["door"][0],
-                      "y": b["door"][1], "fixture": None}
-    arrived = _walk(w, r, c["x"], c["y"], max(1, int(budget)))
+        r["where"] = {"mode": "at", "unit": unit["id"], "x": sx, "y": sy,
+                      "fixture": None}
+    if sure:
+        arrived = _route_walk(w, r, c["x"], c["y"], w["width"] * w["height"])
+    elif route:
+        arrived = _route_walk(w, r, c["x"], c["y"], budget)
+    else:
+        arrived = _walk(w, r, c["x"], c["y"], budget)
     if not arrived:
         return False
     if c["kind"] == "home":
@@ -421,7 +499,7 @@ def _home_of(w, r, cand, phase):
     return (best[1], best[2]) if best else (None, None)
 
 
-def _choose(w, party, cand, phase, rng):
+def _choose(w, party, cand, phase, rng, wanted=None):
     """The place this party goes and the need, and whose need, it serves.
 
     A party of one is a resident choosing alone, exactly as before: the
@@ -429,17 +507,36 @@ def _choose(w, party, cand, phase, rng):
     one down. A minder's party pools everyone's needs and goes for the most
     pressing of them, whoever's it is — that is how a child's longing to
     play becomes a playground trip with a parent — but only to places the
-    minder may take children (`families.allows`).
+    minder may take children (`families.allows`). In the evening those are
+    the places near home the party can also *reach* this phase, so the
+    party ends the evening where the rule says it may be, not on the way.
+
+    `wanted` collects each member's ranked needs, so `_also` reads the
+    same list rather than ranking anyone twice in a phase (the gate's
+    friction samples one ranking per resident per phase).
     """
     lead = party[0]
     minding = len(party) > 1
+    ranked = {p["id"]: ranked_needs(w, p, phase) for p in party}
+    if wanted is not None:
+        wanted.update(ranked)
     wants = [(pressure(w, p, n, phase), n, p)
-             for p in party for n in ranked_needs(w, p, phase)]
+             for p in party for n in ranked[p["id"]]]
     wants.sort(key=lambda e: (-e[0], e[1], e[2]["id"]))
+    reach = None
+    if minding and families.reach_matters(phase):
+        off = _set_off(w, lead)
+        if off is not None:
+            sx, sy, budget = off
+            dist = _reach(w, sx, sy)
+            reach = (lambda c: dist.get((c["x"], c["y"]), budget + 1)
+                     <= budget)
+        else:
+            reach = lambda c: False       # noqa: E731 (stuck indoors)
     for _, need, p in wants:
         best, best_u = None, None
         for c in cand.get(need, ()):
-            if not families.allows(w, lead, c, phase, minding):
+            if not families.allows(w, lead, c, phase, minding, reach):
                 continue
             u = _utility(w, p, c, need, phase, rng)
             if u is not None and (best_u is None or u > best_u):
@@ -449,10 +546,13 @@ def _choose(w, party, cand, phase, rng):
     return None, None, None
 
 
-def _also(w, r, c, phase):
+def _also(w, r, c, phase, ranked=None):
     """What else a member of a party gets where the party went: their own
-    most pressing need the place meets, if a seat is free for them."""
-    for need in ranked_needs(w, r, phase):
+    most pressing need the place meets, if a seat is free for them.
+    `ranked` is their ranking from `_choose`, when there was one."""
+    if ranked is None:
+        ranked = ranked_needs(w, r, phase)
+    for need in ranked:
         if c["kind"] == "home":
             if rules.R["needs"][need].get("home"):
                 return need
@@ -488,7 +588,8 @@ def _live(w, party, cand, phase, line):
             h["occupants"].remove(p["id"])
         held.append((p, h))
     rng = W.rng_for(w["seed"], w["day"], f"whim:{r['id']}:{phase}")
-    best, need_of, who = _choose(w, party, cand, phase, rng)
+    wanted = {}
+    best, need_of, who = _choose(w, party, cand, phase, rng, wanted)
     if best is None and r["where"]["mode"] == "at" \
             and families.curfew(w, r, phase, minding):
         best, need_of = _home_of(w, r, cand, phase)
@@ -505,7 +606,14 @@ def _live(w, party, cand, phase, line):
             if h is not None:
                 h["occupants"].append(p["id"])   # still sitting
         return
-    arrived = _go_to(w, r, best)
+    # the walk home at curfew, and a minder's walk home in the evening,
+    # must arrive: they are made with no step cap. A minder's evening
+    # outing was chosen as one they can make in the phase, so it is walked
+    # the way it was measured.
+    home = best["kind"] == "home"
+    sure = home and families.sure_home(w, r, phase, minding)
+    route = minding and families.reach_matters(phase)
+    arrived = _go_to(w, r, best, route=route, sure=sure)
     # the children walk with their minder and are wherever they got to,
     # indoors or out — never left at the door or on the bench behind
     for k in party[1:]:
@@ -514,7 +622,7 @@ def _live(w, party, cand, phase, line):
         _satisfy(w, who, best, need_of, phase)
         for p in party:
             if p is not who:
-                also = _also(w, p, best, phase)
+                also = _also(w, p, best, phase, wanted.get(p["id"]))
                 if also is not None:
                     _satisfy(w, p, best, also, phase)
     for p in party:

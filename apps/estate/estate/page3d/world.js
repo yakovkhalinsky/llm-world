@@ -793,6 +793,14 @@ export function createWorld(ground, canvas, opts) {
    * every poll restarted the walk before it had got anywhere. */
   const routes = [], routeT0 = [], routeDur = [];
   const facing = [];
+  /* A young child out with a guardian is drawn beside them: `beside[i]` is
+   * the guardian's index (-1 for everyone else) and `besideX/Z` the step
+   * to their side. The child's figure is placed from wherever the
+   * guardian's figure ends up each frame, so it needs nothing from how the
+   * guardian's own place was worked out (scatter, seat, or a crowd
+   * placer). `drawnX/Z/Moving` are those per-frame places. */
+  const beside = [], besideX = [], besideZ = [];
+  const drawnX = [], drawnZ = [], drawnMoving = [];
   let routesBuilt = false;
   let routeFallbacks = 0;     // straight lines used because no path was found
   let routeMaxPoints = 0;
@@ -1061,46 +1069,57 @@ export function createWorld(ground, canvas, opts) {
     }
 
     /* A young child out on the plan walks beside the guardian the engine
-     * keeps them with (`with`, engine/families.py): the guardian's own
-     * route and timing, a small fixed step to their side, so the pair set
-     * off, walk and arrive as one. Beside a seated guardian the child
-     * stands in front of the bench rather than on the slats. */
+     * keeps them with (`with`, engine/families.py): the child's figure
+     * follows the guardian's figure a small fixed step to their side, so
+     * the pair set off, walk and arrive as one. Beside a seated guardian
+     * the child stands in front of the bench. A child who has a seat of
+     * their own (the engine seats a child at the bench the party went to,
+     * when there is room) sits on it like anyone else, and is not moved.
+     *
+     * This only records who is beside whom; `updateResidents` does the
+     * placing from the guardian's drawn place, after every figure has one.
+     * Nothing here reads or writes the per-figure scatter (`offX`/`offZ`)
+     * or the targets, so a page that places figures some other way (the
+     * crowd placer of PR #7) keeps the pair together the same way; that
+     * page should hand `with` to its placer, so its keep-out and tabletop
+     * rules see the pair as one. */
     const indexOf = new Map();
     for (let i = 0; i < people.length; i++) indexOf.set(people[i].id, i);
     for (let i = 0; i < people.length; i++) {
+      beside[i] = -1;
       const p = people[i];
       if (p.in || p.with == null || sitMode[i] === 1) continue;
       const j = indexOf.get(p.with);
       if (j === undefined || people[j].in) continue;
-      if (fresh) {
-        routes[i] = routes[j];
-        routeT0[i] = routeT0[j];
-        routeDur[i] = routeDur[j];
-      }
-      /* the step to the side: in front of a seated guardian, else the
-       * guardian's own scatter plus CHILD_BESIDE. `offX` is this page's
-       * per-figure scatter; a page that places figures absolutely instead
-       * (crowd.js, PR #7) has none, so there the child's place is moved
-       * and the shared route is left to the crowd's spacing. */
-      const sx = sitMode[j] === 1 ? seatFx[j] * CHILD_BESIDE[0]
-                                  : CHILD_BESIDE[0];
-      const sz = sitMode[j] === 1 ? seatFz[j] * CHILD_BESIDE[0]
-                                  : CHILD_BESIDE[1];
-      if (typeof offX !== 'undefined') {
-        toX[i] = toX[j];
-        toZ[i] = toZ[j];
-        offX[i] = (sitMode[j] === 1 ? 0 : offX[j]) + sx;
-        offZ[i] = (sitMode[j] === 1 ? 0 : offZ[j]) + sz;
-      } else {
-        toX[i] = toX[j] + sx;
-        toZ[i] = toZ[j] + sz;
-      }
+      beside[i] = j;
+      besideX[i] = sitMode[j] === 1 ? seatFx[j] * CHILD_BESIDE[0]
+                                    : CHILD_BESIDE[0];
+      besideZ[i] = sitMode[j] === 1 ? seatFz[j] * CHILD_BESIDE[0]
+                                    : CHILD_BESIDE[1];
       sitMode[i] = 0;
     }
 
     /* freeze at the hour the page is showing; re-anchor at the fraction
      * already reached when the day turns (Clock.onState). */
     Clock.onState(clock, now, st);
+  }
+
+  /* a standing (or walking) figure at x, z */
+  function standAt(i, x, z, moving, now) {
+    const s = roleScale[i];
+    /* a small gait while walking, still otherwise; and a body turned the
+     * way it is going */
+    const bob = moving
+      ? Math.sin(now * 0.009 + i * 1.7) * 0.02 * s
+      : 0;
+    dummy.rotation.set(0, facing[i], 0);
+    dummy.scale.set(s, s, s);
+    dummy.position.set(x, WALK_Y + 0.36 * s + bob, z);
+    dummy.updateMatrix();
+    bodyMesh.setMatrixAt(i, dummy.matrix);
+    dummy.position.set(x, WALK_Y + 0.82 * s + bob, z);
+    dummy.updateMatrix();
+    headMesh.setMatrixAt(i, dummy.matrix);
   }
 
   function updateResidents(now) {
@@ -1116,6 +1135,7 @@ export function createWorld(ground, canvas, opts) {
         headMesh.setMatrixAt(i, dummy.matrix);
         continue;
       }
+      if (beside[i] >= 0 && !people[beside[i]].in) continue;   // below
       const s = roleScale[i];
       const r = routes[i];
       let x = toX[i], z = toZ[i];
@@ -1133,6 +1153,9 @@ export function createWorld(ground, canvas, opts) {
       }
       x += offX[i];
       z += offZ[i];
+      drawnX[i] = x;
+      drawnZ[i] = z;
+      drawnMoving[i] = moving;
 
       /* somebody who has arrived at their bench sits; somebody still
        * walking there is still walking */
@@ -1155,19 +1178,16 @@ export function createWorld(ground, canvas, opts) {
         headMesh.setMatrixAt(i, dummy.matrix);
         continue;
       }
-      /* a small gait while walking, still otherwise; and a body turned the
-       * way it is going */
-      const bob = moving
-        ? Math.sin(now * 0.009 + i * 1.7) * 0.02 * s
-        : 0;
-      dummy.rotation.set(0, facing[i], 0);
-      dummy.scale.set(s, s, s);
-      dummy.position.set(x, WALK_Y + 0.36 * s + bob, z);
-      dummy.updateMatrix();
-      bodyMesh.setMatrixAt(i, dummy.matrix);
-      dummy.position.set(x, WALK_Y + 0.82 * s + bob, z);
-      dummy.updateMatrix();
-      headMesh.setMatrixAt(i, dummy.matrix);
+      standAt(i, x, z, moving, now);
+    }
+    /* the children beside their guardians, from where the guardian's
+     * figure was drawn this frame */
+    for (let i = 0; i < people.length; i++) {
+      const j = beside[i];
+      if (j === undefined || j < 0 || people[i].in || people[j].in) continue;
+      facing[i] = facing[j];
+      standAt(i, drawnX[j] + besideX[i], drawnZ[j] + besideZ[i],
+              drawnMoving[j], now);
     }
     bodyMesh.instanceMatrix.needsUpdate = true;
     headMesh.instanceMatrix.needsUpdate = true;
