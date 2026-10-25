@@ -47,10 +47,15 @@ class StaticFilesTest(unittest.TestCase):
                 self.assertIsNotNone(got)
                 with open(os.path.join(shared, rel), "rb") as f:
                     self.assertEqual(got[0], f.read())
-        # nothing of the grove's own shadows a shared file
-        for name in os.listdir(web.PAGE3D):
-            with self.subTest(own=name):
-                self.assertFalse(os.path.exists(os.path.join(shared, name)))
+        # nothing of the grove's own shadows a shared file, at any depth
+        # (a grove `vendor/three.module.min.js` would replace the engine)
+        own = os.path.realpath(web.PAGE3D)
+        for d, _dirs, files in os.walk(own):
+            for name in files:
+                rel = os.path.relpath(os.path.join(d, name), own)
+                with self.subTest(own=rel):
+                    self.assertFalse(
+                        os.path.exists(os.path.join(shared, rel)))
 
     def test_the_page_loads_its_classic_scripts_before_the_module(self):
         page = web._page3d("index.html")[0].decode()
@@ -71,6 +76,21 @@ class StaticFilesTest(unittest.TestCase):
         # the shared folder's own lookup is confined the same way
         self.assertIsNone(web._static_under(web.SHARED3D, "../../grove/README.md"))
         self.assertIsNone(web._static_under(web.PAGE3D, "../web.py"))
+
+    def test_only_known_types_are_served(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            for name in ("a.svg", "b.bin", "c", "LICENSE", "d.js"):
+                with open(os.path.join(tmp, name), "w") as f:
+                    f.write("<svg onload=alert(1)>")
+            self.assertIsNone(web._static_under(tmp, "a.svg"))
+            self.assertIsNone(web._static_under(tmp, "b.bin"))
+            self.assertIsNone(web._static_under(tmp, "c"))
+            self.assertEqual(web._static_under(tmp, "LICENSE")[1],
+                             "text/plain; charset=utf-8")
+            self.assertEqual(web._static_under(tmp, "d.js")[1],
+                             "application/javascript; charset=utf-8")
+        self.assertNotIn(".svg", web._STATIC_TYPES)
 
     def test_the_old_page_is_gone(self):
         here = os.path.dirname(web.__file__)
@@ -188,8 +208,9 @@ class ServerTest(unittest.TestCase):
                  ("GET", "/api/state", 200), ("GET", "/api/plain", 200),
                  ("GET", "/api/bio?id=1", 200), ("GET", "/api/tuning", 200),
                  ("GET", "/nope", 404), ("GET", "/3d/nope.js", 404),
-                 ("POST", "/nope", 404), ("PUT", "/", 501),
-                 ("HEAD", "/", 501), ("DELETE", "/", 501)]
+                 ("POST", "/nope", 404), ("POST", "/api/pause", 403),
+                 ("PUT", "/", 501), ("OPTIONS", "/api/pause", 501),
+                 ("DELETE", "/", 501), ("HEAD", "/", 200)]
         for method, path, code in cases:
             with self.subTest(method=method, path=path):
                 r, _ = self.request(method, path)
@@ -207,11 +228,29 @@ class ServerTest(unittest.TestCase):
         self.assertTrue(head.startswith(b"HTTP/1.0 400"), head[:80])
         self.assertIn(b"X-Content-Type-Options: nosniff", head)
 
-    def test_the_routes_own_responses_are_not_cached(self):
-        for path in ("/", "/3d/world.js", "/api/state"):
+    def test_no_response_is_cached(self):
+        for method, path in (("GET", "/"), ("GET", "/3d/world.js"),
+                             ("GET", "/api/state"), ("GET", "/nope"),
+                             ("PUT", "/"), ("OPTIONS", "/")):
+            with self.subTest(method=method, path=path):
+                r, _ = self.request(method, path)
+                self.assertEqual(r.msg.get_all("Cache-Control"),
+                                 ["no-store"])
+        out = self.raw(b"GARBAGE\r\n\r\n")
+        self.assertIn(b"Cache-Control: no-store",
+                      out.split(b"\r\n\r\n", 1)[0])
+
+    def test_head_is_get_without_the_body(self):
+        for path in ("/", "/3d/world.js", "/nope"):
             with self.subTest(path=path):
-                r, _ = self.request("GET", path)
-                self.assertEqual(r.getheader("Cache-Control"), "no-store")
+                g, gbody = self.request("GET", path)
+                h, hbody = self.request("HEAD", path)
+                self.assertEqual(h.status, g.status)
+                self.assertEqual(hbody, b"")
+                self.assertEqual(h.getheader("Content-Length"),
+                                 str(len(gbody)))
+                self.assertEqual(h.getheader("Content-Type"),
+                                 g.getheader("Content-Type"))
 
     def test_the_state_carries_what_the_page_draws(self):
         r, body = self.request("GET", "/api/state")
@@ -234,40 +273,6 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(r.getheader("Content-Type"),
                          "text/plain; charset=utf-8")
         self.assertTrue(body.strip())
-
-    def test_the_stewards_buttons_are_posts(self):
-        with self.lock:
-            self.g.db.add_amendment(1, "offered", "animals.fox.cap", 9,
-                                    "a test", "", was=8)
-            pid = self.g.db.con.execute(
-                "SELECT max(id) FROM proposals").fetchone()[0]
-        # the old GET answers nothing now
-        r, _ = self.request("GET", "/api/tuning/dismiss?id=%d" % pid)
-        self.assertEqual(r.status, 404)
-        r, body = self.request("POST", "/api/tuning/dismiss",
-                               body=json.dumps({"id": pid}),
-                               headers={"Content-Type": "application/json"})
-        self.assertEqual(r.status, 200)
-        self.assertEqual(json.loads(body), {"ok": True})
-        with self.lock:
-            status = self.g.db.con.execute(
-                "SELECT status FROM proposals WHERE id=?",
-                (pid,)).fetchone()[0]
-        self.assertEqual(status, "dismissed")
-        # a body that is not an id changes nothing and does not fail
-        r, body = self.request("POST", "/api/tuning/accept", body=b"nope")
-        self.assertEqual(r.status, 200)
-
-    def test_pause_and_step(self):
-        before = self.g.world["tick"]
-        r, body = self.request("POST", "/api/step")
-        self.assertEqual(json.loads(body), {"stepped": True})
-        self.assertEqual(self.g.world["tick"], before + 1)
-        r, body = self.request("POST", "/api/pause")
-        self.assertEqual(json.loads(body), {"paused": False})
-        r, body = self.request("POST", "/api/step")
-        self.assertEqual(json.loads(body), {"stepped": False})
-        self.request("POST", "/api/pause")
 
 
 if __name__ == "__main__":

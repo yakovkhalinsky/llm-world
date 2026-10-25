@@ -213,6 +213,9 @@ def build_parser():
                     help="wall seconds per day (default: the middle pace)")
     sp.add_argument("--public", action="store_true",
                     help="bind the LAN, not just loopback")
+    sp.add_argument("--allow-host", action="append", metavar="NAME",
+                    help="with --public, another name the page may be "
+                         "opened by (its controls refuse unknown hosts)")
     sp.add_argument("--offline", action="store_true",
                     help="no model, no watcher — the estate alone")
     sp.add_argument("--model", default="auto",

@@ -33,6 +33,7 @@ from . import operator
 from . import reviewer
 from . import rules
 from . import render
+from . import webguard
 from . import world as W
 from .app import Grove
 
@@ -246,7 +247,6 @@ _STATIC_TYPES = {
     ".js": "application/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
     ".json": "application/json",
-    ".svg": "image/svg+xml",
     ".png": "image/png",
     ".ico": "image/x-icon",
     ".txt": "text/plain; charset=utf-8",
@@ -292,8 +292,11 @@ def _static_under(base, rel):
         return None
     if os.path.basename(full).startswith("LICENSE"):
         return data, "text/plain; charset=utf-8"
-    ctype = _STATIC_TYPES.get(os.path.splitext(full)[1].lower(),
-                              "application/octet-stream")
+    # a fixed set of types: a file of any other kind is not served at all,
+    # rather than as a guess (and no SVG, which can carry script)
+    ctype = _STATIC_TYPES.get(os.path.splitext(full)[1].lower())
+    if ctype is None:
+        return None
     return data, ctype
 
 
@@ -311,7 +314,8 @@ def _respond(handler, code, body, ctype):
     handler._nosniff_sent = True      # `end_headers` adds it only if unset
     handler.send_header("Cache-Control", "no-store")
     handler.end_headers()
-    handler.wfile.write(data)
+    if handler.command != "HEAD":
+        handler.wfile.write(data)
 
 
 def plain(grove, lock):
@@ -322,15 +326,6 @@ def plain(grove, lock):
         if w is None:
             return "no world yet — run: grove new\n"
         return render.header(w) + "\n" + render.render_map(w) + "\n"
-
-
-def _read_pid(handler):
-    """Read {"id": N} from a POST body."""
-    try:
-        n = int(handler.headers.get("Content-Length", 0) or 0)
-        return int(json.loads(handler.rfile.read(n).decode()).get("id"))
-    except (ValueError, json.JSONDecodeError, TypeError):
-        return 0
 
 
 def _ip_hint(host):
@@ -349,7 +344,7 @@ def _ip_hint(host):
         return "lan ip undetectable — check hostname -I"
 
 
-def make_handler(g, lock, runner, data_dir, emb=None):
+def make_handler(g, lock, runner, data_dir, emb=None, hosts=None):
     """Build the request handler around a loaded grove.
 
     A factory rather than a closure inside `cmd_web`: the tests start a
@@ -359,6 +354,11 @@ def make_handler(g, lock, runner, data_dir, emb=None):
     The steward's accept and dismiss are POSTs: they change the rules, and
     the old page already sent them as POSTs (which this server used to
     answer only on GET, with a 404 on POST).
+
+    Every POST changes something, so every POST passes `webguard` first:
+    the page's own host and origin, a JSON body, a declared and bounded
+    length. `hosts` is the set of Host values it answers to; None means
+    the loopback names on the port the server is bound to.
     """
 
     class Handler(BaseHTTPRequestHandler):
@@ -367,6 +367,10 @@ def make_handler(g, lock, runner, data_dir, emb=None):
         # status line and no headers, so `end_headers` below never got the
         # chance to add nosniff to the 400.
         default_request_version = "HTTP/1.0"
+        # the socket's read timeout: a body shorter than its declared
+        # length, or a client that stops mid-request, costs a thread this
+        # long and then a 400, never a hang
+        timeout = 10
 
         def _send(self, code, body, ctype):
             _respond(self, code, body, ctype)
@@ -374,21 +378,28 @@ def make_handler(g, lock, runner, data_dir, emb=None):
         def log_message(self, *_a):   # keep the terminal readable
             pass
 
-        def send_response(self, code, message=None):
-            # a fresh response per request, including on a keep-alive
-            # connection: the flag below must not leak across requests
-            self._nosniff_sent = False
-            super().send_response(code, message)
-
         def end_headers(self):
             # `send_error` writes the stdlib's own HTML for a 501 (PUT,
-            # HEAD) or a 400 (a malformed request line) and never passes
-            # through `_respond`: the header belongs to every response,
-            # not to one route's writer.
+            # OPTIONS) or a 400 (a malformed request line) and never passes
+            # through `_respond`: the headers belong to every response, not
+            # to one route's writer. (One request per connection — the
+            # server speaks HTTP/1.0 — so the flag never outlives one.)
             if not getattr(self, "_nosniff_sent", False):
                 self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Cache-Control", "no-store")
                 self._nosniff_sent = True
             super().end_headers()
+
+        def _hosts(self):
+            if hosts is not None:
+                return hosts
+            return webguard.allowed_hosts("127.0.0.1",
+                                          self.server.server_address[1],
+                                          False, lookup=False)
+
+        def do_HEAD(self):
+            # GET's status and headers, without the body (`_respond`)
+            self.do_GET()
 
         def do_GET(self):
             path = urlparse(self.path).path
@@ -468,107 +479,133 @@ def make_handler(g, lock, runner, data_dir, emb=None):
 
         def do_POST(self):
             path = urlparse(self.path).path
-            if path == "/api/pause":
-                runner.paused = not runner.paused
-                self._send(200, json.dumps({"paused": runner.paused}),
-                           "application/json")
-            elif path == "/api/step":
-                if runner.paused:
-                    with lock:
-                        g.step()
-                        g.apply_results()
-                        g.maybe_schedule([])
-                    self._send(200, json.dumps({"stepped": True}),
-                               "application/json")
-                else:
-                    self._send(200, json.dumps({"stepped": False}),
-                               "application/json")
-            elif path == "/api/soul":
-                invited = False
-                if g.llm and g.llm.enabled and g.worker:
-                    with lock:
-                        if not g.worker.busy:
-                            g._invite_operator()
-                            invited = True
-                self._send(200, json.dumps({"invited": invited}),
-                           "application/json")
-            elif path == "/api/ask":
-                # the ask waits for its turn, then thinks OUTSIDE the
-                # world lock — the forest keeps ticking while it ponders
-                try:
-                    length = int(self.headers.get("Content-Length", 0) or 0)
-                    q = json.loads(
-                        self.rfile.read(length).decode()).get("q", "")
-                except Exception:
-                    q = ""
-                q = str(q).strip()[:300]
-                if not q:
-                    self._send(200, json.dumps({"answer": "…",
-                                                "excerpts": []}),
-                               "application/json")
-                    return
-                waited = 0.0
-                while g.worker and g.worker.busy and waited < 40:
-                    time.sleep(0.5)
-                    waited += 0.5
-                t0 = time.time()
-                # index newer chronicle lines through the embedder's own
-                # sqlite connection — never the sim's; the forest does
-                # not stall (and no half-written week can be sealed)
-                if g.llm is not None and g.llm.enabled:
-                    try:
-                        memory.ensure_index(emb, g.llm)
-                    except Exception:
-                        pass
-                with lock:                       # brief reads only
-                    if g.world is None or g.llm is None or not g.llm.enabled:
-                        self._send(200, json.dumps(
-                            {"answer": "the grove is wordless just now "
-                                       "(LLM off)", "excerpts": []}),
-                            "application/json")
-                        return
-                    rows = g.db.con.execute(
-                        "SELECT key, tick, text, vec FROM vec").fetchall()
-                    digest_text = operator.digest(g.world, [])
-                excerpts = memory.recall(g.db, g.llm, q, rows=rows)
-                prompt = ("question: " + q
-                          + "\n\ndigest of the world now:\n" + digest_text
-                          + "\n\nchronicle excerpts:\n"
-                          + "\n".join(f" wk{e['tick']}: {e['text']}"
-                                      for e in excerpts))
-                ans = g.llm.chat_json(memory.ASK_SYSTEM, prompt,
-                                      memory.ASK_SCHEMA, max_tokens=100,
-                                      temperature=0.7, retries=1,
-                                      job="ask")
-                answer = (ans or {}).get("answer", "")
-                answer = str(answer).strip()[:400]
-                if not answer:
-                    answer = "The grove lost the thought mid-way. Ask again?"
-                self._send(200, json.dumps(
-                    {"answer": answer, "excerpts": excerpts,
-                     "took": round(time.time() - t0, 1)}),
-                    "application/json")
-            elif path == "/api/tuning/accept":
-                pid = _read_pid(self)
-                with lock:
-                    row = g.db.con.execute(
-                        "SELECT rule, value FROM proposals WHERE id=? "
-                        "AND status IN ('pending','offered')",
-                        (pid,)).fetchone()
-                    if row and isinstance(row[1], (int, float)):
-                        reviewer.apply_amendment(g.db, rules, row[0],
-                                                 row[1])
-                        g.db.save_override(data_dir, rules)
-                self._send(200, json.dumps({"ok": True}),
-                           "application/json")
-            elif path == "/api/tuning/dismiss":
-                pid = _read_pid(self)
-                with lock:
-                    reviewer.dismiss(g.db, pid)
-                self._send(200, json.dumps({"ok": True}),
-                           "application/json")
-            else:
+            route = {
+                "/api/pause": self._pause,
+                "/api/step": self._step,
+                "/api/soul": self._soul,
+                "/api/ask": self._ask,
+                "/api/tuning/accept": self._accept,
+                "/api/tuning/dismiss": self._dismiss,
+            }.get(path)
+            if route is None:
                 self._send(404, "not found", "text/plain")
+                return
+            try:
+                webguard.check(self, self._hosts())
+                body = webguard.read_json(self)
+                code, out = route(body)
+            except webguard.Refused as e:
+                # whatever of the body was not read is not read now
+                self.close_connection = True
+                code, out = e.code, {"error": e.why}
+            self._send(code, json.dumps(out), "application/json")
+
+        def _pause(self, _body):
+            runner.paused = not runner.paused
+            return 200, {"paused": runner.paused}
+
+        def _step(self, _body):
+            if not runner.paused:
+                return 200, {"stepped": False}
+            with lock:
+                g.step()
+                g.apply_results()
+                g.maybe_schedule([])
+            return 200, {"stepped": True}
+
+        def _soul(self, _body):
+            invited = False
+            if g.llm and g.llm.enabled and g.worker:
+                with lock:
+                    if not g.worker.busy:
+                        g._invite_operator()
+                        invited = True
+            return 200, {"invited": invited}
+
+        def _ask(self, body):
+            # the ask waits for its turn, then thinks OUTSIDE the
+            # world lock — the forest keeps ticking while it ponders
+            q = body.get("q", "")
+            if not isinstance(q, str):
+                raise webguard.Refused(400, "q must be text")
+            q = q.strip()[:300]
+            if not q:
+                return 200, {"answer": "…", "excerpts": []}
+            waited = 0.0
+            while g.worker and g.worker.busy and waited < 40:
+                time.sleep(0.5)
+                waited += 0.5
+            t0 = time.time()
+            # index newer chronicle lines through the embedder's own
+            # sqlite connection — never the sim's; the forest does
+            # not stall (and no half-written week can be sealed)
+            if g.llm is not None and g.llm.enabled:
+                try:
+                    memory.ensure_index(emb, g.llm)
+                except Exception:
+                    pass
+            with lock:                       # brief reads only
+                if g.world is None or g.llm is None or not g.llm.enabled:
+                    return 200, {"answer": "the grove is wordless just now "
+                                           "(LLM off)", "excerpts": []}
+                rows = g.db.con.execute(
+                    "SELECT key, tick, text, vec FROM vec").fetchall()
+                digest_text = operator.digest(g.world, [])
+            excerpts = memory.recall(g.db, g.llm, q, rows=rows)
+            prompt = ("question: " + q
+                      + "\n\ndigest of the world now:\n" + digest_text
+                      + "\n\nchronicle excerpts:\n"
+                      + "\n".join(f" wk{e['tick']}: {e['text']}"
+                                  for e in excerpts))
+            ans = g.llm.chat_json(memory.ASK_SYSTEM, prompt,
+                                  memory.ASK_SCHEMA, max_tokens=100,
+                                  temperature=0.7, retries=1,
+                                  job="ask")
+            answer = (ans or {}).get("answer", "")
+            answer = str(answer).strip()[:400]
+            if not answer:
+                answer = "The grove lost the thought mid-way. Ask again?"
+            return 200, {"answer": answer, "excerpts": excerpts,
+                         "took": round(time.time() - t0, 1)}
+
+        def _proposal(self, body):
+            """The proposal a steward's button names: (id, rule, value),
+            or `Refused` — 404 for an id that names none, 409 for one
+            already applied, dismissed or expired."""
+            pid = webguard.positive_id(body)
+            row = g.db.con.execute(
+                "SELECT rule, value, status FROM proposals WHERE id=?",
+                (pid,)).fetchone()
+            if row is None:
+                raise webguard.Refused(404, "no such proposal")
+            if row[2] not in ("pending", "offered"):
+                raise webguard.Refused(409, f"already {row[2]}")
+            return pid, row[0], row[1]
+
+        def _accept(self, body):
+            with lock:
+                _pid, rule, value = self._proposal(body)
+                # the stored row is checked again against the law before
+                # it is applied: a row that names a whole table, or a
+                # value that is not a number, changes nothing
+                ok, value, why = reviewer.validate(
+                    {"rule": rule, "value": value})
+                current = reviewer._value_at(str(rule))
+                if not ok or isinstance(current, bool) or \
+                        not isinstance(current, (int, float)):
+                    raise webguard.Refused(
+                        409, "not a lawful amendment: " +
+                        (why or "it names no number in the rules"))
+                if not reviewer.apply_amendment(g.db, rules, rule, value):
+                    raise webguard.Refused(409, "the rule could not be set")
+                g.db.save_override(data_dir, rules)
+            return 200, {"ok": True, "rule": rule, "value": value}
+
+        def _dismiss(self, body):
+            with lock:
+                pid, _rule, _value = self._proposal(body)
+                reviewer.dismiss(g.db, pid)
+            return 200, {"ok": True}
 
     return Handler
 
@@ -601,14 +638,18 @@ def cmd_web(args):
                 time.sleep(75)
         threading.Thread(target=indexer, daemon=True).start()
 
-    Handler = make_handler(g, lock, runner, args.data,
-                           emb if g.llm and g.llm.enabled else None)
-
     port = args.port
     bind = "0.0.0.0" if args.public else "127.0.0.1"
+    hosts = webguard.allowed_hosts(bind, port, args.public,
+                                   getattr(args, "allow_host", None) or ())
+    Handler = make_handler(g, lock, runner, args.data,
+                           emb if g.llm and g.llm.enabled else None,
+                           hosts=hosts)
+
     print(f"grove web · world tick {g.world['tick']} "
           f"{W.season_name(g.world['tick'])}")
     print(_ip_hint(bind).format(port), flush=True)
+    print("  buttons answer at: " + ", ".join(sorted(hosts)), flush=True)
     srv = ThreadingHTTPServer((bind, port), Handler)
     try:
         srv.serve_forever()

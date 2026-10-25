@@ -280,6 +280,10 @@ def build_parser():
     sp.add_argument("--port", type=int, default=8787)
     sp.add_argument("--public", action="store_true",
                     help="bind 0.0.0.0 so other devices can reach it")
+    sp.add_argument("--allow-host", action="append", default=[],
+                    metavar="NAME",
+                    help="with --public, another name the page may be "
+                         "opened by (its buttons refuse unknown hosts)")
     sp.add_argument("--tick-seconds", type=float, default=12.0,
                     help="wall seconds per simulated week")
     _add_llm_flags(sp)

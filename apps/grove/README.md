@@ -93,6 +93,14 @@ trunk or water), and `python3 -m unittest discover -s tests`.
   `tmux` (or `nohup ./grove.sh web > grove-web.log 2>&1 &`) — the
   terminal view is the same world, and detach/reattach as you like.
 
+The page's buttons (pause, step, ask, accept/dismiss) are POSTs, and the
+server answers them only from the page itself: a JSON body, an `Origin`
+(if any) matching the `Host`, and a `Host` it knows. That is loopback
+always; with `--public`, also this box's LAN address and the station's
+tailnet name (`station.tail8a1a2.ts.net`) and its addresses. Opened by any
+other name, the page still shows but its buttons get a 403 — add the name
+with `--allow-host NAME` (repeatable). `web` prints the list it answers.
+
 Leave it running detached with `tmux` (recommended), or `nohup` a
 server: `nohup ./grove.sh web --public > grove-web.log 2>&1 &`; use
 `cron`/`systemd` if you want the grove to wake up on boot.

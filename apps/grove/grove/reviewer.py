@@ -281,7 +281,11 @@ def apply_amendment(db, rules_mod, path, value):
 
 
 def dismiss(db, proposal_id):
-    db.con.execute("UPDATE proposals SET status='dismissed' WHERE id=?",
-                   (proposal_id,))
+    """Dismiss a proposal still awaiting the keeper. One already applied,
+    dismissed or expired keeps its status: the ledger must not call a rule
+    in force dismissed. True if a proposal was dismissed."""
+    cur = db.con.execute(
+        "UPDATE proposals SET status='dismissed' "
+        "WHERE id=? AND status IN ('pending','offered')", (proposal_id,))
     db.con.commit()
-    return True
+    return cur.rowcount > 0

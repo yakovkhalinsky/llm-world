@@ -18,6 +18,7 @@ Default bind is loopback only (viewable through an ssh tunnel); pass
 """
 
 import json
+import math
 import os
 import random
 import socket
@@ -33,6 +34,7 @@ from . import render
 from . import rules
 from . import sim
 from . import watcher
+from . import webguard
 from . import world as W
 
 POLL_MS = 700          # what the page is told to wait between polls
@@ -470,8 +472,11 @@ def _ip_hint(host):
         return "lan ip undetectable — check hostname -I"
 
 
-def make_handler(est, lock, runner):
+def make_handler(est, lock, runner, hosts=None):
     """Build the request handler around a planted estate.
+
+    `hosts` is the set of `Host` values a POST is answered for (see
+    `webguard.allowed_hosts`); None means loopback on the bound port.
 
     A factory rather than a closure inside `cmd_web`: the tests start a
     real `ThreadingHTTPServer` on port 0 with this handler, and a test that
@@ -485,6 +490,9 @@ def make_handler(est, lock, runner):
         # chance to add nosniff to the 400. Every client this page has
         # speaks 1.0 or later.
         default_request_version = "HTTP/1.0"
+        # a client that declares a body and does not send it is dropped,
+        # not waited on forever
+        timeout = 10
 
         def _send(self, code, body, ctype):
             _respond(self, code, body, ctype)
@@ -546,27 +554,61 @@ def make_handler(est, lock, runner):
             else:
                 self._send(404, "no such thing", "text/plain")
 
+        def _hosts(self):
+            if hosts is not None:
+                return hosts
+            return webguard.allowed_hosts("127.0.0.1",
+                                          self.server.server_address[1],
+                                          False, lookup=False)
+
         def do_POST(self):
+            # The one POST changes the clock: pause, step, pace. It must come
+            # from the page — this host, this origin, a JSON body of a
+            # declared length — or a page on any other site the viewer has
+            # open could drive it (a text/plain form post needs no CORS
+            # preflight; a rebinding name needs no origin at all).
             path = urlparse(self.path).path
-            if path == "/api/control":
-                n = int(self.headers.get("Content-Length", 0) or 0)
-                try:
-                    req = json.loads(self.rfile.read(n).decode() or "{}")
-                except json.JSONDecodeError:
-                    req = {}
-                if "paused" in req:
-                    runner.paused = bool(req["paused"])
-                if "step" in req:
-                    runner.step_once += int(req["step"])
-                    runner.paused = True
-                if "tick_seconds" in req:
-                    runner.tick_seconds = max(0.2, float(req["tick_seconds"]))
-                self._send(200, json.dumps({"ok": True}),
-                           "application/json")
-            else:
+            if path != "/api/control":
                 self._send(404, "no such thing", "text/plain")
+                return
+            try:
+                webguard.check(self, self._hosts())
+                req = webguard.read_json(self)
+                code, out = _control(runner, req)
+            except webguard.Refused as e:
+                self.close_connection = True
+                code, out = e.code, {"error": e.why}
+            self._send(code, json.dumps(out), "application/json")
 
     return Handler
+
+
+def _control(runner, req):
+    """Apply one control request, all of it or none of it. Each field has
+    one type: `paused` a bool, `step` a whole number of days 1..100,
+    `tick_seconds` a finite number (clamped to 0.2s..1 day). Anything else
+    is a 400 and changes nothing."""
+    unknown = set(req) - {"paused", "step", "tick_seconds"}
+    if unknown:
+        raise webguard.Refused(400, "unknown field")
+    paused = req.get("paused")
+    if "paused" in req and type(paused) is not bool:
+        raise webguard.Refused(400, "paused must be true or false")
+    step = req.get("step")
+    if "step" in req and not (type(step) is int and 1 <= step <= 100):
+        raise webguard.Refused(400, "step must be a whole number 1..100")
+    pace = req.get("tick_seconds")
+    if "tick_seconds" in req and not (
+            type(pace) in (int, float) and math.isfinite(pace)):
+        raise webguard.Refused(400, "tick_seconds must be a number")
+    if "paused" in req:
+        runner.paused = paused
+    if "step" in req:
+        runner.step_once += step
+        runner.paused = True
+    if "tick_seconds" in req:
+        runner.tick_seconds = min(86400.0, max(0.2, float(pace)))
+    return 200, {"ok": True}
 
 
 def cmd_web(args):
@@ -588,12 +630,15 @@ def cmd_web(args):
     runner.daybooks = {d["day"]: d["book"] for d in est.past_days if d["book"]}
     runner.start()
 
-    Handler = make_handler(est, lock, runner)
-
     host = "0.0.0.0" if args.public else "127.0.0.1"
+    hosts = webguard.allowed_hosts(host, args.port, args.public,
+                                   getattr(args, "allow_host", None) or ())
+    Handler = make_handler(est, lock, runner, hosts=hosts)
+
     httpd = ThreadingHTTPServer((host, args.port), Handler)
     httpd.daemon_threads = True
     print(f"estate web — {_ip_hint(host).format(args.port)}")
+    print("  the controls answer at: " + ", ".join(sorted(hosts)))
     print(f"  day {est.world['day']} · {rules.active_biome()} · "
           f"{est.world['width']}×{est.world['height']} · "
           f"{llmm.status_line(est.llm)}")
