@@ -1,9 +1,10 @@
 # Highfield — a housing estate that lives
 
-A self-contained estate on a small language model: four residential blocks
-around a courtyard, a shop, a playground, benches, trees, and the people
-who live among them — going out, coming home, wearing the swings out,
-falling out with the neighbours, moving away, moving in.
+A self-contained estate on a small language model: one row of residential
+blocks along the north, open ground and a courtyard in front of them, a
+shop, a playground, benches, trees, and the people who live among them —
+going out, coming home, wearing the swings out, falling out with the
+neighbours, moving away, moving in.
 
 Nothing here waits on the model. The engine owns every fact, the world is
 fully deterministic per seed, and a small LLM is **a watcher with no
@@ -152,7 +153,16 @@ node tools/pixi_check.js /tmp/g.json /tmp/s.json
   evening, night — so a day is a life rather than a snapshot.
 - **The plan** is a rectangle of ground: road, path, paving, lawn, the
   playground, water, and building footprints. A building is entered at its
-  door and never crossed.
+  door and never crossed. The blocks stand in **one row along the north**,
+  doors facing south: a block always hides whatever stands behind it, and
+  both views look in from the south-east, so the row is at the back and
+  the ground in front — the courtyard with its shop, pond, playground,
+  tables and original benches, plus the perimeter footpath and its seats
+  on the open sides — stays visible. The north stretch of the perimeter
+  path runs behind the row, as a service path behind the blocks. The
+  recipe names the arrangement (`gen.layout:
+  "row"`) and sizes the row to keep the old four-block capacity: two
+  12-cell blocks of 7–9 floors and 4–5 flats a floor.
 - **Being inside is a state, not a coordinate.** A resident is either on the
   plan or in a flat; coming and going costs the stairs.
 - **Five needs** — food, rest, company, play (children only), and quiet —
@@ -242,10 +252,28 @@ subsystem. Over 60 days at seed 42 the perimeter went from no residents to
 
 That is a deliberate change to the world, and the gate's fingerprint moved
 with it — `dcb219a70d21072f` on main → `ba8cdf35318ba5eb` when the first
-benches landed → `0a687daff322d77a` now. Every law still holds, with
-friction between 1.43 and 1.52 and distinctness between 8.74 and 8.94. The
-footpath moves the trees, so the generation is not a no-op for them; the
-courtyard's own fixtures stand where they stood.
+benches landed → `0a687daff322d77a` when the perimeter benches landed. Every
+law held then, with friction between 1.43 and 1.52 and distinctness
+between 8.74 and 8.94. The footpath moves the trees, so the generation is
+not a no-op for them; the courtyard's own fixtures stand where they stood.
+
+The row is the branch's other deliberate change. `gen.layout` names the
+arrangement, and the estate's is `"row"`: two 12-cell blocks on one
+northern line, doors south, with the courtyard and the open ground in
+front. Four blocks had put two of them between the south-east views and
+the ground behind; a row at the back hides nothing, where a line through
+the middle would have hidden half the estate. The row is fewer and
+taller — 7–9 floors and 4–5 flats a floor — so seed 42 holds 71 flats
+against 67, and 64–85 across the gate's eight seeds against 60–81; its
+population after 30 days is 52 against 53, and over the gate's three
+years it settles at 123–158 residents and 0.79–0.81 occupancy. The
+perimeter path and its benches keep their band, and the courtyard's seven
+benches keep their cells at seed 42; the trees (and one perimeter seat)
+move because the open ground changed.
+
+The gate's fingerprint moved `0a687daff322d77a` → `010d3b9656ef8a9d`
+because this is a deliberate generation change. Every law holds, with
+friction between 1.40 and 1.50 and distinctness between 8.88 and 8.94.
 
 Nineteen faults are recorded in `docs/BUGS.md` under Grove's sixteen
 classes. Almost none of them crashed anything. They were found by asking

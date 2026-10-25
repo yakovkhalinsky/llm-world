@@ -167,9 +167,22 @@ SPEC = {
 
     # --------------------------------------------------------- the recipe
     "gen": {
-        "blocks": 4,
-        "block_floors": (3, 6),
-        "units_per_floor": (3, 5),
+        # One row of blocks along the north, not four around a courtyard:
+        # a block always hides what stands behind it, so the estate keeps
+        # its blocks on one far side and leaves the ground in front of them
+        # open. Both views look from the south-east, so a north row shows
+        # the courtyard, the shop, the pond, the playground and the
+        # perimeter path instead of standing in front of them. The row is
+        # two 12-cell blocks, centred, with the recipe's gap between them.
+        "layout": "row",
+        "blocks": 2,
+        # Fewer buildings, so each holds what two used to: the row is
+        # taller than the old four (7–9 floors against 3–6) and a little
+        # wider per floor (4–5 flats against 3–5), which keeps the total
+        # near the ~67 flats the four-block plan held at seed 42 (71 there,
+        # and 64–85 over the gate's eight seeds against 60–81 before).
+        "block_floors": (7, 9),
+        "units_per_floor": (4, 5),
         "block_gap": 2,                 # cells between a block and the road
         "road_width": 2,
         "playgrounds": 1,

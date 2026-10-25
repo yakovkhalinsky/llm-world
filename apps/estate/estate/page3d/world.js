@@ -208,7 +208,8 @@ export function createWorld(ground, canvas, opts) {
   scene.fog = new THREE.Fog(SKY[2].sky, maxDim * 1.3, maxDim * 2.8);
 
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
-  /* high enough to see over the front blocks into the courtyard, still
+  /* from the south-east, where both views look in, and high enough to
+   * hold the north block row and the open courtyard in front of it, still
    * oblique enough that a block reads as a block and not as a plan */
   camera.position.set(centre.x + 20, centre.y + 38, centre.z + 24);
 

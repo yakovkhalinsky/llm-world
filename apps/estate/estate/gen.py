@@ -1,10 +1,10 @@
 """Seeded, deterministic estate generation — pure code, no LLM involved.
 
 Draws a plan, not a landscape: a ring road with a footpath along its inner
-edge, four residential blocks facing a courtyard, a shop, a pond, a
-playground, and the fixtures and households that fill them. Everything
-comes from (seed, 0, "gen") in a fixed order, so the same seed is the same
-estate in any process.
+edge, one row of residential blocks along the north facing open ground, a
+shop, a pond, a playground, and the fixtures and households that fill
+them. Everything comes from (seed, 0, "gen") in a fixed order, so the same
+seed is the same estate in any process.
 """
 
 from . import rules
@@ -48,19 +48,60 @@ def generate(seed: int, width: int = None, height: int = None,
     cx0, cx1 = rw + 6, w - rw - 7
     _rect(cells, cx0, cy0, cx1, cy1, "paved")
 
-    # --- the four blocks, facing the courtyard --------------------------
+    # --- the blocks, in the recipe's layout -----------------------------
+    # `layout` is the estate's arrangement, not a decoration of it. A block
+    # is impassable, and a block in front of something hides it from both
+    # views (they look from the south-east): the four-block quad put two
+    # blocks between the camera and the courtyard's own south side. The
+    # row lays every block along the north, doors south, so the ground in
+    # front — the courtyard with its shop, pond, playground and tables, and
+    # the perimeter path — is open and visible from either view.
     bw, bh = 12, 6
     gap = g["block_gap"]
-    by_top = rw + rw + gap
-    by_bot = h - rw - rw - bh - gap
-    bx_left = rw + rw + gap
-    bx_right = w - rw - rw - bw - gap - 1
+    layout = g.get("layout", "quad")
     blocks = []
-    for (bx, by) in ((bx_left, by_top), (bx_right, by_top),
-                     (bx_left, by_bot), (bx_right, by_bot)):
-        if bx + bw >= w - rw or by + bh >= h - rw or bx < rw or by < rw:
-            continue                       # too small a plan for four
-        blocks.append((bx, by))
+    if layout == "row":
+        # centred across the plan, shoulder to shoulder with `block_gap`
+        # between neighbours; the north band leaves the perimeter's bench
+        # row and footpath clear above them
+        n = g["blocks"]
+        span = n * bw + max(0, n - 1) * gap
+        bx = (w - span) // 2
+        by = rw + rw + gap
+        # the inner ground starts and ends a road's width inside each
+        # outer margin: x = 2rw .. w-2rw-1 and y likewise
+        if (bx < rw * 2 or bx + span > w - rw * 2
+                or by + bh > h - rw * 2):
+            raise ValueError(
+                f"the recipe asks for {n} blocks in a row {span} cells wide "
+                f"but this {w}×{h} plan's inner ground is only "
+                f"{max(0, w - 4 * rw)} wide — widen the plan or lower "
+                f"gen.blocks")
+        for i in range(n):
+            blocks.append((bx + i * (bw + gap), by))
+    elif layout == "quad":
+        by_top = rw + rw + gap
+        by_bot = h - rw - rw - bh - gap
+        bx_left = rw + rw + gap
+        bx_right = w - rw - rw - bw - gap - 1
+        for (bx, by) in ((bx_left, by_top), (bx_right, by_top),
+                         (bx_left, by_bot), (bx_right, by_bot)):
+            if bx + bw >= w - rw or by + bh >= h - rw or bx < rw or by < rw:
+                continue                   # too small a plan for four
+            blocks.append((bx, by))
+    else:
+        # an unknown arrangement is a recipe that does not say what it
+        # means; guessing a layout is how a key becomes a decoration (b34)
+        raise ValueError(
+            f"gen.layout is {layout!r} — expected 'row' or 'quad'")
+
+    # The row is the estate's promise about the open ground, so a plan too
+    # narrow to hold it must say so rather than quietly drop a block.
+    if len(blocks) != g["blocks"]:
+        raise ValueError(
+            f"the recipe asks for {g['blocks']} blocks in a {layout} but "
+            f"this plan holds {len(blocks)} — widen the plan or lower "
+            f"gen.blocks")
 
     st["buildings"] = {}
     st["units"] = {}
