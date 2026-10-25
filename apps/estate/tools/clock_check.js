@@ -87,8 +87,10 @@ for (const k of [Clock.LIGHT[0], Clock.LIGHT[Clock.LIGHT.length - 1]]) {
 {
   const k9 = Clock.LIGHT.find(k => k.at === 0.9);
   ok('a dusk key at 0.90 steps evening down to the night',
-     k9 && k9.hemiI === 0.42 && k9.sunI === 0.6 &&
-     hexIs(k9.sky, 0x3a2c3e) && k9.dark === 0.8,
+     k9 && k9.hemiI === 0.58 && k9.sunI === 0.85 &&
+     hexIs(k9.sun, 0xd8a08c) && hexIs(k9.sky, 0x5a3c4e) &&
+     hexIs(k9.hemiSky, 0x9a86a4) && hexIs(k9.hemiGround, 0x36302e) &&
+     k9.dark === 0.8,
      JSON.stringify(k9));
 }
 {
