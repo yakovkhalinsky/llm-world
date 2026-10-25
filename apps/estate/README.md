@@ -96,6 +96,79 @@ at runtime and the whole thing works offline. If WebGL will not start, the
 page shows the server's glyph map (`/api/plain`) rather than a blank
 rectangle.
 
+## The model
+
+The estate runs without one (`--offline`, or no Ollama): the watcher
+sends fates from the same rules and the chronicle keeps its templates.
+`./estate.sh web` gives it a model:
+
+**One model per kind of job.** Every call is one of three kinds, and each
+kind has its own flag and default:
+
+| flag | default | used for |
+|---|---|---|
+| `--choice-model` | `qwen3:4b-instruct-2507-q4_K_M` | the watcher's daily fate |
+| `--prose-model` | `gemma3:4b` | the chronicle |
+| `--cloud-model` | `deepseek-v4.1-flash:cloud` | with `--tier cloud`, tried first for every chat job |
+| `--decide` | `rules` | `rules`: the choice is made in code (`decide.py`); `llm`: the model picks from the menu, as before |
+| `--keep-alive` | `2m` | sent as Ollama's `keep_alive` on every call (`0` unloads at once) |
+| `--resident` | `one` | `one`: unload the other local chat model before switching; `many`: leave that to Ollama |
+| `--model-lock` | `/tmp/llm-world-ollama.lock` | the file every llm-world process locks around a call; empty = in-process only |
+| `--model NAME` | — | pin every chat job to exactly one model (any tag Ollama has, cloud or local) |
+
+`--tier cloud` (the default) puts the cloud model in front of each job and
+falls back to that job's local model, then the other local model, then
+`llama3.2:3b` if it happens to be installed; `--tier local` never leaves
+the box. Pull the defaults once:
+
+```sh
+ollama pull qwen3:4b-instruct-2507-q4_K_M
+ollama pull gemma3:4b
+```
+
+(There is no bare `qwen3:4b-instruct-2507` tag; use the quantised one.)
+
+**Choices are made in code; the model writes the words.** With
+`--decide rules` the menu question is answered by `decide.py`: a
+deterministic, seeded weighting of what the world is showing (the
+SystemOne shape — `{type, probs, pick, confidence}` per question), passed
+through the same validator a model's answer is. The model is then asked
+only for language — the watcher's one line of why — under a small schema sent as Ollama's
+`format`. No model, a missing model or a full queue lands the same choice
+with a template line, so the world moves the same way with or without a
+model. `--offline` (AI off) never runs `decide` at all, so offline worlds
+and their fingerprints are unchanged.
+
+**A missing model says so.** Each job's chain is filtered to what Ollama
+has installed (`/api/tags`; a bare name matches `:latest`, a `:cloud` name
+may be confirmed by `/api/show`). The status line in the HUD and the
+`models` block in `/api/state` name each job's model, and a job whose
+model is not installed is reported — `not installed: gemma3:4b (jobs on
+templates)` — instead of failing as a silent 404. A 404 mid-run marks the
+model missing and moves the job along its chain. An unreachable Ollama is
+re-probed every 60 s; a model pulled while it runs is picked up the same
+way.
+
+**Request shape.** Schemas go in `format`. `think: false` is sent only to
+local tags that would otherwise think (qwen3 tags without `instruct`,
+smollm3); instruct tags, gemma and cloud models get no `think` key, and
+cloud calls get extra token headroom for their hidden reasoning.
+
+**Memory on a small box.** The station is a Raspberry Pi 5 with 16 GB and
+a 2 GB swap that is already well used, and the estate and the grove share
+one Ollama. A 4B q4 model is ~2.5–3.5 GB resident, so qwen and gemma
+together, plus nomic, plus the sims, pushes the Pi into swap and every
+call crawls. So:
+
+- calls are **serialised** — one at a time within a process (a lock), and
+  across the estate and the grove by an `flock` on `--model-lock`;
+- with `--resident one` the other local chat model is unloaded (via
+  `keep_alive: 0`) before a different one is used, so qwen and gemma are
+  never both loaded; the embedder (small) and cloud models are exempt;
+- `--keep-alive 2m` lets a model go two minutes after its last call
+  rather than Ollama's default five. On a bigger box, `--resident many
+  --keep-alive 10m` keeps both warm.
+
 ## The view
 
 The estate has one view, in three dimensions, at
@@ -333,8 +406,9 @@ A world of met needs is a dead world. Three loops prevent it:
 | `estate/gen.py` | seeded estate generation (no LLM) |
 | `estate/render.py` | the terminal view: the plan and the day's lines |
 | `estate/web.py` | the dashboard's server: the 3D page, the state API, the tick thread |
-| `estate/watcher.py` | the watcher: the menu, the digest, the validator |
-| `estate/llm.py` | the Ollama client: one voice, one chain, never raises |
+| `estate/watcher.py` | the watcher: the menu, the digest, the validator, the why |
+| `estate/decide.py` | the watcher's choice made in code: seeded weights over the fates and regions |
+| `estate/llm.py` | the Ollama client: a model per job, missing-model status, one call at a time, never raises |
 | `estate/chronicler.py` | the estate's record of its own days, with and without a model |
 | `estate/engine/households.py` | ageing, births, deaths, emigration, the letting office |
 | `estate/engine/effects.py` | the watcher's fates: what lands, what lasts, what ages |

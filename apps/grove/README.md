@@ -6,11 +6,13 @@
 A living forest biome that runs on your machine: ponds, pines, willows,
 berry glades, grass, mushrooms — and rabbits, deer, foxes, owls, robins
 and boars living, hunting, starving and being born through the seasons.
-A language model is the **World Soul**: roughly every minute it decides
-which fate befalls the woods (a storm, a drought, a blight, a bloom, a
-passing wolf...), its words become the chronicle, and it names the
-newborns — by default `glm-5.3-flash:cloud` through your own Ollama,
-with `--tier local` pinning the whole forest on-box.
+A **World Soul** decides, roughly every minute, which fate befalls the
+woods (a storm, a drought, a blight, a bloom, a passing wolf...); a
+language model gives it words, writes the chronicle and names the
+newborns — by default `deepseek-v4.1-flash:cloud` through your own
+Ollama with small local models behind it (`qwen3:4b-instruct-2507-q4_K_M`
+for choices, `gemma3:4b` for prose), and `--tier local` keeps the whole
+forest on-box.
 
 No API keys, ever — even the cloud voice comes through your own Ollama.
 State lives in one SQLite file. Zero pip dependencies — the engine is
@@ -124,18 +126,78 @@ if you prefer.
 ## The model
 
 Small-model reality: on a ~2 GHz 4-core CPU there is no GPU and inference
-is CPU-bound — ~1.9 tok/s generation on Llama-3.2-3B. The local tier is
-tuned for slow silicon:
+is CPU-bound — ~1.9 tok/s generation on Llama-3.2-3B. The local models
+are tuned for slow silicon:
 
-- **the default tier: one cloud voice with local fallback.** Every
-  job — the World Soul's decisions, the chronicle, naming and diaries,
-  the asks, the steward — speaks with ONE model and moves as one down
-  its chain. The default is `glm-5.3-flash:cloud` (a few seconds per
-  call through the same Ollama); two failed calls step down the chain, and
-  when no cloud model is reachable the forest falls back onto the local
-  llama.
-- **`--tier local`**: fully offline and spend-free: the same one voice
-  pinned to `llama3.2:3b` across every job.
+**One model per kind of job.** Every call is one of three kinds, and each
+kind has its own flag and default:
+
+| flag | default | used for |
+|---|---|---|
+| `--choice-model` | `qwen3:4b-instruct-2507-q4_K_M` | the World Soul's operator, the steward's review |
+| `--prose-model` | `gemma3:4b` | the chronicle, naming and diaries, ask the grove |
+| `--embed-model` | `nomic-embed-text` | ask-the-grove's chronicle vectors |
+| `--cloud-model` | `deepseek-v4.1-flash:cloud` | with `--tier cloud`, tried first for every chat job |
+| `--decide` | `rules` | `rules`: the choice is made in code (`decide.py`); `llm`: the model picks from the menu, as before |
+| `--keep-alive` | `2m` | sent as Ollama's `keep_alive` on every call (`0` unloads at once) |
+| `--resident` | `one` | `one`: unload the other local chat model before switching; `many`: leave that to Ollama |
+| `--model-lock` | `/tmp/llm-world-ollama.lock` | the file every llm-world process locks around a call; empty = in-process only |
+| `--model NAME` | — | pin every chat job to exactly one model (any tag Ollama has, cloud or local) |
+
+`--tier cloud` (the default) puts the cloud model in front of each job and
+falls back to that job's local model, then the other local model, then
+`llama3.2:3b` if it happens to be installed; `--tier local` never leaves
+the box. Pull the defaults once:
+
+```sh
+ollama pull qwen3:4b-instruct-2507-q4_K_M
+ollama pull gemma3:4b
+ollama pull nomic-embed-text
+```
+
+(There is no bare `qwen3:4b-instruct-2507` tag; use the quantised one.)
+
+**Choices are made in code; the model writes the words.** With
+`--decide rules` the menu question is answered by `decide.py`: a
+deterministic, seeded weighting of what the world is showing (the
+SystemOne shape — `{type, probs, pick, confidence}` per question), passed
+through the same validator a model's answer is. The model is then asked
+only for language — the soul's intent and a destiny's text, the steward's verdict — under a small schema sent as Ollama's
+`format`. No model, a missing model or a full queue lands the same choice
+with a template line, so the world moves the same way with or without a
+model. `--offline` (AI off) never runs `decide` at all, so offline worlds
+and their fingerprints are unchanged.
+
+**A missing model says so.** Each job's chain is filtered to what Ollama
+has installed (`/api/tags`; a bare name matches `:latest`, a `:cloud` name
+may be confirmed by `/api/show`). The status line in the HUD and the
+`models` block in `/api/state` name each job's model, and a job whose
+model is not installed is reported — `not installed: gemma3:4b (jobs on
+templates)` — instead of failing as a silent 404. A 404 mid-run marks the
+model missing and moves the job along its chain. An unreachable Ollama is
+re-probed every 60 s; a model pulled while it runs is picked up the same
+way.
+
+**Request shape.** Schemas go in `format`. `think: false` is sent only to
+local tags that would otherwise think (qwen3 tags without `instruct`,
+smollm3); instruct tags, gemma and cloud models get no `think` key, and
+cloud calls get extra token headroom for their hidden reasoning.
+
+**Memory on a small box.** The station is a Raspberry Pi 5 with 16 GB and
+a 2 GB swap that is already well used, and the estate and the grove share
+one Ollama. A 4B q4 model is ~2.5–3.5 GB resident, so qwen and gemma
+together, plus nomic, plus the sims, pushes the Pi into swap and every
+call crawls. So:
+
+- calls are **serialised** — one at a time within a process (a lock), and
+  across the estate and the grove by an `flock` on `--model-lock`;
+- with `--resident one` the other local chat model is unloaded (via
+  `keep_alive: 0`) before a different one is used, so qwen and gemma are
+  never both loaded; the embedder (small) and cloud models are exempt;
+- `--keep-alive 2m` lets a model go two minutes after its last call
+  rather than Ollama's default five. On a bigger box, `--resident many
+  --keep-alive 10m` keeps both warm.
+
 - The world never waits on the model: the sim ticks happily while the
   soul ponders, and results land at the next week boundary.
 
@@ -175,10 +237,12 @@ can name, follow and lose.
 
 - **World Soul** — roughly one decision every minute (wall time; the
   cloud soul every 40–80 s, the offline llama every 60–120 s):
-  a ≤ 400-token digest → one JSON decision from an enumerated menu
+  one choice from an enumerated menu
   (`storm, drought, blight, bloom, migration, visitor, destiny, quiet`),
-  applied by validated, deterministic rules. Nonsense in → `quiet` out.
-  Ollama down → `quiet`.
+  made in code by `decide.py` (`--decide rules`, the default) or by the
+  model from a ≤ 400-token digest (`--decide llm`), applied by validated,
+  deterministic rules. The model writes only the intent; no model → the
+  same move with a template line. Nonsense in → `quiet` out.
 - **Chronicler** — notable events are described by template lines the
   instant they happen; a background call rewrites them when the model is
   ready (☾), rejecting lines that hallucinate off-event, restate the
@@ -205,11 +269,12 @@ all species must persist).
 | `grove/gen.py` | seeded worldgen (no LLM) |
 | `grove/sim.py` | the tick engine + validated operator effects |
 | `grove/events.py` | which events are chronicle-worthy |
-| `grove/operator.py` | World Soul: digest, menu schema, validation |
+| `grove/operator.py` | World Soul: digest, menu schema, validation, the words |
+| `grove/decide.py` | the soul's move and the steward's amendments chosen in code |
 | `grove/chronicler.py` | narration prompts + template fallbacks |
 | `grove/voice.py` | naming |
 | `grove/memory.py` | ask-the-grove: chronicle retrieval + answer |
-| `grove/llm.py` | Ollama client (schema chats, the one-voice model chain) |
+| `grove/llm.py` | Ollama client: a model per job, missing-model status, one call at a time |
 | `grove/render.py` | the emoji map + header + chronicle feed |
 | `grove/db.py` | SQLite: world, stats, events, chronicle, cache, biographies |
 | `grove/app.py` | shared runner (used by CLI and web) |
