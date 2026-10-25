@@ -58,18 +58,196 @@
     return (k && k[sp]) || '';
   }
 
+  /* ------------------------------------------------------- what is drawn
+   * The engine grows a forest you could not see into from above: a tree,
+   * a sapling and three ferns in a cell, in every cell. The page draws a
+   * thinned forest instead (the sim keeps every plant):
+   *  - paths: from each ford, four cells out either side, square to the
+   *    creek; nothing grows on them but the ferns at their edge and logs;
+   *  - clearings: a few 3×3 glades, by a hash of the cell and the world,
+   *    five cells apart, holding logs and a fern or two;
+   *  - banks (land beside water): only weeping trees stand there, so the
+   *    water can be seen;
+   *  - elsewhere at most one standing tree in a cell (the old one first,
+   *    then by id), a fifth of the old ones and a third of the mature ones
+   *    dropped by hash, a third of the saplings, never under a standing
+   *    tree, and at most one fern a cell (two in three of them).
+   * A named plant is always drawn. Pure: the same snapshot
+   * draws the same forest, and `trunks` routes round exactly what is
+   * drawn. */
+  var CLEAR_EVERY = 90;      // about one glade per this many cells
+  function cellAt(st, x, y) {
+    var N = Number(st.size) | 0;
+    if (x < 0 || y < 0 || x >= N || y >= N) return null;
+    return st.cells[y * N + x] || null;
+  }
+  function isWater(st, x, y) {
+    var c = cellAt(st, x, y);
+    return !!c && c[0] === 'w';
+  }
+  function zones(st) {
+    var N = Number(st.size) | 0;
+    var bank = {}, path = {}, clear = {}, centres = [];
+    var x, y, k;
+    for (y = 0; y < N; y++) {
+      for (x = 0; x < N; x++) {
+        if (isWater(st, x, y)) continue;
+        if (isWater(st, x + 1, y) || isWater(st, x - 1, y) ||
+            isWater(st, x, y + 1) || isWater(st, x, y - 1)) {
+          bank[x + ',' + y] = 1;
+        }
+      }
+    }
+    for (y = 0; y < N; y++) {
+      for (x = 0; x < N; x++) {
+        var c = cellAt(st, x, y);
+        if (!c || c[6] !== 'f') continue;
+        path[x + ',' + y] = 1;
+        /* the creek runs along x when its water is east and west of the
+         * ford; the path then crosses along y, and the other way about */
+        var along = isWater(st, x - 1, y) || isWater(st, x + 1, y);
+        var dx = along ? 0 : 1, dy = along ? 1 : 0;
+        [-1, 1].forEach(function (sgn) {
+          for (k = 1; k <= 4; k++) {
+            var px = x + dx * k * sgn, py = y + dy * k * sgn;
+            var pc = cellAt(st, px, py);
+            if (!pc || pc[0] === 'w') break;
+            path[px + ',' + py] = 1;
+          }
+        });
+      }
+    }
+    var seed = Number(st.seed) | 0;
+    var most = Math.max(1, Math.floor(N * N / CLEAR_EVERY));
+    for (y = 2; y < N - 2 && centres.length < most; y++) {
+      for (x = 2; x < N - 2 && centres.length < most; x++) {
+        if (isWater(st, x, y) || bank[x + ',' + y] || path[x + ',' + y]) continue;
+        if (hash(x * 977 + y * 131, 7001 + seed) % CLEAR_EVERY > 2) continue;
+        var near = centres.some(function (q) {
+          return Math.max(Math.abs(q[0] - x), Math.abs(q[1] - y)) < 5;
+        });
+        if (near) continue;
+        centres.push([x, y]);
+        for (var cy = y - 1; cy <= y + 1; cy++) {
+          for (var cx = x - 1; cx <= x + 1; cx++) {
+            if (!isWater(st, cx, cy)) clear[cx + ',' + cy] = 1;
+          }
+        }
+      }
+    }
+    return { bank: bank, path: path, clear: clear, centres: centres };
+  }
+
+  function shapeOf(st, sp) {
+    var s = st.biome && st.biome.shapes;
+    return (s && s[sp]) || '';
+  }
+
+  var DRAWN = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+  /* By plant id, 1 for every plant the page draws; and the zones. */
+  function drawn(st) {
+    if (DRAWN && DRAWN.has(st)) return DRAWN.get(st);
+    var Z = zones(st);
+    var ids = {};
+    var plants = (st.plants || []).slice().sort(function (a, b) {
+      return a.id - b.id;
+    });
+    var standing = {}, ferns = {};
+    var keep = function (p) { return !!p.n; };
+    /* standing trees first: old before mature, then by id */
+    plants.filter(function (p) {
+      return STANDING[p.st] && kindOf(st, p.sp) === 'tree';
+    }).sort(function (a, b) {
+      return ((b.st === 'old') - (a.st === 'old')) || (a.id - b.id);
+    }).forEach(function (p) {
+      var key = p.x + ',' + p.y;
+      if (!keep(p)) {
+        if (Z.path[key] || Z.clear[key] || standing[key]) return;
+        if (Z.bank[key] && shapeOf(st, p.sp) !== 'weeping') return;
+        if (hash(p.id, 23) % (p.st === 'old' ? 5 : 3) === 0) return;
+      }
+      standing[key] = 1;
+      ids[p.id] = 1;
+    });
+    plants.forEach(function (p) {
+      var key = p.x + ',' + p.y;
+      var kind = kindOf(st, p.sp);
+      if (ids[p.id]) return;
+      if (keep(p) || p.st === 'log') { ids[p.id] = 1; return; }
+      if (kind === 'tree') {
+        if (STANDING[p.st]) return;
+        if (Z.path[key] || Z.clear[key] || standing[key]) return;
+        if (Z.bank[key] && shapeOf(st, p.sp) !== 'weeping') return;
+        if (hash(p.id, 29) % 3 !== 0) return;
+        ids[p.id] = 1;
+      } else if (kind === 'understory') {
+        if (Z.path[key] || ferns[key] || hash(p.id, 31) % 3 === 0) return;
+        if (Z.clear[key] && hash(p.x * 31 + p.y, 37) % 2) return;
+        ferns[key] = 1;
+        ids[p.id] = 1;
+      } else {
+        if (Z.path[key]) return;
+        ids[p.id] = 1;
+      }
+    });
+    var out = { ids: ids, zones: Z };
+    if (DRAWN) DRAWN.set(st, out);
+    return out;
+  }
+
+  /* ---------------------------------------------------- seeing through
+   * Which trees stand between the camera and what it is looking at. Each
+   * tree is a vertical capsule ({id, x, z, r, y0, top}, world units); each
+   * target a point ({x, y, z}). A tree is in the way when the segment from
+   * the camera to a target passes within its radius somewhere between its
+   * foot and its top, not at the very ends (the target's own tree, the
+   * camera brushing a twig). Returns the ids, sorted. Pure. */
+  function occluders(trees, cam, targets, opts) {
+    opts = opts || {};
+    var t0 = opts.t0 == null ? 0.02 : opts.t0;
+    var t1 = opts.t1 == null ? 0.94 : opts.t1;
+    var hit = {};
+    for (var j = 0; j < targets.length; j++) {
+      var T = targets[j];
+      var dx = T.x - cam.x, dy = T.y - cam.y, dz = T.z - cam.z;
+      var L2 = dx * dx + dz * dz;
+      for (var i = 0; i < trees.length; i++) {
+        var tr = trees[i];
+        if (hit[tr.id]) continue;
+        /* the nearest approach in plan, then check the height there */
+        var t = L2 > 1e-9 ? ((tr.x - cam.x) * dx + (tr.z - cam.z) * dz) / L2 : 0;
+        if (t < t0 || t > t1) continue;
+        var px = cam.x + dx * t - tr.x, pz = cam.z + dz * t - tr.z;
+        var d2 = px * px + pz * pz;
+        if (d2 > tr.r * tr.r) continue;
+        /* along the chord through the disk the ray's height spans
+         * y(t ± half-chord); it is in the way if that overlaps the tree */
+        var half = L2 > 1e-9 ? Math.sqrt(tr.r * tr.r - d2) / Math.sqrt(L2) : 0;
+        var ya = cam.y + dy * Math.max(0, t - half);
+        var yb = cam.y + dy * Math.min(1, t + half);
+        if (Math.min(ya, yb) <= tr.top && Math.max(ya, yb) >= tr.y0) {
+          hit[tr.id] = 1;
+        }
+      }
+    }
+    return Object.keys(hit).map(Number).sort(function (a, b) { return a - b; });
+  }
+
   /* Every standing tree takes one quarter of its cell for its trunk: the
    * one its id hashes to, or the next free one round the cell. The trees
    * are placed in id order, so who gets which quarter never depends on the
    * order the server listed them in. Returns the fixtures for the router
-   * and, by plant id, where each trunk stands in world units. */
+   * and, by plant id, where each trunk stands in world units. Only the
+   * trees the page draws (`drawn`) stand: a creature never walks round a
+   * tree that is not there. */
   function trunks(st) {
     var N = Number(st.size) | 0;
     var taken = {};
     var fixtures = [];
     var at = {};
+    var shown = drawn(st).ids;
     var trees = (st.plants || []).filter(function (p) {
-      return STANDING[p.st] && kindOf(st, p.sp) === 'tree';
+      return STANDING[p.st] && kindOf(st, p.sp) === 'tree' && shown[p.id];
     }).sort(function (a, b) { return a.id - b.id; });
     for (var i = 0; i < trees.length; i++) {
       var p = trees[i];
@@ -317,6 +495,7 @@
     route: route, kindOf: kindOf,
     frameOf: frameOf, figure: figure, restSpots: restSpots, stagger: stagger,
     space: space, TRUNK_KEEP: TRUNK_KEEP,
+    zones: zones, drawn: drawn, occluders: occluders, shapeOf: shapeOf,
     RADIUS: RADIUS, BODY_OF: BODY_OF, SCALE_OF: SCALE_OF,
   };
   if (typeof module !== 'undefined' && module.exports) {
