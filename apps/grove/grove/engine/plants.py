@@ -180,6 +180,8 @@ def _seed(w, p, spec, light, rng):
         if spec.get("near_water") and not _near_water(w, sx, sy,
                                                       spec["near_water"]):
             continue
+        if _waterlogged(c, spec):
+            continue
         tol = 0.6 if c.get("humus", 0) > 0.25 else 0.8    # rot feeds light
         if light[sy][sx] < spec["light_need"] * tol:
             continue
@@ -204,6 +206,13 @@ def _seed(w, p, spec, light, rng):
         return
     _bank(w, p["sp"])                  # shaded/no soil/water: the bank too
 
+
+
+def _waterlogged(c, spec):
+    """A wet-meadow hollow (gen marks it `damp`) is too waterlogged for a
+    tree to root, except the shore tree, which wants wet feet."""
+    return bool(c.get("damp")) and spec["kind"] == "tree" and \
+        not spec.get("near_water")
 
 
 def _bank(w, sp):
@@ -243,6 +252,8 @@ def _germinate(w, evs):
                     continue
                 if spec.get("near_water") and not _near_water(
                         w, x, y, spec["near_water"]):
+                    continue
+                if _waterlogged(c, spec):
                     continue
                 li = light[y][x]
                 if spec["kind"] == "understory":

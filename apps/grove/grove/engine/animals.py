@@ -41,7 +41,16 @@ def _update_animals(w, evs):
             del w["animals"][aid]
             continue
 
+        if spec.get("drink_every"):
+            a["thirst"] = a.get("thirst", 0) + 1
         _behave(w, a, spec, evs, rng, winter)
+        if spec.get("drink_every") and _near_water(w, a["x"], a["y"], 1):
+            # a drink at the creek or the pond: thirst never kills, but a
+            # creature that has drunk is a little steadier on its feet
+            if a.get("thirst", 0) >= spec["drink_every"]:
+                a["hp"] = min(10.0, a["hp"] + spec.get("drink_hp", 0.0))
+                a["drank"] = t
+            a["thirst"] = 0
 
         # reproduction
         cap = spec.get("cap", 100)
@@ -92,7 +101,8 @@ def _behave(w, a, spec, evs, rng, winter):
                 _kill(w, a, prey_id, prey, evs)
                 ate = True
         elif not prey:
-            _wander(w, a, speed, spec.get("flyer"), rng)
+            if not _go_drink(w, a, spec, speed):
+                _wander(w, a, speed, spec.get("flyer"), rng)
 
         # secondary prey (the passing wolf will take a stag if lucky)
         p2 = spec.get("prey2")
@@ -135,9 +145,59 @@ def _behave(w, a, spec, evs, rng, winter):
         a["hunger"] = max(0.0, a["hunger"] - 7.0)
         a["energy"] = min(10.0, a["energy"] + 2.0)
         a["hp"] = min(10.0, a["hp"] + 0.6)
-    elif speed:
+    elif speed and not _go_drink(w, a, spec, speed):
         _wander(w, a, speed, spec.get("flyer"), rng)
     return ate
+
+
+# ------------------------------------------------------------------ water
+
+_SHORE = {"cells": None, "tick": None, "shore": ()}
+
+
+def shore_cells(w):
+    """Every land cell that touches water (eight ways), in row order. Water
+    does not move in a week, so the list is kept for the week, outside the
+    world (it is never saved). The cache holds the world's own cell grid and
+    is matched by identity (`is`), not by id(): while it holds the grid, no
+    other world's grid can be that object, so one world can never be handed
+    another's shore."""
+    cells = w["cells"]
+    if _SHORE["cells"] is not cells or _SHORE["tick"] != w["tick"]:
+        size = w["size"]
+        out = []
+        for y in range(size):
+            for x in range(size):
+                if cells[y][x]["terrain"] != "water" and \
+                        _near_water(w, x, y, 1):
+                    out.append((x, y))
+        _SHORE["cells"], _SHORE["tick"] = cells, w["tick"]
+        _SHORE["shore"] = tuple(out)
+    return _SHORE["shore"]
+
+
+def _go_drink(w, a, spec, speed):
+    """A thirsty creature with nothing better to do walks to the nearest
+    shore it can see instead of wandering (nearest by steps, then by row
+    and column, so it is always the same shore). True if it went."""
+    every = spec.get("drink_every")
+    if not every or not speed or spec.get("flyer") or \
+            a.get("thirst", 0) < every:
+        return False
+    reach = spec.get("drink_reach", 8)
+    x, y = a["x"], a["y"]
+    best = None
+    for sx, sy in shore_cells(w):
+        d = max(abs(sx - x), abs(sy - y))
+        if d > reach:
+            continue
+        k = (d, sy, sx)
+        if best is None or k < best:
+            best = k
+    if best is None or best[0] == 0:
+        return False            # none in reach, or already on the shore
+    step_toward(w, a, best[2], best[1], speed, False)
+    return True
 
 
 # --- the feeding laws -------------------------------------------------

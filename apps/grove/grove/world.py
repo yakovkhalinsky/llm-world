@@ -78,11 +78,17 @@ def place(world, x, y):
     size = world["size"]
     if x is None:
         return rules.R["presentation"]["world_word"]
+    pres = rules.R["presentation"]
+    if in_bounds(size, x, y) and world["cells"][y][x].get("ford") \
+            and pres.get("ford_place"):
+        return pres["ford_place"]
     for ny in (y - 1, y + 1):
         for nx in (x - 1, x + 1):
             if terrain_at(world, nx, ny) == "water":
-                return rules.R["presentation"].get("shore_place",
-                                                   "the pond's edge")
+                if world["cells"][ny][nx].get("water") == "creek" \
+                        and pres.get("creek_place"):
+                    return pres["creek_place"]
+                return pres.get("shore_place", "the pond's edge")
     return place_words().get(quadrant(x, y, size),
                              rules.R["presentation"]["world_word"])
 

@@ -34,6 +34,14 @@ from .web import cmd_web
 
 # ---------------------------------------------------------------- run loop
 
+def _size(v):
+    n = int(v)
+    if n < gen.MIN_SIZE:
+        raise argparse.ArgumentTypeError(
+            f"a grove is at least {gen.MIN_SIZE}×{gen.MIN_SIZE}, not {n}")
+    return n
+
+
 def _readch(timeout):
     import select
     import termios
@@ -266,9 +274,9 @@ def build_parser():
     sub = p.add_subparsers(dest="cmd", required=True)
     sp = sub.add_parser("new", help="create a new world")
     sp.add_argument("--seed", type=int, default=None)
-    sp.add_argument("--size", type=int, default=None,
-                    help="map width/height (the ruleset's default when "
-                         "unset)")
+    sp.add_argument("--size", type=_size, default=None,
+                    help="map width/height, at least %d (the ruleset's "
+                         "default when unset)" % gen.MIN_SIZE)
     sp.add_argument("--force", action="store_true")
     sp.set_defaults(func=cmd_new, offline=True, model=None, host=None)
     sp = sub.add_parser("run", help="live watch mode")
