@@ -10,9 +10,13 @@ class SayTest(unittest.TestCase):
     def test_enums_are_words_with_the_right_article(self):
         self.assertEqual(render.say({"kind": "moved_in",
                                      "where": "flat_share"}),
-                         "a flat share moved into a flat")
+                         "a flat share moved in")
         self.assertEqual(render.say({"kind": "moved_in", "where": "elder"}),
-                         "an elder moved into a flat")
+                         "an elder and family moved in")
+        self.assertEqual(render.say({"kind": "moved_in", "where": "single"}),
+                         "someone on their own moved in")
+        self.assertEqual(render.say({"kind": "moved_in", "where": "houseboat"}),
+                         "a houseboat moved in")
         self.assertEqual(render.say({"kind": "broke", "what": "lamp"}),
                          "a lamp broke")
         self.assertEqual(render.say({"kind": "broke", "what": "awning"}),

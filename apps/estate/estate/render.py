@@ -33,6 +33,12 @@ def _a(word) -> str:
     return ("an " if word[:1].lower() in "aeiou" else "a ") + word
 
 
+# who a household of each kind is, as the subject of "moved in"
+_MOVER = {"single": "someone on their own", "flat_share": "a flat share",
+          "elder": "an elder and family", "family": "a family",
+          "couple": "a couple"}
+
+
 def say(ev) -> str:
     """An event as a sentence. This is the ONE home of that wording: the
     digest the watcher reads and the page's feed both take the sentence
@@ -59,7 +65,11 @@ def say(ev) -> str:
     # printing its own name — which is how `moved_in` reached a chronicle
     # draft as the literal string "moved_in".
     if k == "moved_in":
-        return f"{_a(ev.get('where') or 'household')} moved into a flat"
+        # "a single moved into a flat" read as a typo, and "a flat share
+        # moved into a flat" twice over: who, then "moved in"
+        where = ev.get('where') or 'household'
+        who = _MOVER.get(where) or _a(where)
+        return f"{who} moved in"
     if k == "born":
         return f"{ev.get('who', 'a child')} was born on the estate"
     if k == "died":
