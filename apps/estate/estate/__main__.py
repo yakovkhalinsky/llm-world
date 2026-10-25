@@ -62,10 +62,21 @@ def cmd_new(args):
         stamp = time.strftime("%Y%m%d-%H%M%S")
         old = "?"
         try:
-            old = dbm.DB(path).load_world()["day"]
+            was = dbm.DB(path)
+            try:
+                old = was.load_world()["day"]
+            finally:
+                was.close()
         except Exception:
             pass
+        # two --force runs in one second must not share a name (#14
+        # review): the second would overwrite the first's archive
         archive = os.path.join(args.data, f"archive-{stamp}-d{old}.db")
+        k = 1
+        while os.path.exists(archive):
+            k += 1
+            archive = os.path.join(args.data,
+                                   f"archive-{stamp}-d{old}-{k}.db")
         os.rename(path, archive)
         print(f"previous estate archived at {archive}")
     db = dbm.DB(path)
