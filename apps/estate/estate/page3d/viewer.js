@@ -201,6 +201,9 @@ function phaseLabel(info) {
   if (info.index === S.phaseLabel) return;
   S.phaseLabel = info.index;
   const name = PHASES[info.index];
+  /* the live header counts who is at school and at work in the phase the
+   * clock is at (hud.js `countFrame`) */
+  if (HUD && HUD.setClock(name) && S.state) HUD.head(framed(S.state));
   $('phase').textContent = name;
   const glyph = $('phaseGlyph');
   glyph.textContent = PHASE_GLYPH[name] || '·';

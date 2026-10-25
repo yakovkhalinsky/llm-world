@@ -45,7 +45,17 @@ def generate(seed: int, width: int = None, height: int = None,
     # the courtyard leaves a clear band above and below it (y = cy0-1 and
     # cy1+1) — that band is where the benches, lamps and bins stand, and
     # the blocks must not reach into it
-    cy0, cy1 = h // 2 - 2, h // 2 + 1
+    #
+    # In the row the courtyard sits just below the blocks' doors, not on
+    # the plan's middle: the shop and the playground stand on its top edge
+    # and must stay within `families.older_range` of every door, so a
+    # taller plan puts its extra ground south of the courtyard, where the
+    # school and the way to the bus are, rather than between the doors and
+    # the shop (on the default 40×30 plan the two are the same row).
+    cy0 = h // 2 - 2
+    if g.get("layout", "quad") == "row":
+        cy0 = min(cy0, rw + rw + g["block_gap"] + 6 + 1)
+    cy1 = cy0 + 3
     cx0, cx1 = rw + 6, w - rw - 7
     _rect(cells, cx0, cy0, cx1, cy1, "paved")
 
@@ -57,7 +67,7 @@ def generate(seed: int, width: int = None, height: int = None,
     # row lays every block along the north, doors south, so the ground in
     # front — the courtyard with its shop, pond, playground and tables, and
     # the perimeter path — is open and visible from either view.
-    bw, bh = 12, 6
+    bw, bh = 12, 6                 # (the courtyard above assumes bh = 6)
     gap = g["block_gap"]
     layout = g.get("layout", "quad")
     blocks = []

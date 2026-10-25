@@ -134,6 +134,25 @@
 
   /* ----------------------------------------------------------- the head */
 
+  /* The live frame is the end of a night, when nobody is at school or at
+   * work, so its own counts would never show either (#14 review). Live,
+   * the header counts the phase the clock is at instead — the one the
+   * light shows — and a phase picked on the scrubber counts that phase. */
+  var clockPhase = null;
+
+  function setClock(name) {
+    var was = clockPhase;
+    clockPhase = name || null;
+    return was !== clockPhase;
+  }
+
+  function countFrame(st) {
+    if (!st || st.viewPhase || !clockPhase) return st;
+    var order = (st.phases && st.phases.order) || [];
+    var i = order.indexOf(clockPhase);
+    return i < 0 ? st : phaseView(st, i);
+  }
+
   function head(st) {
     $('when').textContent =
       'day ' + num(st.day) + ' · ' + st.season_name + ' · ' + st.weekday +
@@ -151,7 +170,7 @@
       '</b> blocks');
     bits.push('<b>' + num(st.units) + '</b> flats');
     if (st.waiting) bits.push('<b>' + num(st.waiting) + '</b> waiting');
-    var dt = daytime(st);
+    var dt = daytime(countFrame(st));
     if (dt.school) bits.push('<b>' + num(dt.school) + '</b> at school');
     if (dt.away) bits.push('<b>' + num(dt.away) + '</b> at work');
     $('pops').innerHTML = bits.join(' · ');
@@ -421,6 +440,8 @@
   var api = {
     setGround: setGround,
     update: update,
+    head: head,
+    setClock: setClock,
     tab: tab,
     card: card,
     glyphOf: glyphOf,

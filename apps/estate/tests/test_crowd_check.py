@@ -347,10 +347,10 @@ class CrowdCheckTest(unittest.TestCase):
     def test_a_push_that_ignores_the_ground_fails(self):
         out = self._mutant(_ignore_ok, WALK, "PAGE3D_WALK")
         self.assertIn("into a wall or the water", out)
-        # caught by the seed-42 walk when it brushes the pond or a wall,
-        # and always by the dead-end scene, which corners a walker there
-        # (the layout decides whether the live walk comes near either)
-        self.assertRegex(out, r"FAIL (walking|lamp-dead-end).*into a wall")
+        # pinned on the dead-end scene, which corners a walker against a
+        # wall whatever the layout (the seed-42 live walk may or may not
+        # brush the pond or a wall, so it is not what this test rests on)
+        self.assertRegex(out, r"FAIL lamp-dead-end: .*into a wall")
 
 
 if __name__ == "__main__":

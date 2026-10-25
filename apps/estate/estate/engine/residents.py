@@ -603,6 +603,12 @@ def _live(w, party, cand, phase, line, fetch=()):
         held.append((p, h))
     # somewhere they have to be — the school gate, the bus — comes before
     # anything they would choose (engine/daytime.py)
+    # The duty walk has the whole `engine.scan` of steps, and `_set_off`
+    # with a budget given does not scale it by the walker's mobility (only
+    # the stairs come off it). That is safe because duties fall by day and
+    # near home: the gate is a few path cells from every door, the run is
+    # at dawn and the pickup in the afternoon or evening, never at night
+    # (tests/test_school.py PickupTimeTest).
     duty = daytime.duty(w, party, phase, fetch)
     if duty is not None:
         arrived = _go_to(w, r, duty, budget=rules.R["engine"]["scan"])

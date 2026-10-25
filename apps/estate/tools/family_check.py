@@ -85,6 +85,18 @@ def look(w, phase, tally, cases=None):
     """Count, for one settled phase, every young child out alone or home
     alone and every older child out of bounds."""
     f = law()
+    # the yard: how many are in, and whether any cell of it holds more than
+    # `school.per_yard_cell` (#14 review: 27 pupils on 24 spots)
+    held = {}
+    for r in w["residents"].values():
+        if r["where"]["mode"] == "school":
+            p = (r["where"]["x"], r["where"]["y"])
+            held[p] = held.get(p, 0) + 1
+    tally["max_in_school"] = max(tally["max_in_school"],
+                                 sum(held.values()))
+    per = rules.R.get("school", {}).get("per_yard_cell", 1)
+    if any(n > per for n in held.values()):
+        tally["yard_over"] += 1
     for hh in w["households"].values():
         folk = [w["residents"][str(m)] for m in hh["members"]
                 if str(m) in w["residents"]]
@@ -159,7 +171,8 @@ def new_tally():
             "out_alone": 0, "home_alone": 0, "left_at_school": 0,
             "young_out_at_night": 0, "household_out_at_night": 0,
             "evening_far": 0,
-            "older_phases": 0, "older_out_of_bounds": 0}
+            "older_phases": 0, "older_out_of_bounds": 0,
+            "max_in_school": 0, "yard_over": 0}
 
 
 def run(seeds, days):
@@ -208,6 +221,8 @@ def main(argv=None):
           f"{t['evening_far']}")
     print(f"older-child phases: {t['older_phases']}, out of bounds "
           f"{t['older_out_of_bounds']}")
+    print(f"the yard: at most {t['max_in_school']} in at once, "
+          f"{t['yard_over']} phases with a cell over its share")
     return 1 if failures(t) else 0
 
 
@@ -215,7 +230,8 @@ def failures(t):
     """The counts that must be zero."""
     return sum(t[k] for k in ("out_alone", "home_alone", "left_at_school",
                               "young_out_at_night", "household_out_at_night",
-                              "evening_far", "older_out_of_bounds"))
+                              "evening_far", "older_out_of_bounds",
+                              "yard_over"))
 
 
 if __name__ == "__main__":

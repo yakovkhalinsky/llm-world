@@ -29,7 +29,7 @@ from unittest import mock
 
 from estate import gen, rules, sim, web
 from estate import world as W
-from estate.engine import daytime, residents
+from estate.engine import daytime, families, residents
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 import family_check  # noqa: E402
@@ -270,6 +270,67 @@ class LayoutTest(unittest.TestCase):
         self.assertTrue(daytime.yard_spots(w))
 
 
+class YardTest(unittest.TestCase):
+    """#14 review: the yard had 24 spots, and a turn by count (`inside %
+    24`) put the 25th to 27th pupils on cells already taken."""
+
+    def _pupils(self, w, n):
+        out = []
+        for i in range(n):
+            rid = w["next_id"]; w["next_id"] += 1
+            r = W.new_resident(rid, None, 8)
+            r["where"] = {"mode": "in", "unit": None, "x": 0, "y": 0,
+                          "fixture": None}
+            w["residents"][str(rid)] = r
+            out.append(r)
+        return out
+
+    def _held(self, w):
+        held = {}
+        for r in w["residents"].values():
+            if r["where"]["mode"] == "school":
+                p = (r["where"]["x"], r["where"]["y"])
+                held[p] = held.get(p, 0) + 1
+        return held
+
+    def test_the_yard_holds_the_most_ever_enrolled(self):
+        w = gen.generate(42)
+        per = rules.R["school"]["per_yard_cell"]
+        spots = daytime.yard_spots(w)
+        cells = set(spots)
+        self.assertEqual(len(spots), len(cells) * per)
+        # 27 is the most in at once across 8 seeds x 3 years
+        self.assertGreaterEqual(len(spots), 27)
+        for r in w["residents"].values():
+            r["where"]["mode"] = "in"
+        for k in self._pupils(w, len(spots)):
+            daytime._enter(w, k)
+        held = self._held(w)
+        self.assertEqual(set(held), cells)
+        self.assertEqual(set(held.values()), {per})
+
+    def test_the_yard_fills_evenly(self):
+        w = gen.generate(42)
+        for r in w["residents"].values():
+            r["where"]["mode"] = "in"
+        cells = set(daytime.yard_spots(w))
+        for k in self._pupils(w, len(cells) + 3):
+            daytime._enter(w, k)
+            held = self._held(w)
+            self.assertLessEqual(max(held.values()) - min(
+                held.get(c, 0) for c in cells), 1)
+
+    def test_no_cell_is_over_its_share_over_a_term(self):
+        t = family_check.new_tally()
+
+        def watch(w, phase):
+            family_check.look(w, phase, t)
+        w = gen.generate(6)                # the seed that reached 27
+        _watching(w, 28, watch)
+        self.assertGreater(t["max_in_school"], 0)
+        self.assertEqual(t["yard_over"], 0)
+
+
 class DayShapeTest(unittest.TestCase):
     def test_work_and_school_end_by_evening(self):
         w = gen.generate(42)
@@ -318,6 +379,288 @@ class DeterminismTest(unittest.TestCase):
         self.assertEqual(ph["order"], list(residents.PHASES))
         self.assertEqual(set(ph["at"]), set(residents.PHASES))
         self.assertEqual(set(ph["at"]["morning"]), set(w["residents"]))
+
+
+# ------------------------------------------------- the defensive branches
+#
+# The #14 review found nine branches that could be cut with nothing
+# failing (its mutants). Each is pinned here at the function it lives in,
+# with the situation that needs it built by hand: most never arise in a
+# natural run, which is why the long checks could not see them.
+
+def _school_day(w):
+    while not daytime.school_day(w):
+        w["day"] += 1
+    return w
+
+
+def _home(w, r, unit):
+    b = w["buildings"][str(unit["building"])]
+    r["where"] = {"mode": "in", "unit": unit["id"], "x": b["door"][0],
+                  "y": b["door"][1], "fixture": None}
+    r["side"] = None
+
+
+def _households(w, guardians=1, toddler=None, pupil=None):
+    """(household, guardians, young) for every household with at least
+    `guardians` guardians and young children; `toddler`/`pupil` ask for a
+    young child below school age, or of it."""
+    out = []
+    for hid in sorted(w["households"], key=int):
+        hh = w["households"][hid]
+        gs = sorted((g for g in families.members(w, hh)
+                     if families.is_guardian(g)), key=lambda r: r["id"])
+        ys = sorted(families.young_in(w, hh), key=lambda r: r["id"])
+        if len(gs) < guardians or not ys:
+            continue
+        if toddler and not any(not daytime.is_pupil(k) for k in ys):
+            continue
+        if pupil and not any(daytime.is_pupil(k) for k in ys):
+            continue
+        out.append((hh, gs, ys))
+    return out
+
+
+class DefensiveBranchTest(unittest.TestCase):
+    def setUp(self):
+        self.w = _school_day(gen.generate(42))
+
+    def _one(self, **kw):
+        found = _households(self.w, **kw)
+        if not found:
+            self.skipTest(f"seed 42 has no household with {kw}")
+        return found[0]
+
+    def test_a_guardian_with_a_bus_to_catch_is_not_the_minder(self):
+        """`families.plan`'s first key: the parent who is off to work is
+        never left minding, however little their own needs press."""
+        w = self.w
+        hh, (a, b, *_), kids = self._one(guardians=2)
+        unit = w["units"][str(hh["unit"])]
+        for r in [a, b] + kids:
+            _home(w, r, unit)
+        press = {a["id"]: 0.0, b["id"]: 9.0}     # `a` the less pressed
+        leads = families.plan(w, lambda g: press.get(g["id"], 5.0),
+                              busy=lambda g: g is a)
+        self.assertNotIn(a["id"], leads)
+        self.assertEqual(sorted(k["id"] for k in leads[b["id"]]),
+                         [k["id"] for k in kids])
+        # and with nobody busy the less pressed one minds
+        leads = families.plan(w, lambda g: press.get(g["id"], 5.0))
+        self.assertIn(a["id"], leads)
+
+    def test_nobody_is_left_at_school_or_at_work_overnight(self):
+        """`daytime.overnight`: whoever a day left at school or away (a
+        world saved mid-day) starts the next day at home."""
+        w = self.w
+        hh, gs, kids = self._one(pupil=True)
+        unit = w["units"][str(hh["unit"])]
+        k = next(k for k in kids if daytime.is_pupil(k))
+        g = gs[0]
+        k["where"] = {"mode": daytime.SCHOOL, "unit": unit["id"],
+                      "x": 1, "y": 1, "fixture": None}
+        g["where"] = {"mode": daytime.AWAY, "unit": unit["id"],
+                      "x": 1, "y": 1, "fixture": None}
+        daytime.overnight(w)
+        door = list(w["buildings"][str(unit["building"])]["door"])
+        for r in (k, g):
+            self.assertEqual(r["where"]["mode"], "in")
+            self.assertEqual(r["where"]["unit"], unit["id"])
+            self.assertEqual([r["where"]["x"], r["where"]["y"]], door)
+
+    def test_a_child_at_school_is_not_unattended(self):
+        """`families.unattended`: a child inside the fence is with the
+        teachers; the same child out alone is not."""
+        w = self.w
+        hh, gs, kids = self._one(pupil=True)
+        unit = w["units"][str(hh["unit"])]
+        for r in families.members(w, hh):
+            _home(w, r, unit)
+        k = next(k for k in kids if daytime.is_pupil(k))
+        k["where"] = {"mode": daytime.SCHOOL, "unit": unit["id"],
+                      "x": 1, "y": 1, "fixture": None}
+        self.assertNotIn(k["id"], [c["id"] for c, _ in
+                                   families.unattended(w)])
+        k["where"] = dict(k["where"], mode="at")
+        self.assertIn(k["id"], [c["id"] for c, _ in families.unattended(w)])
+
+    def test_a_duty_walk_goes_the_shortest_way(self):
+        """`_go_to`: a walk to the gate or the stop is made by the way
+        anyone knows (`_route_walk`), never by feel (`_walk`)."""
+        w = self.w
+        r = next(r for r in w["residents"].values()
+                 if r["where"]["mode"] == "in")
+        g = daytime.gate(w)
+        c = {"kind": "school", "x": g["x"], "y": g["y"], "fixture": g,
+             "unit": None, "duty": "run"}
+        with mock.patch.object(residents, "_route_walk",
+                               return_value=True) as route, \
+                mock.patch.object(residents, "_walk",
+                                  return_value=True) as feel:
+            residents._go_to(w, r, c, budget=rules.R["engine"]["scan"])
+        route.assert_called_once()
+        feel.assert_not_called()
+
+    def test_a_guardian_away_at_work_collects_nobody(self):
+        """`daytime.collectors`: the carer is away, so the guardian at home
+        fetches the children; with every guardian away nobody does (and the
+        children wait inside the fence)."""
+        w = self.w
+        hh, (a, b, *_), kids = self._one(guardians=2, pupil=True)
+        unit = w["units"][str(hh["unit"])]
+        for r in families.members(w, hh):
+            _home(w, r, unit)
+        young = [k for k in kids if daytime.is_pupil(k)]
+        for k in young:
+            k["where"] = {"mode": daytime.SCHOOL, "unit": unit["id"],
+                          "x": 1, "y": 1, "fixture": None}
+        carer = daytime.carer(w, hh)
+        other = b if carer is a else a
+        carer["where"] = {"mode": daytime.AWAY, "unit": unit["id"],
+                          "x": 1, "y": 1, "fixture": None}
+        got = daytime.collectors(w, "afternoon")
+        self.assertNotIn(carer["id"], got)
+        self.assertEqual([k["id"] for k in got[other["id"]]],
+                         [k["id"] for k in young])
+        other["where"] = dict(carer["where"])
+        got = daytime.collectors(w, "afternoon")
+        self.assertFalse(any(k["id"] in [y["id"] for y in young]
+                             for ks in got.values() for k in ks), got)
+
+    def test_a_carer_with_a_child_at_home_all_day_does_not_go_to_work(self):
+        """`daytime.shift`: the carer of a child too young for school has
+        no shift, job or not; with the young all at school the carer works
+        school hours."""
+        w = self.w
+        hh, gs, kids = self._one(toddler=True)
+        adult = rules.R["people"]["ages"]["adult"]
+        with mock.patch.object(daytime, "is_worker",
+                               lambda w, r: r["age"] >= adult):
+            carer = daytime.carer(w, hh)
+            self.assertEqual(daytime.shift(w, carer), ())
+            for k in kids:
+                if not daytime.is_pupil(k):
+                    k["age"] = law_age = rules.R["school"]["ages"][0]
+                    self.assertTrue(daytime.is_pupil(k), law_age)
+            self.assertEqual(daytime.shift(w, carer),
+                             tuple(rules.R["work"]["school_hours"]))
+
+    def test_nobody_takes_a_child_on_the_bus(self):
+        """`daytime.duty`: the commute is for a worker on their own; a
+        worker minding a child this phase does not walk them to the bus."""
+        w = self.w
+        hh, gs, kids = self._one(toddler=True)
+        toddler = next(k for k in kids if not daytime.is_pupil(k))
+        lead = gs[0]
+        phase = rules.R["work"]["commute"]
+        with mock.patch.object(daytime, "commuting",
+                               lambda w, r, phase: r is lead):
+            alone = daytime.duty(w, [lead], phase, ())
+            minding = daytime.duty(w, [lead, toddler], phase, ())
+        self.assertEqual(alone and alone["duty"], "commute")
+        self.assertIsNone(minding)
+
+    def test_a_pupil_who_has_been_today_is_not_due_again(self):
+        """`daytime.due_at_school`: a pupil home already today (schooled)
+        is not sent back on the run."""
+        w = self.w
+        k = next(r for r in w["residents"].values() if daytime.is_pupil(r))
+        run = rules.R["school"]["run"]
+        k["schooled"] = None
+        self.assertTrue(daytime.due_at_school(w, k, run))
+        k["schooled"] = w["day"]
+        self.assertFalse(daytime.due_at_school(w, k, run))
+        k["schooled"] = w["day"] - 1
+        self.assertTrue(daytime.due_at_school(w, k, run))
+
+
+class PickupTimeTest(unittest.TestCase):
+    def test_no_pickup_is_ever_made_at_night(self):
+        """The duty walk is budgeted at `engine.scan` steps whatever the
+        walker's mobility or the stairs (residents `_live`), which is safe
+        only because the children are fetched by day: the gate is a few
+        path cells from every door. Pin that no collection falls at
+        night (or at dawn, before the school has opened)."""
+        real, seen = daytime.collectors, {}
+
+        def spy(w, phase):
+            got = real(w, phase)
+            if got:
+                seen[phase] = seen.get(phase, 0) + 1
+            return got
+
+        with mock.patch.object(daytime, "collectors", spy):
+            for seed in (42, 6):
+                w = gen.generate(seed)
+                for _ in range(14):
+                    sim.tick(w)
+        self.assertGreater(seen.get("afternoon", 0), 0, seen)
+        self.assertEqual(set(seen) - {"afternoon", "evening"}, set(), seen)
+
+
+class BusStopTest(unittest.TestCase):
+    def test_the_queue_waits_round_the_shelter(self):
+        """Commuters wait on the open cells round the stop, spread evenly,
+        not all on the shelter's cell (#14 review: 40 on one cell)."""
+        w = gen.generate(42)
+        s = daytime.stop(w)
+        spots = daytime.stop_spots(w)
+        self.assertGreaterEqual(len(spots), 4)
+        self.assertNotIn((s["x"], s["y"]), spots)
+        fixed = {(f["x"], f["y"]) for f in w["fixtures"].values()}
+        for x, y in spots:
+            self.assertLessEqual(max(abs(x - s["x"]), abs(y - s["y"])), 1)
+            self.assertTrue(W.passable(w, x, y))
+            self.assertNotIn((x, y), fixed)
+        worst = []
+
+        def watch(w, phase):
+            away = [(r["where"]["x"], r["where"]["y"])
+                    for r in w["residents"].values()
+                    if r["where"]["mode"] == daytime.AWAY]
+            if not away:
+                return
+            per = {p: away.count(p) for p in set(away)}
+            self.assertLessEqual(set(per), set(spots))
+            worst.append((max(per.values()), -(-len(away) // len(spots))))
+
+        _watching(w, 7, watch)
+        self.assertTrue(worst)
+        for most, fair in worst:
+            self.assertLessEqual(most, fair)
+
+
+class HashSeedTest(unittest.TestCase):
+    def test_the_same_seed_lives_the_same_days_in_another_process(self):
+        """The jobs and the days are drawn from the seed (`W.rng_for`),
+        never from the process's own `hash()` salt: two interpreters with
+        different PYTHONHASHSEEDs live the same week."""
+        import subprocess
+        code = ("import json, hashlib\n"
+                "from estate import gen, sim\n"
+                "from estate.engine import daytime\n"
+                "w = gen.generate(42)\n"
+                "for _ in range(7):\n"
+                "    sim.tick(w)\n"
+                "jobs = sorted(int(r['id']) for r in w['residents'].values()"
+                " if daytime.has_job(w, r))\n"
+                "blob = json.dumps([w['residents'], w.get('day_phases')],"
+                " sort_keys=True)\n"
+                "print(json.dumps([jobs,"
+                " hashlib.sha256(blob.encode()).hexdigest()]))\n")
+        root = os.path.join(os.path.dirname(__file__), "..")
+        outs = []
+        for salt in ("0", "4242"):
+            env = dict(os.environ, PYTHONHASHSEED=salt)
+            run = subprocess.run([sys.executable, "-c", code], cwd=root,
+                                 env=env, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True,
+                                 timeout=300)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            outs.append(json.loads(run.stdout))
+        self.assertGreater(len(outs[0][0]), 0)
+        self.assertEqual(outs[0], outs[1])
+
 
 if __name__ == "__main__":
     unittest.main()

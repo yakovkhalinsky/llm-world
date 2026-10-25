@@ -341,6 +341,42 @@ if (ph && ph.order) {
        els.cardState.innerHTML.indexOf('at school') >= 0,
        els.cardState.innerHTML);
   }
+  /* #14 review: the header never said 'at school' or 'at work', because
+   * the live frame is the end of a night. Live it counts the clock's
+   * phase; a phase picked on the scrubber counts that phase. */
+  if (!weekend && state.daytime && state.daytime.enrolled > 0) {
+    const pops = () => els.pops.innerHTML;
+    const n = (word) => { const m = pops().match(
+      new RegExp('<b>([\\d,]+)</b> ' + word)); return m ? m[1] : null; };
+    const want = (f, mode) => String(f.people.filter(
+      p => p.mode === mode).length);
+    EstateHUD.setClock(null);
+    EstateHUD.update(state);
+    ok('live, at the end of the night, nobody is at school or at work',
+       n('at school') === null && n('at work') === null, pops());
+    EstateHUD.setClock('morning');
+    EstateHUD.update(state);
+    ok('live, with the clock at morning, the header counts the morning',
+       n('at school') === want(morning, 'school') &&
+       n('at work') === want(morning, 'away'), pops());
+    ok('the live frame itself is still the end of the night',
+       els.when.textContent.indexOf('morning') < 0, els.when.textContent);
+    EstateHUD.setClock('night');
+    EstateHUD.update(state);
+    ok('live, with the clock at night, nobody is at school or at work',
+       n('at school') === null && n('at work') === null, pops());
+    EstateHUD.setClock('night');
+    EstateHUD.update(morning);
+    ok('a phase picked on the scrubber counts that phase, whatever the clock',
+       n('at school') === want(morning, 'school') &&
+       n('at work') === want(morning, 'away'), pops());
+    const ev = EstateHUD.phaseView(state, ph.order.indexOf('evening'));
+    EstateHUD.setClock('morning');
+    EstateHUD.update(ev);
+    ok('the scrubber\'s evening has nobody at school or at work',
+       n('at school') === null && n('at work') === null, pops());
+    EstateHUD.setClock(null);
+  }
   const bar = EstateHUD.scrubber(state, mi);
   ok('the scrubber has live and one button per phase',
      count(bar, '<button') === 6 && count(bar, 'class="on"') === 1 &&

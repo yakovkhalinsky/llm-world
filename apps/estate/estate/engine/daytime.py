@@ -69,6 +69,39 @@ def stop(w):
     return None
 
 
+def stop_spots(w):
+    """Where the workers wait for the bus: the open cells round the stop
+    that hold no fixture, nearest first (row, then column, on a tie) — a
+    queue spread over them, not forty on one cell swallowing the shelter
+    (#14 review). The shelter's own cell is solid on the page (walk.js
+    SOLID, crowd.js KEEP), so it is a spot only on a plan that leaves no
+    cell round it."""
+    s = stop(w)
+    if s is None:
+        return []
+    taken = {(f["x"], f["y"]) for f in w["fixtures"].values()}
+    ring = []
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            x, y = s["x"] + dx, s["y"] + dy
+            if (dx or dy) and 0 <= x < w["width"] and 0 <= y < w["height"] \
+                    and (x, y) not in taken and W.passable(w, x, y):
+                ring.append((abs(dx) + abs(dy), y, x))
+    return [(x, y) for _, y, x in sorted(ring)] or [(s["x"], s["y"])]
+
+
+def _wait_at(w):
+    """The emptiest waiting spot at the stop, the first of them on a tie."""
+    spots = stop_spots(w)
+    held = dict.fromkeys(spots, 0)
+    for r in w["residents"].values():
+        if r["where"]["mode"] == AWAY:
+            p = (r["where"]["x"], r["where"]["y"])
+            if p in held:
+                held[p] += 1
+    return min(spots, key=lambda p: held[p])
+
+
 def school_building(w):
     for bid in sorted(w["buildings"], key=int):
         b = w["buildings"][bid]
@@ -78,12 +111,16 @@ def school_building(w):
 
 
 def yard_spots(w):
+    """Where the pupils stand inside the fence: every yard cell, each
+    `school.per_yard_cell` times (the first pass over the yard, then the
+    second), so `len(yard_spots(w))` is how many the yard holds."""
     b = school_building(w)
     if b is None or not b.get("yard"):
         g = gate(w)
         return [(g["x"], g["y"])] if g else []
     x0, y0, yw, yh = b["yard"]
-    return [(x, y) for y in range(y0, y0 + yh) for x in range(x0, x0 + yw)]
+    cells = [(x, y) for y in range(y0, y0 + yh) for x in range(x0, x0 + yw)]
+    return cells * law().get("per_yard_cell", 1)
 
 
 # ------------------------------------------------------------- the people
@@ -169,9 +206,19 @@ def _enter(w, k):
     """A pupil goes in at the gate, to a spot in the yard."""
     spots = yard_spots(w)
     g = gate(w)
-    inside = sum(1 for r in w["residents"].values()
-                 if r["where"]["mode"] == SCHOOL)
-    x, y = spots[inside % len(spots)] if spots else (g["x"], g["y"])
+    # the emptiest cell of the yard, the first of them in the yard's order:
+    # the yard fills evenly, and a pupil going in never lands on a cell
+    # that is already full while another has room (the old turn by count
+    # put the 25th of 24 on the first cell's pupil)
+    held = {}
+    for r in w["residents"].values():
+        if r["where"]["mode"] == SCHOOL:
+            p = (r["where"]["x"], r["where"]["y"])
+            held[p] = held.get(p, 0) + 1
+    if spots:
+        x, y = min(dict.fromkeys(spots), key=lambda p: held.get(p, 0))
+    else:
+        x, y = g["x"], g["y"]
     k["where"] = {"mode": SCHOOL, "unit": None, "x": x, "y": y,
                   "fixture": g["id"] if g else None}
     k["side"] = None
@@ -210,7 +257,8 @@ def begin(w, phase, evs=None):
         mode = r["where"]["mode"]
         if mode == AWAY:
             if s is None or phase not in shift(w, r):
-                _out_at(w, r, s or {"x": r["where"]["x"], "y": r["where"]["y"]})
+                # off the bus where they waited for it, by the stop
+                _out_at(w, r, {"x": r["where"]["x"], "y": r["where"]["y"]})
             else:
                 _meet(w, r, jobs()["meets"])
         elif mode == SCHOOL:
@@ -219,7 +267,13 @@ def begin(w, phase, evs=None):
             elif not families.is_young(r) or g is None:
                 _out_at(w, r, g or {"x": r["where"]["x"],
                                     "y": r["where"]["y"]})
-            # an under-ten waits inside for a guardian (`collector`)
+            # an under-ten waits inside for a guardian (`collectors`). A
+            # household with no guardian on the estate leaves the child
+            # waiting through the evening and the night: an after-school
+            # club with no closing time. The sim never makes one mid-day
+            # (deaths and leaving are the slow layer's, between days), and
+            # `overnight` then `families.settle` take the child home the
+            # next morning.
 
 
 def collectors(w, phase):
@@ -274,8 +328,9 @@ def arrive(w, party, c, phase, fetch):
     out, who gets on the bus."""
     lead = party[0]
     if c["duty"] == "commute":
+        x, y = _wait_at(w)
         lead["where"] = {"mode": AWAY, "unit": _home_unit(w, lead),
-                         "x": c["x"], "y": c["y"], "fixture": None}
+                         "x": x, "y": y, "fixture": None}
         lead["side"] = None
         _tally(w, c["fixture"])
         return list(party)

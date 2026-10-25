@@ -125,7 +125,8 @@ R = {
         # under-tens are walked there and back by a guardian; the 10-15s
         # walk on their own (`families.young_under` is the split).
         "ages": [5, 16],
-        # the days it is open, as weekday indices (Monday 0): weekdays
+        # the days it is open, as weekday indices (Monday 0): weekdays,
+        # every week of the year — there are no term holidays yet
         "days": [0, 1, 2, 3, 4],
         # The school run is made in this phase: everyone due at school (and
         # whoever is walking the little ones) walks to the gate, and a
@@ -143,6 +144,10 @@ R = {
         # need, the way a fixture's affords are: dinner, friends and the
         # playground at break.
         "meets": {"food": 0.6, "company": 0.7, "play": 0.6},
+        # How many pupils one cell of the yard holds (`daytime.yard_spots`):
+        # the 6×4 yard so holds 48, and the most ever in at once across 8
+        # seeds × 3 years is 27 (tests/test_school.py holds it to that).
+        "per_yard_cell": 2,
     },
 
     # Work: the working-age adults who leave the estate on a weekday by the
