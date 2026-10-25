@@ -1,15 +1,18 @@
-"""grove web — a zero-dependency dashboard for the grove.
+"""grove web — a zero-dependency 3D view of the grove.
 
-Serves one hand-written HTML page (no build step, works fully offline)
-plus a small JSON state API. The simulation keeps running here in a
-background thread; visitors get pause / step / invite-soul buttons.
+Serves one hand-written page (no build step, works fully offline) plus a
+small JSON state API. The simulation keeps running here in a background
+thread; visitors get pause / step / invite-soul buttons.
 
-The map is a <canvas> scene: procedural trees that sway, creatures that
-glide between their weekly positions, rain/snow/leaf particles, season
-palettes, and washes where the soul's effects are active. A plain emoji
-map remains as a no-canvas fallback (?plain or canvas unsupported).
+The view is Three.js, vendored once for both apps in
+`apps/shared/page3d/` and served under `/3d/` after the grove's own
+`page3d/`: the ground in relief, the trees and the understory, creatures
+walking between their weekly cells around trunks and the pond, a day and
+night that turns gradually, and a soft glow where mushrooms grow. If WebGL
+will not start (or `?plain` is asked for), the page shows the server's own
+emoji map from `/api/plain`.
 
-  grove web [--port 8787] [--public] [--tick-seconds 8] [--offline]
+  grove web [--port 8787] [--public] [--tick-seconds 12] [--offline]
 
 Default bind is loopback only (viewable through an ssh tunnel); pass
 --public to open it to the LAN.
@@ -21,7 +24,7 @@ import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 
 from . import db as dbm
 from . import llm as llmm
@@ -34,6 +37,11 @@ from . import world as W
 from .app import Grove
 
 POLL_MS = 600           # creature polls; the scene rebuild is cheap
+
+# The glow under the trees: how far a mushroom's light reaches, in cells,
+# and the field's top step. A view-only fact: the sim never reads it.
+GLOW_REACH = 2.6
+GLOW_STEPS = 9
 
 
 class SimRunner(threading.Thread):
@@ -145,7 +153,14 @@ def snapshot(grove, runner, lock):
         biome = {"seasons": pres.get("seasons_palette"),
                  "bodies": pres.get("animal_body"),
                  "shapes": pres.get("shapes"),
-                 "elev_px": pres.get("elev_px", 26)}
+                 "elev_px": pres.get("elev_px", 26),
+                 # what the view needs to route a walker: which plants
+                 # stand as trunks, which creatures fly over everything.
+                 # The pack's facts, shipped, not guessed by the page.
+                 "kinds": {sp: t.get("kind") for sp, t in
+                           sorted(rules.R["plants"].items())},
+                 "flyers": sorted(sp for sp, t in rules.R["animals"].items()
+                                  if t.get("flyer"))}
         llm_bits = {
             "status": llmm.status_line(g.llm),
             "ok": bool(g.llm and g.llm.enabled),
@@ -175,6 +190,7 @@ def snapshot(grove, runner, lock):
             "plants": plants,
             "animals": animals,
             "map": render.render_map(w).splitlines(),
+            "glow": glow_field(w),
             "chronicle": chron,
             "soul": soul,
             "ops": ops,
@@ -193,40 +209,119 @@ def snapshot(grove, runner, lock):
         }
 
 
-def _load_page():
-    """Assemble the served page: the skeleton, the style, and the page's
-    four scripts joined in boot order (index -> style.css ->
-    boot/scene/engine/panels). engine.js is inert in every world where
-    the boot did not choose pixi. The assembled single string is what
-    the harness sees."""
-    dd = os.path.join(os.path.dirname(__file__), "page")
-    read = lambda name: open(os.path.join(dd, name)).read()
-    return (read("index.html")
-            .replace("{{STYLE}}", "\n" + read("style.css"))
-            .replace("{{SCRIPT}}", read("boot.js") + read("scene.js")
-                     + read("engine.js") + read("panels.js")))
+def glow_field(w):
+    """The soft light under the trees: one step 0..GLOW_STEPS per cell,
+    row-major, brightest on a mushroom and fading over GLOW_REACH cells.
+
+    It is the grove's lamplight — the view paints it as one smooth field
+    at night rather than a disc per mushroom. Pure: it reads the cells and
+    writes nothing, so the sim cannot be moved by it."""
+    size = w["size"]
+    out = [0] * (size * size)
+    srcs = [(x, y) for y in range(size) for x in range(size)
+            if w["cells"][y][x]["mushroom"]]
+    r = int(GLOW_REACH)
+    for sx, sy in srcs:
+        for y in range(max(0, sy - r), min(size, sy + r + 1)):
+            for x in range(max(0, sx - r), min(size, sx + r + 1)):
+                d = ((x - sx) ** 2 + (y - sy) ** 2) ** 0.5
+                if d >= GLOW_REACH:
+                    continue
+                v = int(round(GLOW_STEPS * (1 - d / GLOW_REACH)))
+                i = y * size + x
+                if v > out[i]:
+                    out[i] = v
+    return out
 
 
-PAGE = _load_page()
+PAGE3D = os.path.join(os.path.dirname(__file__), "page3d")
+# what the grove's and the estate's 3D views share: apps/shared/page3d
+SHARED3D = os.path.join(os.path.dirname(__file__), "..", "..", "shared",
+                        "page3d")
 
-PIXI_JS = os.path.join(os.path.dirname(__file__), "page",
-                       "vendor", "pixi.min.js")
+# one suffix, one content type. A module served as text/plain is a module
+# the browser refuses to execute, which looks exactly like a broken page.
+_STATIC_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+    ".txt": "text/plain; charset=utf-8",
+}
 
 
-def _pixi_bytes():
-    """The scene's engine, vendored — the file the head may never
-    fetch from a CDN at runtime."""
-    global _PIXI_CACHE
+def _page3d(rel):
+    """A file of the 3D view, as (bytes, content type), or None.
+
+    The grove's own `page3d/` is looked in first, then the folder both
+    apps' views share (the vendored engine, the day clock, the walk
+    router), so the page names every file as `/3d/...` whichever folder
+    holds it. Each lookup is confined to its own folder's *real* path
+    after unquoting: no traversal — plain, encoded, or through a symlink —
+    reaches a file outside either of them.
+    """
+    rel = unquote(rel)
+    if "\x00" in rel:
+        return None
+    for base in (PAGE3D, SHARED3D):
+        got = _static_under(base, rel)
+        if got is not None:
+            return got
+    return None
+
+
+def _static_under(base, rel):
+    """One folder's half of `_page3d`: the file, or None if it is not
+    there or its real path leaves `base`."""
+    root = os.path.realpath(base)
+    full = os.path.realpath(os.path.join(root, rel.lstrip("/")))
     try:
-        if _PIXI_CACHE is None:
-            with open(PIXI_JS, "rb") as f:
-                _PIXI_CACHE = f.read()
+        if os.path.commonpath((root, full)) != root:
+            return None
+    except ValueError:
+        return None
+    if not os.path.isfile(full):
+        return None
+    try:
+        with open(full, "rb") as f:
+            data = f.read()
     except OSError:
-        _PIXI_CACHE = b""
-    return _PIXI_CACHE
+        return None
+    if os.path.basename(full).startswith("LICENSE"):
+        return data, "text/plain; charset=utf-8"
+    ctype = _STATIC_TYPES.get(os.path.splitext(full)[1].lower(),
+                              "application/octet-stream")
+    return data, ctype
 
 
-_PIXI_CACHE = None
+def _respond(handler, code, body, ctype):
+    """Write one response. Every route's response goes through here, so a
+    header added to one cannot be forgotten on another. `nosniff` matters
+    because the engine and the page's modules are served by suffix: a
+    browser left to guess may run something the server did not send it
+    as."""
+    data = body if isinstance(body, bytes) else body.encode()
+    handler.send_response(code)
+    handler.send_header("Content-Type", ctype)
+    handler.send_header("Content-Length", str(len(data)))
+    handler.send_header("X-Content-Type-Options", "nosniff")
+    handler._nosniff_sent = True      # `end_headers` adds it only if unset
+    handler.send_header("Cache-Control", "no-store")
+    handler.end_headers()
+    handler.wfile.write(data)
+
+
+def plain(grove, lock):
+    """The no-WebGL page's whole picture: the header line and the emoji
+    map, as text."""
+    with lock:
+        w = grove.world
+        if w is None:
+            return "no world yet — run: grove new\n"
+        return render.header(w) + "\n" + render.render_map(w) + "\n"
 
 
 def _read_pid(handler):
@@ -254,54 +349,63 @@ def _ip_hint(host):
         return "lan ip undetectable — check hostname -I"
 
 
-def cmd_web(args):
-    g = Grove(args)
-    g.load_or_exit()
-    g.init_llm()
-    lock = threading.Lock()
-    runner = SimRunner(g, lock, args.tick_seconds)
-    runner.start()
+def make_handler(g, lock, runner, data_dir, emb=None):
+    """Build the request handler around a loaded grove.
 
-    if g.llm and g.llm.enabled:
-        # the embedding threads (the indexer and the ask's pre-index)
-        # get their OWN sqlite connection: a commit of theirs can then
-        # never seal a week that the sim is still writing. Created with
-        # the main one, closed with the main one.
-        emb = dbm.DB(os.path.join(args.data, "grove.db"))
+    A factory rather than a closure inside `cmd_web`: the tests start a
+    real `ThreadingHTTPServer` on port 0 with this handler. `emb` is the
+    embedder's own sqlite connection (None with the LLM off).
 
-        def indexer():
-            time.sleep(20)
-            while True:
-                try:          # one patient batch per pass; the chronicle
-                    memory.ensure_index(emb, g.llm, limit=32)
-                except Exception:
-                    pass
-                time.sleep(75)
-        threading.Thread(target=indexer, daemon=True).start()
+    The steward's accept and dismiss are POSTs: they change the rules, and
+    the old page already sent them as POSTs (which this server used to
+    answer only on GET, with a 404 on POST).
+    """
 
     class Handler(BaseHTTPRequestHandler):
+        # The stdlib's default is HTTP/0.9, which is what a reply to a
+        # request line it could not parse goes out as: a bare body with no
+        # status line and no headers, so `end_headers` below never got the
+        # chance to add nosniff to the 400.
+        default_request_version = "HTTP/1.0"
+
         def _send(self, code, body, ctype):
-            data = body if isinstance(body, bytes) else body.encode()
-            self.send_response(code)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(data)
+            _respond(self, code, body, ctype)
 
         def log_message(self, *_a):   # keep the terminal readable
             pass
 
+        def send_response(self, code, message=None):
+            # a fresh response per request, including on a keep-alive
+            # connection: the flag below must not leak across requests
+            self._nosniff_sent = False
+            super().send_response(code, message)
+
+        def end_headers(self):
+            # `send_error` writes the stdlib's own HTML for a 501 (PUT,
+            # HEAD) or a 400 (a malformed request line) and never passes
+            # through `_respond`: the header belongs to every response,
+            # not to one route's writer.
+            if not getattr(self, "_nosniff_sent", False):
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self._nosniff_sent = True
+            super().end_headers()
+
         def do_GET(self):
             path = urlparse(self.path).path
-            if path == "/":
-                self._send(200, PAGE, "text/html; charset=utf-8")
-            elif path == "/pixi.js":
-                b = _pixi_bytes()
-                if b:
-                    self._send(200, b, "application/javascript; charset=utf-8")
+            if path in ("/", "/3d", "/3d/"):
+                got = _page3d("index.html")
+                if got is None:
+                    self._send(404, "the page is missing", "text/plain")
                 else:
-                    self._send(404, "the engine's file is missing", "text/plain")
+                    self._send(200, *got)
+            elif path.startswith("/3d/"):
+                got = _page3d(path[len("/3d/"):])
+                if got is None:
+                    self._send(404, "not found", "text/plain")
+                else:
+                    self._send(200, *got)
+            elif path == "/api/plain":
+                self._send(200, plain(g, lock), "text/plain; charset=utf-8")
             elif path == "/api/state":
                 try:
                     state = snapshot(g, runner, lock)
@@ -359,25 +463,6 @@ def cmd_web(args):
                     "last": g.jobs.get("last_review"),
                     "review": g.jobs.get("review", 0),
                 }), "application/json")
-            elif path == "/api/tuning/accept":
-                pid = _read_pid(self)
-                with lock:
-                    row = g.db.con.execute(
-                        "SELECT rule, value FROM proposals WHERE id=? "
-                        "AND status IN ('pending','offered')",
-                        (pid,)).fetchone()
-                    if row and isinstance(row[1], (int, float)):
-                        reviewer.apply_amendment(g.db, rules, row[0],
-                                                 row[1])
-                        g.db.save_override(args.data, rules)
-                self._send(200, json.dumps({"ok": True}),
-                           "application/json")
-            elif path == "/api/tuning/dismiss":
-                pid = _read_pid(self)
-                with lock:
-                    reviewer.dismiss(g.db, pid)
-                self._send(200, json.dumps({"ok": True}),
-                           "application/json")
             else:
                 self._send(404, "not found", "text/plain")
 
@@ -463,8 +548,61 @@ def cmd_web(args):
                     {"answer": answer, "excerpts": excerpts,
                      "took": round(time.time() - t0, 1)}),
                     "application/json")
+            elif path == "/api/tuning/accept":
+                pid = _read_pid(self)
+                with lock:
+                    row = g.db.con.execute(
+                        "SELECT rule, value FROM proposals WHERE id=? "
+                        "AND status IN ('pending','offered')",
+                        (pid,)).fetchone()
+                    if row and isinstance(row[1], (int, float)):
+                        reviewer.apply_amendment(g.db, rules, row[0],
+                                                 row[1])
+                        g.db.save_override(data_dir, rules)
+                self._send(200, json.dumps({"ok": True}),
+                           "application/json")
+            elif path == "/api/tuning/dismiss":
+                pid = _read_pid(self)
+                with lock:
+                    reviewer.dismiss(g.db, pid)
+                self._send(200, json.dumps({"ok": True}),
+                           "application/json")
             else:
                 self._send(404, "not found", "text/plain")
+
+    return Handler
+
+
+def cmd_web(args):
+    if not os.path.isfile(os.path.join(PAGE3D, "index.html")):
+        raise SystemExit("grove web: the page is missing "
+                         f"({PAGE3D}/index.html)")
+    g = Grove(args)
+    g.load_or_exit()
+    g.init_llm()
+    lock = threading.Lock()
+    runner = SimRunner(g, lock, args.tick_seconds)
+    runner.start()
+
+    if g.llm and g.llm.enabled:
+        # the embedding threads (the indexer and the ask's pre-index)
+        # get their OWN sqlite connection: a commit of theirs can then
+        # never seal a week that the sim is still writing. Created with
+        # the main one, closed with the main one.
+        emb = dbm.DB(os.path.join(args.data, "grove.db"))
+
+        def indexer():
+            time.sleep(20)
+            while True:
+                try:          # one patient batch per pass; the chronicle
+                    memory.ensure_index(emb, g.llm, limit=32)
+                except Exception:
+                    pass
+                time.sleep(75)
+        threading.Thread(target=indexer, daemon=True).start()
+
+    Handler = make_handler(g, lock, runner, args.data,
+                           emb if g.llm and g.llm.enabled else None)
 
     port = args.port
     bind = "0.0.0.0" if args.public else "127.0.0.1"

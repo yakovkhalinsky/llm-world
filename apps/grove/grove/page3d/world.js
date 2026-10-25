@@ -1,0 +1,1241 @@
+/* world — the grove in three dimensions.
+ *
+ * The forest floor is a real surface: the engine's elevation lifts it,
+ * the water lies in its hollows, and the season colours it. Trees stand
+ * on it, creatures walk across it round the trunks and the water (the
+ * shared router, on the quartered grid `forest.js` builds), and at night
+ * the mushrooms' glow lies on it as a soft pool of light rather than a
+ * dot per cap.
+ *
+ * Nothing here is decided. The cells, the plants, the creatures and where
+ * they were last week all arrive in the frame; this file gives them a
+ * body. The light is the shared day clock (`clock.js`): a day of the
+ * page's lasts a handful of weeks of the grove's, and the sun crosses the
+ * sky continuously rather than stepping when a week turns.
+ *
+ * Everything that varies from tree to tree (a lean, a shade, which way a
+ * fern faces) is hashed from the thing's id, so the same grove is drawn
+ * the same way on every load. The rain and the snow are the only things
+ * drawn at random, and they are weather, not the world.
+ */
+
+import * as THREE from 'three';
+import { OrbitControls } from '/3d/vendor/OrbitControls.js';
+
+const G = typeof globalThis !== 'undefined' ? globalThis : {};
+const Walk = G.Page3DWalk || null;
+const Clock = G.Page3DClock || null;
+const Field = G.Page3DField || null;
+const Forest = G.GroveForest || null;
+
+/* the floor: a cell is a world unit; the engine's elevation is lifted by
+ * ELEV, the water's bed sunk below its surface */
+const ELEV = 1.1;
+const LAND_MIN = 0.06;
+const WATER_Y = 0.0;
+const WATER_BED = -0.34;
+const MARGIN = 10;            // cells of wild forest floor beyond the grove
+const SEG = 2;                // ground vertices per cell, each way
+
+const STAGE_SCALE = { sapling: 0.45, mature: 0.85, old: 1.0 };
+const DEFAULT_SHAPES = { pine: 'pine', birch: 'deciduous',
+                         willow: 'deciduous', fern: 'fronds', berry: 'bush' };
+const KIND_SHAPE = { tree: 'deciduous', shrub: 'bush',
+                     understory: 'fronds' };
+const TRUNK = { birch: 0xd9d4c9, willow: 0x8a7663 };
+const TRUNK_DEFAULT = 0x5b422f;
+const SEASON_NAMES = ['spring', 'summer', 'autumn', 'winter'];
+const GLOW_HEX = 0x7dffc4;    // the mushrooms' cold green-blue light
+const BODY_DEFAULT = 0x8c7a66;
+
+/* the weather greys the sky: the estate's own table */
+const WEATHER_SKY = {
+  rain:  { hex: 0x8c98a3, mix: 0.68, sun: 0.72 },
+  storm: { hex: 0x6d7883, mix: 0.8, sun: 0.55 },
+  frost: { hex: 0xd7e2ea, mix: 0.45, sun: 0.85 },
+};
+const SUN_MIN_Y = 12;
+
+function h01(id, salt) {
+  return Forest.hash(id, salt) / 4294967295;
+}
+
+const _c1 = new THREE.Color();
+const _c2 = new THREE.Color();
+const _m = new THREE.Matrix4();
+const _m2 = new THREE.Matrix4();
+const _q = new THREE.Quaternion();
+const _e = new THREE.Euler();
+const _v = new THREE.Vector3();
+const _s = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+
+function colourOf(hex, fallback) {
+  try {
+    if (hex === null || hex === undefined || hex === '') {
+      return new THREE.Color(fallback);
+    }
+    return new THREE.Color(String(hex));
+  } catch (e) {
+    return new THREE.Color(fallback);
+  }
+}
+
+/* ------------------------------------------------------------- batches */
+
+/* An instanced mesh that grows: a forest gains and loses trees, so the
+ * capacity doubles when it must and the count is set every rebuild. */
+function makeBatch(scene, geo, mat, cap, opts) {
+  const b = { mesh: null, cap: 0, n: 0, owner: [] };
+  function alloc(c) {
+    if (b.mesh) { scene.remove(b.mesh); b.mesh.dispose(); }
+    b.cap = c;
+    b.mesh = new THREE.InstancedMesh(geo, mat, c);
+    b.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    b.mesh.castShadow = !(opts && opts.noShadow);
+    b.mesh.receiveShadow = !!(opts && opts.receive);
+    b.mesh.frustumCulled = false;
+    b.mesh.count = 0;
+    b.mesh.setColorAt(0, _c1.setRGB(1, 1, 1));
+    scene.add(b.mesh);
+  }
+  alloc(Math.max(8, cap));
+  b.begin = n => {
+    if (n > b.cap) alloc(Math.max(n, b.cap * 2));
+    b.n = 0;
+    b.owner.length = 0;
+  };
+  b.add = (matrix, colour, owner) => {
+    if (b.n >= b.cap) return;
+    b.mesh.setMatrixAt(b.n, matrix);
+    b.mesh.setColorAt(b.n, colour);
+    b.owner[b.n] = owner;
+    b.n++;
+  };
+  b.end = () => {
+    b.mesh.count = b.n;
+    b.mesh.instanceMatrix.needsUpdate = true;
+    if (b.mesh.instanceColor) b.mesh.instanceColor.needsUpdate = true;
+  };
+  return b;
+}
+
+function place(x, y, z, sx, sy, sz, yaw, out) {
+  _e.set(0, yaw || 0, 0);
+  _q.setFromEuler(_e);
+  _v.set(x, y, z);
+  _s.set(sx, sy, sz);
+  return (out || _m).compose(_v, _q, _s);
+}
+
+/* ------------------------------------------------------------ creatures */
+
+/* A creature is a handful of boxes and balls, in its own frame: +x is
+ * forward, y up, sizes in world units. `c` names the colour: the body's,
+ * a darker or paler shade of it, or a fixed one. */
+const PARTS = {
+  rabbit: [
+    ['box', 0.28, 0.18, 0.18, 0, 0.13, 0, 'body'],
+    ['ball', 0.09, 0.09, 0.09, 0.16, 0.24, 0, 'body'],
+    ['box', 0.03, 0.15, 0.045, 0.14, 0.37, 0.045, 'body'],
+    ['box', 0.03, 0.15, 0.045, 0.14, 0.37, -0.045, 'body'],
+    ['ball', 0.045, 0.045, 0.045, -0.16, 0.16, 0, 'pale'],
+  ],
+  deer: [
+    ['box', 0.66, 0.3, 0.24, 0, 0.62, 0, 'body'],
+    ['box', 0.06, 0.48, 0.06, 0.25, 0.24, 0.08, 'dark'],
+    ['box', 0.06, 0.48, 0.06, 0.25, 0.24, -0.08, 'dark'],
+    ['box', 0.06, 0.48, 0.06, -0.25, 0.24, 0.08, 'dark'],
+    ['box', 0.06, 0.48, 0.06, -0.25, 0.24, -0.08, 'dark'],
+    ['box', 0.11, 0.32, 0.1, 0.31, 0.86, 0, 'body'],
+    ['box', 0.24, 0.13, 0.12, 0.4, 1.02, 0, 'body'],
+    ['box', 0.04, 0.1, 0.03, 0.33, 1.12, 0.05, 'dark'],
+    ['box', 0.04, 0.1, 0.03, 0.33, 1.12, -0.05, 'dark'],
+    ['box', 0.06, 0.08, 0.06, -0.35, 0.72, 0, 'pale'],
+  ],
+  fox: [
+    ['box', 0.46, 0.18, 0.16, 0, 0.3, 0, 'body'],
+    ['box', 0.05, 0.22, 0.05, 0.17, 0.11, 0.05, 'dark'],
+    ['box', 0.05, 0.22, 0.05, 0.17, 0.11, -0.05, 'dark'],
+    ['box', 0.05, 0.22, 0.05, -0.17, 0.11, 0.05, 'dark'],
+    ['box', 0.05, 0.22, 0.05, -0.17, 0.11, -0.05, 'dark'],
+    ['box', 0.17, 0.14, 0.14, 0.28, 0.38, 0, 'body'],
+    ['box', 0.1, 0.06, 0.07, 0.4, 0.35, 0, 'pale'],
+    ['box', 0.04, 0.08, 0.04, 0.26, 0.48, 0.04, 'dark'],
+    ['box', 0.04, 0.08, 0.04, 0.26, 0.48, -0.04, 'dark'],
+    ['box', 0.3, 0.08, 0.08, -0.36, 0.3, 0, 'body'],
+    ['ball', 0.05, 0.05, 0.05, -0.52, 0.3, 0, 'white'],
+  ],
+  boar: [
+    ['box', 0.6, 0.32, 0.3, 0, 0.32, 0, 'body'],
+    ['box', 0.07, 0.17, 0.07, 0.2, 0.08, 0.1, 'dark'],
+    ['box', 0.07, 0.17, 0.07, 0.2, 0.08, -0.1, 'dark'],
+    ['box', 0.07, 0.17, 0.07, -0.2, 0.08, 0.1, 'dark'],
+    ['box', 0.07, 0.17, 0.07, -0.2, 0.08, -0.1, 'dark'],
+    ['box', 0.22, 0.22, 0.22, 0.36, 0.32, 0, 'body'],
+    ['box', 0.08, 0.09, 0.11, 0.5, 0.27, 0, 'dark'],
+    ['box', 0.03, 0.06, 0.02, 0.5, 0.33, 0.07, 'horn'],
+    ['box', 0.03, 0.06, 0.02, 0.5, 0.33, -0.07, 'horn'],
+    ['box', 0.06, 0.12, 0.04, -0.32, 0.38, 0, 'dark'],
+  ],
+  owl: [
+    ['box', 0.2, 0.3, 0.2, 0, 0.2, 0, 'body'],
+    ['box', 0.19, 0.15, 0.18, 0.01, 0.42, 0, 'body'],
+    ['box', 0.03, 0.06, 0.03, 0.02, 0.52, 0.06, 'dark'],
+    ['box', 0.03, 0.06, 0.03, 0.02, 0.52, -0.06, 'dark'],
+    ['ball', 0.03, 0.03, 0.03, 0.1, 0.44, 0.045, 'eye'],
+    ['ball', 0.03, 0.03, 0.03, 0.1, 0.44, -0.045, 'eye'],
+    ['wing', 0.16, 0.03, 0.2, 0, 0.26, 0.13, 'dark'],
+    ['wing', 0.16, 0.03, 0.2, 0, 0.26, -0.13, 'dark'],
+  ],
+  robin: [
+    ['box', 0.16, 0.12, 0.11, 0, 0.1, 0, 'body'],
+    ['ball', 0.065, 0.065, 0.065, 0.09, 0.18, 0, 'body'],
+    ['ball', 0.06, 0.06, 0.055, 0.06, 0.09, 0, 'red'],
+    ['box', 0.1, 0.02, 0.06, -0.12, 0.13, 0, 'dark'],
+    ['wing', 0.1, 0.02, 0.14, 0, 0.13, 0.08, 'dark'],
+    ['wing', 0.1, 0.02, 0.14, 0, 0.13, -0.08, 'dark'],
+  ],
+  tortoise: [
+    ['ball', 0.26, 0.14, 0.22, 0, 0.12, 0, 'body'],
+    ['ball', 0.07, 0.06, 0.06, 0.27, 0.1, 0, 'pale'],
+    ['box', 0.07, 0.08, 0.07, 0.14, 0.04, 0.13, 'pale'],
+    ['box', 0.07, 0.08, 0.07, 0.14, 0.04, -0.13, 'pale'],
+    ['box', 0.07, 0.08, 0.07, -0.14, 0.04, 0.13, 'pale'],
+    ['box', 0.07, 0.08, 0.07, -0.14, 0.04, -0.13, 'pale'],
+  ],
+};
+/* the visitors and the pack's others take a resident's frame */
+const BODY_OF = { stag: 'deer', wolf: 'fox', deer: 'deer' };
+const SCALE_OF = { stag: 1.15, wolf: 1.3 };
+const FIXED = {
+  white: 0xf3efe6, red: 0xc8502e, horn: 0xeee3c8, eye: 0xf0c040,
+};
+
+function frameOf(sp, shape) {
+  const s = shape || sp;
+  if (PARTS[s]) return s;
+  if (BODY_OF[s]) return BODY_OF[s];
+  if (String(sp).indexOf('fox') >= 0) return 'fox';
+  return 'fox';                // a creature with no frame of its own
+}
+
+export function createWorld(first, canvas, opts) {
+  opts = opts || {};
+  if (!Clock) throw new Error('the day clock (clock.js) did not load');
+  if (!Field) throw new Error('the light field (field.js) did not load');
+  if (!Forest) throw new Error('the forest (forest.js) did not load');
+  const staticMode = !!opts.staticMode;
+  const clock = Clock.makeClock({ clockPin: opts.clockFrac,
+                                  forcedPhase: opts.forcedPhase });
+  const N = Number(first.size) | 0;
+  const centre = new THREE.Vector3(N / 2, 0.4, N / 2);
+  let st0 = first;          // the frame the static ground was built from
+
+  /* ------------------------------------------------------------ renderer */
+
+  const renderer = new THREE.WebGLRenderer({
+    canvas, antialias: true, powerPreference: 'high-performance',
+  });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(Clock.LIGHT[3].sky);
+  scene.fog = new THREE.Fog(Clock.LIGHT[3].sky, N * 1.1, N * 2.6);
+
+  const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 300);
+  camera.position.set(centre.x + N * 0.55, N * 0.72, centre.z + N * 0.95);
+  if (opts.topView) camera.position.set(centre.x, N * 1.5, centre.z + 0.01);
+  const controls = new OrbitControls(camera, canvas);
+  controls.target.copy(centre);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.minDistance = 3;
+  controls.maxDistance = N * 3.2;
+  controls.minPolarAngle = 0.08;
+  controls.maxPolarAngle = Math.PI / 2 - 0.06;
+  controls.listenToKeyEvents(window);
+  controls.update();
+
+  /* -------------------------------------------------------------- lights */
+
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.7);
+  scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xffffff, 2);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  const span = N * 0.75 + 4;
+  sun.shadow.camera.left = -span;
+  sun.shadow.camera.right = span;
+  sun.shadow.camera.top = span;
+  sun.shadow.camera.bottom = -span;
+  sun.shadow.camera.near = 1;
+  sun.shadow.camera.far = 140;
+  sun.shadow.bias = -0.0005;
+  sun.shadow.normalBias = 0.03;
+  scene.add(sun);
+  scene.add(sun.target);
+  sun.target.position.copy(centre);
+
+  /* ------------------------------------------------------------- the floor */
+
+  /* The height of a cell's centre: the engine's elevation for land, the
+   * bed for water. Between centres the floor is bilinear, so a bank slopes
+   * into the water and a ridge is a ridge, not a staircase. */
+  const cellH = new Float32Array(N * N);
+  const isWater = new Uint8Array(N * N);
+  function readCells(st) {
+    for (let i = 0; i < N * N; i++) {
+      const c = st.cells[i] || ['s', 0, 0, 0, 0, 0];
+      isWater[i] = c[0] === 'w' ? 1 : 0;
+      cellH[i] = isWater[i] ? WATER_BED
+        : Math.max(LAND_MIN, 0.12 + (Number(c[5]) || 0) * ELEV);
+    }
+  }
+  readCells(first);
+
+  function hAt(cx, cy) {
+    const x = cx < 0 ? 0 : cx >= N ? N - 1 : cx;
+    const y = cy < 0 ? 0 : cy >= N ? N - 1 : cy;
+    return cellH[y * N + x];
+  }
+  /* beyond the grove the floor settles to a low, even wildwood */
+  function edgeFade(x, z) {
+    const dx = Math.max(0, -x, x - N), dz = Math.max(0, -z, z - N);
+    return Math.min(1, Math.hypot(dx, dz) / 4);
+  }
+  function heightAt(x, z) {
+    const u = x - 0.5, v = z - 0.5;
+    const x0 = Math.floor(u), z0 = Math.floor(v);
+    const fx = u - x0, fz = v - z0;
+    const a = hAt(x0, z0), b = hAt(x0 + 1, z0);
+    const c = hAt(x0, z0 + 1), d = hAt(x0 + 1, z0 + 1);
+    let h = (a * (1 - fx) + b * fx) * (1 - fz) + (c * (1 - fx) + d * fx) * fz;
+    const e = edgeFade(x, z);
+    if (e > 0) h = h * (1 - e) + 0.12 * e;
+    return h;
+  }
+
+  const GW = N + MARGIN * 2;           // the floor's span, in cells
+  const VN = GW * SEG + 1;             // vertices along a side
+  const groundGeo = new THREE.BufferGeometry();
+  const gPos = new Float32Array(VN * VN * 3);
+  const gCol = new Float32Array(VN * VN * 3);
+  const gUv = new Float32Array(VN * VN * 2);
+  for (let j = 0; j < VN; j++) {
+    for (let i = 0; i < VN; i++) {
+      const k = j * VN + i;
+      const x = -MARGIN + i / SEG, z = -MARGIN + j / SEG;
+      gPos[k * 3] = x;
+      gPos[k * 3 + 1] = heightAt(x, z);
+      gPos[k * 3 + 2] = z;
+      gUv[k * 2] = (x + MARGIN) / GW;
+      gUv[k * 2 + 1] = 1 - (z + MARGIN) / GW;
+    }
+  }
+  const gIdx = [];
+  for (let j = 0; j < VN - 1; j++) {
+    for (let i = 0; i < VN - 1; i++) {
+      const a = j * VN + i, b = a + 1, c = a + VN, d = c + 1;
+      gIdx.push(a, c, b, b, c, d);
+    }
+  }
+  groundGeo.setIndex(gIdx);
+  groundGeo.setAttribute('position', new THREE.BufferAttribute(gPos, 3));
+  groundGeo.setAttribute('color', new THREE.BufferAttribute(gCol, 3));
+  groundGeo.setAttribute('uv', new THREE.BufferAttribute(gUv, 2));
+  groundGeo.computeVertexNormals();
+  const groundMat = new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.96, metalness: 0 });
+  const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+  groundMesh.receiveShadow = true;
+  scene.add(groundMesh);
+
+  /* a floor under the floor, out to the fog, so the world has no edge */
+  const baseMat = new THREE.MeshStandardMaterial({ color: 0x2c3a24,
+                                                    roughness: 1 });
+  const base = new THREE.Mesh(new THREE.PlaneGeometry(GW * 6, GW * 6),
+                              baseMat);
+  base.rotation.x = -Math.PI / 2;
+  base.position.set(N / 2, 0.1, N / 2);
+  base.receiveShadow = true;
+  scene.add(base);
+
+  /* the water: one sheet per water cell, at one level */
+  const waterMat = new THREE.MeshStandardMaterial({
+    color: 0x2a4d66, roughness: 0.12, metalness: 0.15, transparent: true,
+    opacity: 0.86 });
+  const waterGeo = new THREE.PlaneGeometry(1.02, 1.02);
+  waterGeo.rotateX(-Math.PI / 2);
+  let waterCount = 0;
+  for (let i = 0; i < N * N; i++) if (isWater[i]) waterCount++;
+  const water = new THREE.InstancedMesh(waterGeo, waterMat,
+                                        Math.max(1, waterCount));
+  water.receiveShadow = true;
+  {
+    let n = 0;
+    for (let i = 0; i < N * N; i++) {
+      if (!isWater[i]) continue;
+      const x = i % N, y = (i - x) / N;
+      water.setMatrixAt(n++, place(x + 0.5, WATER_Y, y + 0.5, 1, 1, 1, 0));
+    }
+    water.count = n;
+  }
+  scene.add(water);
+
+  /* rocks: a few stones on every rock cell, where they always were */
+  const stoneGeo = new THREE.IcosahedronGeometry(1, 0);
+  const stoneMat = new THREE.MeshStandardMaterial({ roughness: 0.9,
+                                                     flatShading: true });
+  const stones = makeBatch(scene, stoneGeo, stoneMat, 64, { receive: true });
+
+  /* ---------------------------------------------------------- the season */
+
+  /* The pack's palette for the season, blended with the last season's over
+   * its first two weeks — the first leaves of spring arrive in the air of
+   * winter, as they did in the plan view. */
+  const PAL_KEYS = ['grass', 'soil', 'water', 'rock', 'pine', 'leaf',
+                    'under', 'bush', 'fruit'];
+  const pal = {};
+  PAL_KEYS.forEach(k => { pal[k] = new THREE.Color(); });
+  pal.canopyDim = 1;
+  function readPalette(st) {
+    const seasons = (st.biome && st.biome.seasons) || {};
+    const cur = seasons[st.season] || seasons.spring || {};
+    let prev = cur, m = 1;
+    const tick = Number(st.tick) || 0;
+    const weekIn = tick ? ((tick - 1) % 12) + 1 : 12;
+    if (weekIn <= 2) {
+      const i = SEASON_NAMES.indexOf(st.season);
+      prev = seasons[SEASON_NAMES[(i + 3) % 4]] || cur;
+      m = weekIn / 3;
+    }
+    PAL_KEYS.forEach(k => {
+      _c1.copy(colourOf(prev[k], 0x667755));
+      _c2.copy(colourOf(cur[k], 0x667755));
+      pal[k].copy(_c1).lerp(_c2, m);
+    });
+    const a = Number(prev.canopyDim), b = Number(cur.canopyDim);
+    pal.canopyDim = (isFinite(a) ? a : 1) * (1 - m) + (isFinite(b) ? b : 1) * m;
+  }
+
+  /* the floor's colour per cell: soil greening with its grass, rock grey,
+   * the water's bed a dark mix of mud and water */
+  const cellCol = new Float32Array(N * N * 3);
+  const wild = new THREE.Color();
+  function paintFloor(st) {
+    for (let i = 0; i < N * N; i++) {
+      const c = st.cells[i] || ['s', 0];
+      if (c[0] === 'w') {
+        _c1.copy(pal.soil).lerp(pal.water, 0.5).multiplyScalar(0.7);
+      } else if (c[0] === 'r') {
+        _c1.copy(pal.rock).lerp(pal.soil, 0.15);
+      } else {
+        const g = Math.max(0, Math.min(1, (Number(c[1]) || 0) / 0.8));
+        _c1.copy(pal.soil).lerp(pal.grass, 0.25 + 0.75 * g);
+      }
+      cellCol[i * 3] = _c1.r; cellCol[i * 3 + 1] = _c1.g;
+      cellCol[i * 3 + 2] = _c1.b;
+    }
+    wild.copy(pal.soil).lerp(pal.grass, 0.55).multiplyScalar(0.8);
+    baseMat.color.copy(wild).multiplyScalar(0.85);
+    const ch = (cx, cy, o) => {
+      const x = cx < 0 ? 0 : cx >= N ? N - 1 : cx;
+      const y = cy < 0 ? 0 : cy >= N ? N - 1 : cy;
+      return cellCol[(y * N + x) * 3 + o];
+    };
+    for (let k = 0; k < VN * VN; k++) {
+      const x = gPos[k * 3], z = gPos[k * 3 + 2];
+      const u = x - 0.5, v = z - 0.5;
+      const x0 = Math.floor(u), z0 = Math.floor(v);
+      const fx = u - x0, fz = v - z0;
+      const e = edgeFade(x, z);
+      for (let o = 0; o < 3; o++) {
+        let val = (ch(x0, z0, o) * (1 - fx) + ch(x0 + 1, z0, o) * fx) *
+          (1 - fz) + (ch(x0, z0 + 1, o) * (1 - fx) +
+          ch(x0 + 1, z0 + 1, o) * fx) * fz;
+        const w = o === 0 ? wild.r : o === 1 ? wild.g : wild.b;
+        gCol[k * 3 + o] = val * (1 - e) + w * e;
+      }
+    }
+    groundGeo.attributes.color.needsUpdate = true;
+    waterMat.color.copy(pal.water);
+
+    stones.begin(N * 3);
+    for (let i = 0; i < N * N; i++) {
+      if (!st.cells[i] || st.cells[i][0] !== 'r') continue;
+      const x = i % N, y = (i - x) / N;
+      for (let s = 0; s < 3; s++) {
+        const r = 0.12 + h01(i, 40 + s) * 0.2;
+        const px = x + 0.2 + h01(i, 50 + s) * 0.6;
+        const pz = y + 0.2 + h01(i, 60 + s) * 0.6;
+        _c1.copy(pal.rock).multiplyScalar(0.85 + h01(i, 70 + s) * 0.3);
+        stones.add(place(px, heightAt(px, pz) + r * 0.35, pz,
+                         r, r * 0.7, r * 1.1, h01(i, 80 + s) * 6.28),
+                   _c1, null);
+      }
+    }
+    stones.end();
+  }
+
+  /* --------------------------------------------------------- the glow */
+
+  /* The mushrooms' light: the server's field (0..9 a cell, the same shape
+   * as the estate's lamplight) painted by the shared `field.js` into a
+   * canvas that covers the whole floor, and laid on the floor as a second
+   * skin — the floor's own geometry, added to whatever is under it — so
+   * the light follows every bank and hollow. `dark` scales it: it comes
+   * up through the dusk and goes out through the dawn. */
+  const GLOW_PX = 12;
+  const glowCanvas = document.createElement('canvas');
+  glowCanvas.width = GW * GLOW_PX;
+  glowCanvas.height = GW * GLOW_PX;
+  const glowCells = document.createElement('canvas');
+  glowCells.width = GW;
+  glowCells.height = GW;
+  const glowTex = new THREE.CanvasTexture(glowCanvas);
+  glowTex.colorSpace = THREE.NoColorSpace;
+  glowTex.minFilter = THREE.LinearFilter;
+  glowTex.magFilter = THREE.LinearFilter;
+  glowTex.generateMipmaps = false;
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: GLOW_HEX, map: glowTex, transparent: true, opacity: 0,
+    depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const glow = new THREE.Mesh(groundGeo, glowMat);
+  glow.renderOrder = 2;
+  glow.visible = false;
+  scene.add(glow);
+  const glowPainter = Field.makePainter(GW, GW, GLOW_PX, glowCanvas,
+                                        glowCells);
+  const glowWide = new Array(GW * GW).fill(0);
+  let glowCount = 0;
+  function buildGlow(st) {
+    const f = st.glow || [];
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        glowWide[(y + MARGIN) * GW + x + MARGIN] = Number(f[y * N + x]) || 0;
+      }
+    }
+    const r = glowPainter.paint(glowWide);
+    if (!r.changed) return;
+    glowTex.needsUpdate = true;
+    glowCount = r.lit;
+  }
+
+  /* ---------------------------------------------------------- the plants */
+
+  const cylGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 7);
+  cylGeo.translate(0, 0.5, 0);
+  const trunkGeo = new THREE.CylinderGeometry(0.32, 0.5, 1, 7);
+  trunkGeo.translate(0, 0.5, 0);
+  const coneGeo = new THREE.ConeGeometry(0.5, 1, 8);
+  coneGeo.translate(0, 0.5, 0);
+  const crownGeo = new THREE.IcosahedronGeometry(0.5, 1);
+  const bushGeo = new THREE.IcosahedronGeometry(0.5, 0);
+  const frondGeo = new THREE.ConeGeometry(0.5, 1, 4, 1, true);
+  frondGeo.translate(0, 0.5, 0);
+  const skirtGeo = new THREE.CylinderGeometry(0.35, 0.62, 1, 10, 1, true);
+  skirtGeo.translate(0, -0.5, 0);
+  const ballGeo = new THREE.SphereGeometry(0.5, 8, 6);
+  const capGeo = new THREE.SphereGeometry(0.5, 10, 6, 0, Math.PI * 2, 0,
+                                          Math.PI / 2);
+  const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+
+  const barkMat = new THREE.MeshStandardMaterial({ roughness: 0.95 });
+  const leafMat = new THREE.MeshStandardMaterial({ roughness: 0.85,
+                                                    flatShading: true });
+  const frondMat = new THREE.MeshStandardMaterial({
+    roughness: 0.9, side: THREE.DoubleSide, flatShading: true });
+  const fruitMat = new THREE.MeshStandardMaterial({ roughness: 0.5 });
+  const mushMat = new THREE.MeshStandardMaterial({
+    roughness: 0.6, emissive: GLOW_HEX, emissiveIntensity: 0 });
+  const stemMat = new THREE.MeshStandardMaterial({ color: 0xe8e0cc,
+                                                    roughness: 0.8 });
+
+  const B = {
+    trunk: makeBatch(scene, trunkGeo, barkMat, 512),
+    cone: makeBatch(scene, coneGeo, leafMat, 1024),
+    crown: makeBatch(scene, crownGeo, leafMat, 512),
+    skirt: makeBatch(scene, skirtGeo, frondMat, 64),
+    frond: makeBatch(scene, frondGeo, frondMat, 1024, { noShadow: true }),
+    bush: makeBatch(scene, bushGeo, leafMat, 256),
+    fruit: makeBatch(scene, ballGeo, fruitMat, 512, { noShadow: true }),
+    arm: makeBatch(scene, cylGeo, leafMat, 256),
+    log: makeBatch(scene, cylGeo, barkMat, 64),
+    stem: makeBatch(scene, cylGeo, stemMat, 256, { noShadow: true }),
+    cap: makeBatch(scene, capGeo, mushMat, 256, { noShadow: true }),
+    mound: makeBatch(scene, ballGeo, barkMat, 32),
+  };
+  /* what a click on each batch means: a plant by id, or nothing */
+  const PLANT_PICK = ['trunk', 'cone', 'crown', 'skirt', 'frond', 'bush',
+                      'arm', 'log'];
+
+  let shapes = DEFAULT_SHAPES;
+  let trunkAt = {};
+  let plantById = {};
+  let trunkTaken = {};
+
+  function shapeOf(st, sp) {
+    const s = (st.biome && st.biome.shapes) || DEFAULT_SHAPES;
+    return s[sp] || DEFAULT_SHAPES[sp] ||
+      KIND_SHAPE[Forest.kindOf(st, sp)] || 'bush';
+  }
+
+  /* a plant's spot: a standing tree's trunk quarter, or a stable nudge
+   * somewhere inside its cell for everything that is not a solid */
+  function spotOf(p) {
+    const t = trunkAt[p.id];
+    if (t) return t;
+    return { x: p.x + 0.15 + h01(p.id, 1) * 0.7,
+             z: p.y + 0.15 + h01(p.id, 2) * 0.7 };
+  }
+
+  function shade(base, id, salt, k) {
+    return _c1.copy(base).multiplyScalar(1 - k + h01(id, salt) * 2 * k);
+  }
+
+  function buildPlants(st) {
+    const plants = st.plants || [];
+    const n = plants.length;
+    B.trunk.begin(n); B.cone.begin(n * 3); B.crown.begin(n * 2);
+    B.skirt.begin(n); B.frond.begin(n * 4); B.bush.begin(n);
+    B.fruit.begin(n * 4); B.arm.begin(n * 2); B.log.begin(n);
+    plantById = {};
+    const dim = pal.canopyDim;
+    for (let k = 0; k < n; k++) {
+      const p = plants[k];
+      plantById[p.id] = p;
+      if (!(p.x >= 0 && p.y >= 0 && p.x < N && p.y < N)) continue;
+      const sp = p.sp;
+      const spot = spotOf(p);
+      const gy = heightAt(spot.x, spot.z);
+      const yaw = h01(p.id, 3) * Math.PI * 2;
+      if (p.st === 'log') {
+        const len = 1.1 + h01(p.id, 4) * 0.5;
+        _e.set(0, yaw, Math.PI / 2);
+        _q.setFromEuler(_e);
+        _m.compose(_v.set(spot.x, gy + 0.09, spot.z), _q,
+                   _s.set(0.18, len, 0.18));
+        _m2.makeTranslation(0, 0, 0);
+        B.log.add(_m, _c2.setHex(TRUNK[sp] || TRUNK_DEFAULT)
+          .multiplyScalar(0.7), p.id);
+        continue;
+      }
+      const stage = STAGE_SCALE[p.st];
+      if (!stage) continue;                 // a seed is not drawn
+      const s = stage * (p.el ? 1.12 : 1) * (0.88 + h01(p.id, 5) * 0.24);
+      const shape = shapeOf(st, sp);
+      const bark = _c2.setHex(TRUNK[sp] || TRUNK_DEFAULT);
+      if (shape === 'pine') {
+        const th = 0.9 * s;
+        B.trunk.add(place(spot.x, gy, spot.z, 0.2 * s, th, 0.2 * s, yaw),
+                    bark, p.id);
+        for (let t = 0; t < 3; t++) {
+          const w = (1.05 - t * 0.28) * s, ch = (1.1 - t * 0.15) * s;
+          B.cone.add(place(spot.x, gy + th * 0.55 + t * 0.62 * s, spot.z,
+                           w, ch, w, yaw + t),
+                     shade(pal.pine, p.id, 10 + t, 0.08)
+                       .multiplyScalar(dim), p.id);
+        }
+      } else if (shape === 'deciduous') {
+        const willow = sp === 'willow';
+        const th = (willow ? 1.1 : 1.35) * s;
+        B.trunk.add(place(spot.x, gy, spot.z, 0.19 * s, th, 0.19 * s, yaw),
+                    bark, p.id);
+        const cw = (willow ? 1.45 : 1.08) * s;
+        const chh = (willow ? 0.9 : 1.15) * s;
+        const leaf = shade(pal.leaf, p.id, 12, 0.1).multiplyScalar(dim);
+        B.crown.add(place(spot.x, gy + th + chh * 0.32, spot.z, cw, chh, cw,
+                          yaw), leaf, p.id);
+        if (!willow) {
+          B.crown.add(place(spot.x + 0.18 * s, gy + th + chh * 0.6,
+                            spot.z - 0.12 * s, cw * 0.7, chh * 0.7,
+                            cw * 0.7, yaw + 1), leaf, p.id);
+        } else {
+          /* the willow's fronds hang to the ground round it */
+          B.skirt.add(place(spot.x, gy + th + chh * 0.3, spot.z,
+                            cw * 0.95, th + chh * 0.15, cw * 0.95, yaw),
+                      leaf.multiplyScalar(0.9), p.id);
+        }
+      } else if (shape === 'cactus') {
+        const th = 1.6 * s;
+        const green = shade(pal.pine, p.id, 13, 0.08);
+        B.arm.add(place(spot.x, gy, spot.z, 0.32 * s, th, 0.32 * s, yaw),
+                  green, p.id);
+        if (p.st !== 'sapling') {
+          for (let a = 0; a < 2; a++) {
+            const side = a ? -1 : 1;
+            const ax = spot.x + Math.cos(yaw) * 0.26 * s * side;
+            const az = spot.z + Math.sin(yaw) * 0.26 * s * side;
+            const ay = gy + th * (0.4 + h01(p.id, 14 + a) * 0.2);
+            B.arm.add(place(ax, ay, az, 0.2 * s, 0.6 * s, 0.2 * s, 0),
+                      green, p.id);
+          }
+        }
+      } else if (shape === 'fronds') {
+        const fc = shade(pal.under, p.id, 15, 0.12);
+        for (let f = 0; f < 4; f++) {
+          const a = yaw + f * Math.PI / 2;
+          _e.set(0.5, a, 0);
+          _q.setFromEuler(_e);
+          _m.compose(_v.set(spot.x, gy, spot.z), _q,
+                     _s.set(0.34 * s, 0.6 * s, 0.12 * s));
+          B.frond.add(_m, fc, p.id);
+        }
+      } else {
+        /* a bush, and anything with no shape of its own */
+        const bw = 0.62 * s;
+        B.bush.add(place(spot.x, gy + bw * 0.38, spot.z, bw, bw * 0.78, bw,
+                         yaw), shade(pal.bush, p.id, 16, 0.1), p.id);
+        if (p.b) {
+          for (let f = 0; f < 4; f++) {
+            const a = yaw + f * 1.7;
+            B.fruit.add(place(spot.x + Math.cos(a) * bw * 0.42,
+                              gy + bw * (0.35 + 0.15 * (f & 1)),
+                              spot.z + Math.sin(a) * bw * 0.42,
+                              0.09, 0.09, 0.09, 0), pal.fruit, null);
+          }
+        }
+      }
+    }
+    Object.keys(B).forEach(k => {
+      if (k !== 'stem' && k !== 'cap' && k !== 'mound') B[k].end();
+    });
+  }
+
+  /* mushrooms (their caps glow after dark) and the fallen, cell by cell */
+  let mushCount = 0;
+  function buildCells(st) {
+    B.stem.begin(N * 3); B.cap.begin(N * 3); B.mound.begin(16);
+    mushCount = 0;
+    for (let i = 0; i < N * N; i++) {
+      const c = st.cells[i];
+      if (!c) continue;
+      const x = i % N, y = (i - x) / N;
+      if (c[3]) {
+        mushCount++;
+        for (let m = 0; m < 3; m++) {
+          const px = x + 0.2 + h01(i, 90 + m) * 0.6;
+          const pz = y + 0.2 + h01(i, 95 + m) * 0.6;
+          const gy = heightAt(px, pz);
+          const r = 0.07 + h01(i, 99 + m) * 0.05;
+          B.stem.add(place(px, gy, pz, r * 0.45, r * 1.4, r * 0.45, 0),
+                     _c1.setHex(0xe8e0cc), null);
+          B.cap.add(place(px, gy + r * 1.3, pz, r * 2.2, r * 1.6, r * 2.2, 0),
+                    _c1.setHex(0xd9f5e6), null);
+        }
+      }
+      if (c[4]) {
+        const px = x + 0.5, pz = y + 0.5;
+        B.mound.add(place(px, heightAt(px, pz) + 0.04, pz, 0.5, 0.18, 0.34,
+                          h01(i, 7) * 6.28), _c1.setHex(0x6b5a4c), null);
+      }
+    }
+    B.stem.end(); B.cap.end(); B.mound.end();
+  }
+
+  /* ------------------------------------------------------- the router */
+
+  const grid = Walk ? Walk.buildGrid(Forest.subGround(first),
+                                     { solid: { trunk: 1 } }) : null;
+  let routeFallbacks = 0, routeMaxPoints = 0;
+
+  /* --------------------------------------------------------- creatures */
+
+  const partBox = makeBatch(scene, boxGeo, new THREE.MeshStandardMaterial({
+    roughness: 0.85, emissive: 0xffffff, emissiveIntensity: 0 }), 512);
+  const partBall = makeBatch(scene, ballGeo, new THREE.MeshStandardMaterial({
+    roughness: 0.7, emissive: 0xffffff, emissiveIntensity: 0 }), 128);
+  /* the body's own colour carries a faint emissive after dark, so a deer
+   * is still a deer by moonlight, as the estate's people are */
+  partBox.mesh.material.emissive.setHex(0x223344);
+  partBall.mesh.material.emissive.setHex(0x223344);
+
+  let beasts = [];              // {a, frame, scale, colours, route, ...}
+  let beastById = {};
+  let flyers = new Set();
+  let lastTick = -1;
+  let followId = null;
+
+  function bodyColour(st, sp) {
+    const bodies = (st.biome && st.biome.bodies) || {};
+    return colourOf(bodies[sp], BODY_DEFAULT);
+  }
+
+  function partColour(base, c) {
+    if (FIXED[c] !== undefined) return new THREE.Color(FIXED[c]);
+    if (c === 'dark') return base.clone().multiplyScalar(0.62);
+    if (c === 'pale') return base.clone().lerp(new THREE.Color(0xf1e8d8), 0.5);
+    return base.clone();
+  }
+
+  function syncBeasts(st, now) {
+    const shapesMap = (st.biome && st.biome.shapes) || {};
+    flyers = new Set((st.biome && st.biome.flyers) || []);
+    const newTick = Number(st.tick) !== lastTick;
+    lastTick = Number(st.tick);
+    /* the glide: as long as the plan view's, so a creature arrives well
+     * before the next week does (the server says how late we already are) */
+    const lag = Math.max(0, (Number(st.now) || 0) - (Number(st.step_at) || 0));
+    const glide = Math.max(0.5, ((Number(st.tick_seconds) || 12) - lag) *
+                           0.45) * 1000;
+    const next = {};
+    const list = [];
+    (st.animals || []).forEach(a => {
+      if (!(a.x >= 0 && a.y >= 0 && a.x < N && a.y < N)) return;
+      let b = beastById[a.id];
+      const fly = flyers.has(a.sp);
+      const to = Forest.restSpot(a.id, a.x, a.y, st, trunkTaken);
+      if (!b) {
+        const frame = frameOf(a.sp, shapesMap[a.sp]);
+        const base = bodyColour(st, a.sp);
+        b = { id: a.id, frame, scale: SCALE_OF[a.sp] || 1,
+              colours: PARTS[frame].map(p => partColour(base, p[7])),
+              x: to.x, z: to.z, yaw: h01(a.id, 30) * 6.28,
+              route: null, t0: 0, dur: 0, tx: to.x, tz: to.z };
+        /* a creature that arrives already walking starts last week's spot */
+        if (!staticMode && (a.px !== a.x || a.py !== a.y) &&
+            a.px >= 0 && a.py >= 0) {
+          const from = Forest.restSpot(a.id, a.px, a.py, st, trunkTaken);
+          b.tx = from.x; b.tz = from.z; b.x = from.x; b.z = from.z;
+        }
+      }
+      b.a = a;
+      b.fly = fly;
+      if ((newTick || b.tx !== to.x || b.tz !== to.z) &&
+          (Math.abs(b.tx - to.x) > 1e-6 || Math.abs(b.tz - to.z) > 1e-6)) {
+        const fx = b.route ? b.x : b.tx, fz = b.route ? b.z : b.tz;
+        let r;
+        if (fly || !grid || staticMode) {
+          r = { route: Walk ? Walk.straight(fx, fz, to.x, to.z) : null,
+                fallback: false };
+        } else {
+          r = Forest.route(Walk, grid, fx, fz, to.x, to.z);
+          if (r.fallback) routeFallbacks++;
+          else routeMaxPoints = Math.max(routeMaxPoints, r.points || 0);
+        }
+        if (staticMode || !r.route) {
+          b.route = null; b.x = to.x; b.z = to.z;
+        } else {
+          b.route = r.route;
+          b.t0 = now;
+          b.dur = glide;
+        }
+        b.tx = to.x; b.tz = to.z;
+      }
+      next[a.id] = b;
+      list.push(b);
+    });
+    beastById = next;
+    beasts = list;
+  }
+
+  const sampleOut = { x: 0, z: 0, dx: 0, dz: 0, moving: false };
+
+  function updateBeasts(now, dark) {
+    let n = 0;
+    for (let i = 0; i < beasts.length; i++) n += PARTS[beasts[i].frame].length;
+    partBox.begin(n); partBall.begin(n);
+    const t = now / 1000;
+    for (let i = 0; i < beasts.length; i++) {
+      const b = beasts[i];
+      let moving = false;
+      if (b.route) {
+        const f = b.dur > 0 ? Math.min(1, (now - b.t0) / b.dur) : 1;
+        /* eased like the plan view's glide: a start and a stop, not a
+         * slide at constant speed */
+        const e = f * f * (3 - 2 * f);
+        Walk.sample(b.route, e * b.route.total, sampleOut);
+        b.x = sampleOut.x; b.z = sampleOut.z;
+        if (Math.abs(sampleOut.dx) + Math.abs(sampleOut.dz) > 1e-6 && f < 1) {
+          const want = Math.atan2(-sampleOut.dz, sampleOut.dx);
+          let d = want - b.yaw;
+          d = Math.atan2(Math.sin(d), Math.cos(d));
+          b.yaw += d * 0.25;
+          moving = true;
+        }
+        if (f >= 1) { b.route = null; b.x = b.tx; b.z = b.tz; }
+      }
+      const gy = heightAt(b.x, b.z);
+      const ph = h01(b.id, 31) * 6.28;
+      let y = gy, wing = 0;
+      let px = b.x, pz = b.z;
+      if (b.fly) {
+        /* a flyer hovers over its cell in a slow loop and flaps */
+        y = gy + 1.5 + Math.sin(t * 1.3 + ph) * 0.18;
+        if (!moving && !staticMode) {
+          px += Math.cos(t * 0.6 + ph) * 0.3;
+          pz += Math.sin(t * 0.6 + ph) * 0.3;
+          b.yaw = -(t * 0.6 + ph) - Math.PI / 2;
+        }
+        wing = Math.sin(t * 14 + ph) * 0.9;
+      } else if (moving) {
+        y += Math.abs(Math.sin(t * 9 + ph)) * 0.04;
+      }
+      _e.set(0, b.yaw, 0);
+      _q.setFromEuler(_e);
+      _m2.compose(_v.set(px, y, pz), _q, _s.set(b.scale, b.scale, b.scale));
+      const parts = PARTS[b.frame];
+      for (let k = 0; k < parts.length; k++) {
+        const p = parts[k];
+        let rx = 0;
+        if (p[0] === 'wing') rx = p[6] > 0 ? wing : -wing;
+        _e.set(rx, 0, 0);
+        _q.setFromEuler(_e);
+        _m.compose(_v.set(p[4], p[5] + (p[0] === 'ball' ? 0 : 0), p[6]), _q,
+                   _s.set(p[1] * (p[0] === 'ball' ? 2 : 1),
+                          p[2] * (p[0] === 'ball' ? 2 : 1),
+                          p[3] * (p[0] === 'ball' ? 2 : 1)));
+        _m.premultiply(_m2);
+        (p[0] === 'ball' ? partBall : partBox).add(_m, b.colours[k], b.id);
+      }
+    }
+    partBox.end(); partBall.end();
+    partBox.mesh.material.emissiveIntensity = dark * 0.5;
+    partBall.mesh.material.emissiveIntensity = dark * 0.5;
+  }
+
+  /* -------------------------------------------------------- fireflies */
+
+  /* After dark in the warm half of the year, near the water: deterministic
+   * spots, a slow drift, an additive spark. Decoration, never a fact. */
+  const FLY_MAX = 80;
+  const flyPos = new Float32Array(FLY_MAX * 3);
+  const flyHome = [];
+  for (let i = 0; i < N * N && flyHome.length < FLY_MAX; i++) {
+    if (!isWater[i]) continue;
+    const x = i % N, y = (i - x) / N;
+    for (let k = 0; k < 2 && flyHome.length < FLY_MAX; k++) {
+      flyHome.push([x + h01(i, 200 + k) * 1.6 - 0.3,
+                    y + h01(i, 210 + k) * 1.6 - 0.3, h01(i, 220 + k) * 6.28]);
+    }
+  }
+  const flyGeo = new THREE.BufferGeometry();
+  const flyAttr = new THREE.BufferAttribute(flyPos, 3);
+  flyGeo.setAttribute('position', flyAttr);
+  flyGeo.setDrawRange(0, flyHome.length);
+  const fireflies = new THREE.Points(flyGeo, new THREE.PointsMaterial({
+    color: 0xe9ff9a, size: 0.12, transparent: true, opacity: 0,
+    depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+  fireflies.frustumCulled = false;
+  fireflies.visible = false;
+  scene.add(fireflies);
+  let warm = false;
+
+  function updateFireflies(now, dark) {
+    const on = warm && dark > 0.35 && flyHome.length > 0;
+    fireflies.visible = on;
+    if (!on) return;
+    const t = now / 1000;
+    for (let i = 0; i < flyHome.length; i++) {
+      const h = flyHome[i];
+      flyPos[i * 3] = h[0] + Math.sin(t * 0.5 + h[2]) * 0.4;
+      flyPos[i * 3 + 1] = heightAt(h[0], h[1]) + 0.5 +
+        Math.sin(t * 0.9 + h[2] * 2) * 0.25;
+      flyPos[i * 3 + 2] = h[1] + Math.cos(t * 0.4 + h[2]) * 0.4;
+    }
+    flyAttr.needsUpdate = true;
+    fireflies.material.opacity = (dark - 0.35) * 1.5 *
+      (0.6 + 0.4 * Math.sin(t * 3));
+  }
+
+  /* ---------------------------------------------------------- weather */
+
+  const RAIN_MAX = 1400, SNOW_MAX = 900;
+  const SPAN = N + 8;
+  const rainPos = new Float32Array(RAIN_MAX * 6);
+  for (let i = 0; i < RAIN_MAX; i++) {
+    const x = Math.random() * SPAN - 4, y = Math.random() * 14;
+    const z = Math.random() * SPAN - 4;
+    rainPos.set([x, y, z, x, y - 0.5, z], i * 6);
+  }
+  const rainGeo = new THREE.BufferGeometry();
+  const rainAttr = new THREE.BufferAttribute(rainPos, 3);
+  rainGeo.setAttribute('position', rainAttr);
+  rainGeo.setDrawRange(0, 0);
+  const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({
+    color: 0x9fd0ff, transparent: true, opacity: 0.45, depthWrite: false }));
+  rain.frustumCulled = false;
+  rain.visible = false;
+  scene.add(rain);
+
+  const snowPos = new Float32Array(SNOW_MAX * 3);
+  for (let i = 0; i < SNOW_MAX; i++) {
+    snowPos[i * 3] = Math.random() * SPAN - 4;
+    snowPos[i * 3 + 1] = Math.random() * 14;
+    snowPos[i * 3 + 2] = Math.random() * SPAN - 4;
+  }
+  const snowGeo = new THREE.BufferGeometry();
+  const snowAttr = new THREE.BufferAttribute(snowPos, 3);
+  snowGeo.setAttribute('position', snowAttr);
+  snowGeo.setDrawRange(0, 0);
+  const snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({
+    color: 0xffffff, size: 0.09, transparent: true, opacity: 0.85,
+    depthWrite: false }));
+  snow.frustumCulled = false;
+  snow.visible = false;
+  scene.add(snow);
+
+  let weather = 'clear';
+  let rainAmount = 0, snowAmount = 0;
+  let flash = 0, nextFlash = 0;
+
+  function syncWeather(st) {
+    weather = st.weather || 'clear';
+    rainAmount = weather === 'rain' ? 700 : weather === 'storm' ? RAIN_MAX : 0;
+    snowAmount = weather === 'frost' ? SNOW_MAX : 0;
+    rainGeo.setDrawRange(0, rainAmount * 2);
+    snowGeo.setDrawRange(0, snowAmount);
+    rain.visible = rainAmount > 0;
+    snow.visible = snowAmount > 0;
+  }
+
+  function updateWeather(dt, now) {
+    if (staticMode) return;
+    if (rainAmount) {
+      const fall = 11 * dt;
+      for (let i = 0; i < rainAmount; i++) {
+        const j = i * 6;
+        rainPos[j + 1] -= fall;
+        rainPos[j + 4] = rainPos[j + 1] - 0.5;
+        if (rainPos[j + 1] < 0) {
+          const x = Math.random() * SPAN - 4, z = Math.random() * SPAN - 4;
+          rainPos[j] = x; rainPos[j + 1] = 14; rainPos[j + 2] = z;
+          rainPos[j + 3] = x; rainPos[j + 4] = 13.5; rainPos[j + 5] = z;
+        }
+      }
+      rainAttr.needsUpdate = true;
+    }
+    if (snowAmount) {
+      for (let i = 0; i < snowAmount; i++) {
+        const j = i * 3;
+        snowPos[j + 1] -= 1.1 * dt;
+        snowPos[j] += Math.sin(now * 0.001 + i * 0.7) * 0.005;
+        if (snowPos[j + 1] < 0) {
+          snowPos[j] = Math.random() * SPAN - 4;
+          snowPos[j + 1] = 14;
+          snowPos[j + 2] = Math.random() * SPAN - 4;
+        }
+      }
+      snowAttr.needsUpdate = true;
+    }
+    /* a storm's lightning: a flash every few seconds, gone in a blink */
+    if (weather === 'storm') {
+      if (now > nextFlash) {
+        flash = 1;
+        nextFlash = now + 2500 + Math.random() * 6000;
+      }
+    }
+    flash = Math.max(0, flash - dt * 5);
+  }
+
+  /* ------------------------------------------------------------ the sky */
+
+  const skyColour = new THREE.Color();
+  let darkNow = 0;
+
+  function updateSky(dayFrac) {
+    const l = Clock.lightAt(dayFrac);
+    sun.intensity = l.sunI;
+    hemi.intensity = l.hemiI + flash * 2.2;
+    sun.color.setRGB(l.sun[0], l.sun[1], l.sun[2]);
+    skyColour.setRGB(l.sky[0], l.sky[1], l.sky[2]);
+    hemi.color.setRGB(l.hemiSky[0], l.hemiSky[1], l.hemiSky[2]);
+    hemi.groundColor.setRGB(l.hemiGround[0], l.hemiGround[1],
+                            l.hemiGround[2]);
+    darkNow = l.dark;
+    const wt = WEATHER_SKY[weather];
+    if (wt) {
+      _c1.setHex(wt.hex);
+      skyColour.lerp(_c1, wt.mix * (1 - darkNow));
+      sun.intensity *= wt.sun;
+    }
+    if (flash > 0) skyColour.lerp(_c1.setHex(0xcfd8ff), flash * 0.5);
+    scene.background.copy(skyColour);
+    scene.fog.color.copy(skyColour);
+    const k = N / 24;
+    sun.position.set(centre.x + l.offset[0] * k,
+                     Math.max(SUN_MIN_Y, l.offset[1] * k),
+                     centre.z + l.offset[2] * k);
+  }
+
+  /* --------------------------------------------------------------- state */
+
+  /* the server's week and the page's day: a day lasts a few weeks, close to
+   * a minute and a half of wall time whatever the tick */
+  function weeksPerDay(st) {
+    return Math.max(1, Math.round(96 / Math.max(0.5,
+      Number(st.tick_seconds) || 12)));
+  }
+
+  let lastNow = 0;
+  let builtTick = -1;
+
+  function setState(st) {
+    const now = performance.now();
+    clock.haveState = true;
+    const wpd = weeksPerDay(st);
+    Clock.setPace(clock, now, (Number(st.tick_seconds) || 12) * wpd);
+    Clock.onState(clock, now, { paused: !!st.paused,
+                                day: Math.floor((Number(st.tick) || 0) / wpd) });
+    warm = st.season === 'spring' || st.season === 'summer';
+    if (Number(st.tick) !== builtTick) {
+      builtTick = Number(st.tick);
+      st0 = st;
+      readPalette(st);
+      paintFloor(st);
+      const t = Forest.trunks(st);
+      trunkAt = t.at;
+      trunkTaken = t.taken;
+      if (grid) Walk.setFixtures(grid, t.fixtures);
+      buildPlants(st);
+      buildCells(st);
+      buildGlow(st);
+    }
+    syncBeasts(st, now);
+    syncWeather(st);
+  }
+
+  /* -------------------------------------------------------------- frame */
+
+  const phaseInfo = { phase: 2, index: 2, name: 'afternoon', darkness: 0,
+                      dayFrac: 0.5 };
+
+  function frame(now) {
+    const dt = Math.min(0.05, lastNow ? Math.max(0, (now - lastNow) / 1000)
+                                      : 0.016);
+    lastNow = now;
+    const f = Clock.fraction(clock, now);
+    updateWeather(dt, now);
+    updateSky(f);
+    const dark = darkNow;
+    glowMat.opacity = dark * 0.42;
+    glow.visible = glowCount > 0 && dark > 0.02;
+    mushMat.emissiveIntensity = 0.15 + dark * 1.6;
+    updateBeasts(now, dark);
+    updateFireflies(now, dark);
+    if (followId !== null && beastById[followId]) {
+      const b = beastById[followId];
+      _v.set(b.x, heightAt(b.x, b.z) + 0.4, b.z).sub(controls.target)
+        .multiplyScalar(staticMode ? 1 : 0.08);
+      controls.target.add(_v);
+      camera.position.add(_v);
+    }
+    controls.update();
+    renderer.render(scene, camera);
+    const info = Clock.phaseAt(f);
+    phaseInfo.phase = info.phase;
+    phaseInfo.index = info.index;
+    phaseInfo.name = info.name;
+    phaseInfo.darkness = dark;
+    phaseInfo.dayFrac = f;
+    return phaseInfo;
+  }
+
+  /* --------------------------------------------------------------- pick */
+
+  const raycaster = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+  const TERRAIN_NAME = { s: 'soil', w: 'water', r: 'rock' };
+
+  function pick(clientX, clientY, rect, withGround) {
+    if (!clock.haveState) return null;
+    ndc.set(((clientX - rect.left) / rect.width) * 2 - 1,
+            -((clientY - rect.top) / rect.height) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    let best = null;
+    [partBox, partBall].forEach(bt => {
+      const h = raycaster.intersectObject(bt.mesh, false);
+      if (h.length && (!best || h[0].distance < best.d)) {
+        const id = bt.owner[h[0].instanceId];
+        const b = beastById[id];
+        if (b) best = { d: h[0].distance,
+                        hit: { kind: 'animal', entity: b.a } };
+      }
+    });
+    PLANT_PICK.forEach(k => {
+      const bt = B[k];
+      if (!bt.n) return;
+      const h = raycaster.intersectObject(bt.mesh, false);
+      if (h.length && (!best || h[0].distance < best.d)) {
+        const p = plantById[bt.owner[h[0].instanceId]];
+        if (p) best = { d: h[0].distance, hit: { kind: 'plant', entity: p } };
+      }
+    });
+    if (best) return best.hit;
+    const gh = raycaster.intersectObject(groundMesh, false);
+    if (gh.length) {
+      const x = Math.floor(gh[0].point.x), y = Math.floor(gh[0].point.z);
+      if (x >= 0 && y >= 0 && x < N && y < N) {
+        const c = st0.cells[y * N + x];
+        return { kind: 'cell', x, y,
+                 terrain: TERRAIN_NAME[c && c[0]] || 'the ground' };
+      }
+    }
+    return null;
+  }
+
+  /* ------------------------------------------------------------- resize */
+
+  function resize() {
+    const w = canvas.clientWidth || window.innerWidth || 1;
+    const h = canvas.clientHeight || window.innerHeight || 1;
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+
+  function focusCell(x, y) {
+    const px = x + 0.5, pz = y + 0.5, py = heightAt(px, pz) + 0.5;
+    controls.target.set(px, py, pz);
+    camera.position.set(px + 4.2, py + 3.6, pz + 4.6);
+    controls.update();
+    return true;
+  }
+
+  function follow(id) {
+    followId = id === null || id === undefined ? null : id;
+  }
+
+  function stateSummary() {
+    let walking = 0, fly = 0;
+    beasts.forEach(b => {
+      if (b.fly) fly++;
+      if (b.a.px !== b.a.x || b.a.py !== b.a.y) walking++;
+    });
+    return {
+      plants: Object.keys(plantById).length,
+      animals: beasts.length,
+      trees: Object.keys(trunkAt).length,
+      flyers: fly,
+      walking,
+      mushrooms: mushCount,
+      glow: glowCount,
+    };
+  }
+
+  function routeStats() {
+    const now = performance.now();
+    let active = 0;
+    beasts.forEach(b => { if (b.route && now - b.t0 < b.dur) active++; });
+    return { active, maxWaypoints: routeMaxPoints,
+             fallbacks: routeFallbacks };
+  }
+
+  return {
+    scene, camera, renderer, controls,
+    setState, frame, resize, pick, focusCell, follow, stateSummary,
+    routeStats, heightAt,
+    phaseName: () => phaseInfo.name,
+    dayFraction: () => phaseInfo.dayFrac,
+    hasState: () => clock.haveState,
+    staticMode,
+  };
+}
