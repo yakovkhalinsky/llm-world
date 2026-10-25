@@ -1034,7 +1034,7 @@ export function createWorld(ground, canvas, opts) {
           const g = spots.with[i];
           if (g == null || g < 0 || !routes[i] || !routes[g]) continue;
           const r = Crowd.follow(routes[g], routeFrom[g], routes[i],
-                                 routeFrom[i]);
+                                 routeFrom[i], Walk, grid, crowdFix);
           if (r === routes[i]) continue;
           routes[i] = r;
           walksWith[i] = g;

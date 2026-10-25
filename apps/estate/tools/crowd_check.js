@@ -459,6 +459,94 @@ function scenes(Walk, Crowd, fails) {
     ran.push(`pole-walk ${routes}`);
   }
 
+  /* a child following a guardian (Crowd.follow, world.js's walk with a
+   * guardian): the pair stand together on a cell and walk onto a tile
+   * with a lamp, a tree, a café table or a bench and its lamp beside it,
+   * with 0 or 5 others already standing there, from anywhere on every
+   * cell within two of it. The child's walk is the guardian's route with the child's own two
+   * ends, and those end legs must go round every pole and trunk as the
+   * child's own route does: the followed walk is never deeper into a
+   * fixture or a wall than the child's own, and never into a fixture
+   * beyond rounding at all. */
+  {
+    const st = { x: 0, z: 0, dx: 0, dz: 0, moving: false };
+    const deepest = (S, r) => {
+      let into = -Infinity, wall = -Infinity, at = null, what = null;
+      for (let t = 0; t <= r.total + 1e-9; t += 0.005) {
+        Walk.sample(r, Math.min(t, r.total), st);
+        const pe = S.orc.pen(st.x, st.z, R_BODY, Math.floor(st.x), Math.floor(st.z));
+        if (pe.into > into) { into = pe.into; at = [st.x, st.z]; what = pe.what; }
+        wall = Math.max(wall, pe.wall);
+      }
+      return { into, wall, at, what };
+    };
+    const layouts = [
+      ['lamp', [{ id: 1, kind: 'lamp', x: 3, y: 3 }]],
+      ['tree', [{ id: 1, kind: 'tree', x: 3, y: 3 }]],
+      ['table', [{ id: 1, kind: 'table', x: 3, y: 3 }]],
+      ['bench-lamp', [{ id: 1, kind: 'bench', x: 3, y: 3 },
+                      { id: 2, kind: 'lamp', x: 2, y: 3 },
+                      { id: 3, kind: 'tree', x: 4, y: 2 }]],
+      ['lamp-row', [{ id: 1, kind: 'lamp', x: 3, y: 3 },
+                    { id: 2, kind: 'lamp', x: 2, y: 2 },
+                    { id: 3, kind: 'tree', x: 4, y: 4 }]],
+    ];
+    const room = ['#######', '#.....#', '#.....#', '#.....#', '#.....#',
+                  '#.....#', '#######'];
+    let worst = { d: -Infinity }, worse = { d: -Infinity }, cases = 0, followed = 0;
+    for (const [name, fixtures] of layouts) {
+      const S = setup(room, fixtures);
+      const benchByCell = {};
+      fixtures.forEach(f => {
+        if (f.kind === 'bench') benchByCell[f.x + ',' + f.y] = Crowd.bench(S.ground, f);
+      });
+      for (const N of [0, 5]) {
+        for (let dy = -2; dy <= 2; dy++) {
+          for (let dx = -2; dx <= 2; dx++) {
+            const fx = 3 + dx, fy = 3 + dy;
+            if ((!dx && !dy) || S.orc.blocked(fx, fy) ||
+                S.grid.solid[fy * S.grid.W + fx]) continue;
+            /* where they go: the tile, with N others on it */
+            const people = [{ id: 50, x: 3, y: 3, px: fx, py: fy, in: false },
+                            { id: 51, x: 3, y: 3, px: fx, py: fy, in: false, with: 50 }];
+            for (let k = 0; k < N; k++) people.push({ id: 60 + k, x: 3, y: 3, in: false });
+            const s = Crowd.place(Walk, S.grid, people, benchByCell, S.fixAt);
+            const g = Crowd.route(Walk, S.grid, people[0], s.x[0], s.z[0], {}, null, S.fixAt);
+            /* where the child stood on (fx, fy): anywhere a body fits */
+            for (let oz = 0.2; oz <= 0.8001; oz += 0.2) {
+              for (let ox = 0.2; ox <= 0.8001; ox += 0.2) {
+            const prev = { 51: { cell: fx + ',' + fy, x: fx + ox, z: fy + oz } };
+            const c = Crowd.route(Walk, S.grid, people[1], s.x[1], s.z[1], prev, null, S.fixAt);
+            if (!g || !c) continue;
+            const r = Crowd.follow(g.route, g.from, c.route, c.from, Walk, S.grid, S.fixAt);
+            cases++;
+            if (r !== c.route) followed++;
+            const got = deepest(S, r), own = deepest(S, c.route);
+            const what = `${name} N=${N} from ${(fx + ox).toFixed(2)},${(fy + oz).toFixed(2)}`;
+            if (got.into > worst.d) worst = { d: got.into, at: got.at, what, into: got.what };
+            const extra = Math.max(got.into - Math.max(own.into, 0),
+                                   got.wall - Math.max(own.wall, 0));
+            if (extra > worse.d) worse = { d: extra, what, at: got.at };
+              }
+            }
+          }
+        }
+      }
+    }
+    if (!followed) fails.push('follow-walk: no child followed a guardian');
+    if (worst.d > TOL_IN) {
+      fails.push(`follow-walk: a child following ${worst.what} runs ` +
+                 `${worst.d.toFixed(3)} into the ${worst.into} at ` +
+                 worst.at.map(v => v.toFixed(3)).join(','));
+    }
+    if (worse.d > TOL_IN) {
+      fails.push(`follow-walk: a child following ${worse.what} goes ` +
+                 `${worse.d.toFixed(3)} deeper than their own route at ` +
+                 worse.at.map(v => v.toFixed(3)).join(','));
+    }
+    ran.push(`follow-walk ${cases} (${followed} followed)`);
+  }
+
   /* head-on, each a twentieth of a cell to the wrong side: they must
    * still pass on their own right (the estate keeps to the right) */
   {
@@ -701,7 +789,8 @@ function check(ground, state) {
     const g = spots.with ? spots.with[i] : -1;
     follows[i] = -1;
     if (g == null || g < 0 || !routes[i] || !routes[g]) continue;
-    const r = Crowd.follow(routes[g], froms[g], routes[i], froms[i]);
+    const r = Crowd.follow(routes[g], froms[g], routes[i], froms[i],
+                             Walk, grid, fixAt);
     if (r !== routes[i]) { routes[i] = r; follows[i] = g; }
   }
   /* the page's queue: walkers leaving one point go in turn */
