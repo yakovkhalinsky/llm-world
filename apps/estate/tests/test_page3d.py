@@ -71,6 +71,13 @@ class WalkModuleTest(unittest.TestCase):
         self.assertLess(page.index("/3d/field.js"),
                         page.index("/3d/viewer.js"))
 
+    def test_the_page_loads_patch_before_the_hud(self):
+        """The panels' writes go through the shared `patch.js`
+        (`Patch.write`, `Patch.fmt`); hud.js reads it as it loads."""
+        page = web._page3d("index.html")[0].decode()
+        self.assertIn('src="/3d/patch.js"', page)
+        self.assertLess(page.index("/3d/patch.js"), page.index("/3d/hud.js"))
+
 
 class Page3dTest(unittest.TestCase):
     def test_page_resolves(self):
@@ -130,7 +137,7 @@ class Page3dTest(unittest.TestCase):
         (the grove's 3D view reads the same files); they are still served
         under the estate's `/3d/`, and only from that folder."""
         shared = os.path.realpath(web.SHARED3D)
-        for rel in ("clock.js", "walk.js", "field.js",
+        for rel in ("clock.js", "walk.js", "field.js", "patch.js",
                     "vendor/three.module.min.js", "vendor/OrbitControls.js"):
             with self.subTest(rel=rel):
                 got = web._page3d(rel)

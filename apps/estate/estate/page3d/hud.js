@@ -12,8 +12,8 @@
  *
  * Every string that comes from the world is escaped once, where it is
  * written. `textContent` is used for a single name; `innerHTML` is only
- * used for rows whose data has already been through `esc`, and every number
- * goes through `Number`.
+ * used for rows whose data has already been through `esc`, and every count
+ * goes through `fmt` (en-AU thousands; a dash for what is not a number).
  */
 (function (root) {
   'use strict';
@@ -50,15 +50,14 @@
 
   function setGround(g) { ground = g; }
 
-  /* A count as people read one: 1,234 rather than 1234. Every whole
-   * number the panels write goes through here, so the thousands are
-   * separated the same way everywhere (and a number is always a number). */
-  function num(v) {
-    var n = Math.round(Number(v));
-    if (!isFinite(n)) return '0';
-    var s = String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    return (n < 0 ? '-' : '') + s;
-  }
+  /* The panels' shared habits (apps/shared/page3d/patch.js, loaded first):
+   * `fmt` is a count as people read one here — 1,234, en-AU, a dash for
+   * anything that is not a number — and every count the panels write goes
+   * through it; `write` writes a list only when it changed, keeping the
+   * reader's place. */
+  var Patch = root.Patch;
+  var fmt = Patch.fmt;
+  var write = Patch.write;
 
   /* ------------------------------------------------- the day, phase by phase */
 
@@ -153,37 +152,52 @@
     return i < 0 ? st : phaseView(st, i);
   }
 
+  /* The model's status, short enough for one line: the reason or the
+   * model and the day's tokens. The whole line is the element's title. */
+  function voiceLine(s) {
+    s = String(s || '');
+    var off = /^tier \w+ — (.*)$/.exec(s);
+    if (off) return 'AI off · ' + off[1].replace(/\s*\(.*$/, '');
+    return s.replace(/^tier \w+ · /, 'AI · ');
+  }
+
   function head(st) {
     $('when').textContent =
-      'day ' + num(st.day) + ' · ' + st.season_name + ' · ' + st.weekday +
+      'day ' + fmt(st.day) + ' · ' + st.season_name + ' · ' + st.weekday +
       (st.viewPhase ? ' · ' + st.viewPhase : '');
     $('weather').textContent =
       glyphOf('weather', st.weather) + ' ' +
       (WEATHER_WORD[st.weather] || st.weather);
 
     var bits = [];
-    bits.push('<b>' + num(st.residents) + '</b> people');
+    bits.push('<b>' + fmt(st.residents) + '</b> people');
     /* the shop and the school are buildings but not blocks; the header
      * counts homes */
-    bits.push('<b>' + num((st.buildings || [])
+    bits.push('<b>' + fmt((st.buildings || [])
       .filter(function (b) { return b.kind === 'block'; }).length) +
       '</b> blocks');
-    bits.push('<b>' + num(st.units) + '</b> flats');
-    if (st.waiting) bits.push('<b>' + num(st.waiting) + '</b> waiting');
+    bits.push('<b>' + fmt(st.units) + '</b> flats');
+    if (st.waiting) bits.push('<b>' + fmt(st.waiting) + '</b> waiting');
     var dt = daytime(countFrame(st));
-    if (dt.school) bits.push('<b>' + num(dt.school) + '</b> at school');
-    if (dt.away) bits.push('<b>' + num(dt.away) + '</b> at work');
-    $('pops').innerHTML = bits.join(' · ');
+    if (dt.school) bits.push('<b>' + fmt(dt.school) + '</b> at school');
+    if (dt.away) bits.push('<b>' + fmt(dt.away) + '</b> at work');
+    write($('pops'), bits.join(' · '));
 
     /* the watcher, in its own words, and the voice that carried them */
     var w = st.watcher || {};
-    $('watch').innerHTML = w.fate
+    write($('watch'), w.fate
       ? '<span class="d">☾</span> ' + esc(w.why || w.fate)
-      : '<span class="dim">☾ no watcher has come yet</span>';
-    $('voice').textContent = st.llm || '';
+      : '<span class="dim">☾ the watcher hasn\'t written yet</span>');
+    $('watch').title = w.fate ? String(w.why || w.fate) : '';
+    var voice = $('voice');
+    voice.textContent = voiceLine(st.llm);
+    voice.title = st.llm || '';
   }
 
   /* --------------------------------------------------------- the census */
+
+  /* a household kind as a word: the pack's keys are identifiers */
+  function kindWord(k) { return String(k).replace(/_/g, ' '); }
 
   function census(st) {
     var counts = st.census || {};
@@ -191,7 +205,8 @@
       .sort(function (a, b) { return counts[b] - counts[a]; })
       .map(function (k) {
         return '<li><span>' + esc(glyphOf('households', k)) + ' ' +
-          esc(k) + '</span><span>' + num(counts[k]) + '</span></li>';
+          esc(kindWord(k)) + '</span><span>' + fmt(counts[k]) +
+          '</span></li>';
       });
     var kinds = (st.people || []).reduce(function (m, p) {
       m[p.role] = (m[p.role] || 0) + 1;
@@ -199,17 +214,22 @@
     }, {});
     var byrole = Object.keys(kinds).sort().map(function (k) {
       return '<li><span>' + esc(glyphOf('roles', k)) + ' ' + esc(k) +
-        '</span><span>' + num(kinds[k]) + '</span></li>';
+        '</span><span>' + fmt(kinds[k]) + '</span></li>';
     });
     var dt = daytime(st);
     byrole.push('<li><span>' + esc(glyphOf('fixtures', 'school')) +
-      ' pupils</span><span>' + num(dt.enrolled) + '</span></li>');
+      ' pupils</span><span>' + fmt(dt.enrolled) + '</span></li>');
     byrole.push('<li><span>' + esc(glyphOf('fixtures', 'bus_stop')) +
-      ' work off the estate</span><span>' + num(dt.workers) +
+      ' work off the estate</span><span>' + fmt(dt.workers) +
       '</span></li>');
-    return '<ul class="timeline">' + rows.join('') + '</ul>' +
-      '<div class="status">by age</div><ul class="timeline">' +
-      byrole.join('') + '</ul>';
+    var waiting = Number(st.waiting) > 0
+      ? '<div class="status">' + fmt(st.waiting) +
+        ' on the waiting list</div>' : '';
+    return '<li class="sub"><div class="status">households</div>' +
+      '<ul class="timeline">' + rows.join('') + '</ul></li>' +
+      '<li class="sub"><div class="status">by role</div>' +
+      '<ul class="timeline">' + byrole.join('') + '</ul>' + waiting +
+      '</li>';
   }
 
   /* ----------------------------------------------------------- the feed */
@@ -222,13 +242,14 @@
    * showed events sat unchanged for half an hour and read as broken. */
   function feed(st) {
     var days = (st.days || []).slice().reverse();
-    $('chron').innerHTML = days.length ? days.map(function (d) {
+    return days.length ? days.map(function (d) {
       var says = Array.isArray(d.says) ? d.says : [];
-      var news = says.length ? says.join(' · ') : '';
       return '<li' + (says.length ? '' : ' class="quiet"') + '>' +
-        '<span class="d">d' + num(d.day) + '</span>' +
+        '<span class="d">day ' + fmt(d.day) + '</span>' +
         '<span class="shape">' + esc(d.line || '') + '</span>' +
-        (news ? '<span class="news">' + esc(news) + '</span>' : '') +
+        (says.length ? '<span class="news">' + says.map(function (s) {
+          return '· ' + esc(s);
+        }).join('<br>') + '</span>' : '') +
         '</li>';
     }).join('') : '<li>nothing has happened yet. it is early.</li>';
   }
@@ -237,50 +258,162 @@
 
   function chronicle(st) {
     var rows = (st.chronicle || []).slice().reverse();
-    $('chron').innerHTML = rows.length ? rows.map(function (e) {
-      return '<li><span class="d">d' + num(e.day) + '</span> ' +
-        esc(e.text) + '</li>';
+    return rows.length ? rows.map(function (e) {
+      return '<li><span class="d">day ' + fmt(e.day) + '</span>' +
+        '<span class="shape">' + esc(e.text) + '</span></li>';
     }).join('') :
-      '<li>no watcher has come yet, and the chronicle is empty. ' +
-      'the estate keeps its own lines either way.</li>';
+      '<li class="quiet"><span class="shape">the watcher hasn\'t written ' +
+      'anything yet. the days tab keeps going either way.</span></li>';
   }
 
+  /* The list is written only when it changed, and the reader keeps their
+   * place (shared `patch.js`): the feed and the chronicle are newest
+   * first, so a reader at the top sees the new day arrive and one who has
+   * scrolled down keeps the row they were reading; a tab change starts
+   * the new list at the top. */
   function render(st) {
-    if (view === 'census') $('chron').innerHTML = census(st);
-    else if (view === 'watch') chronicle(st);
-    else feed(st);
+    var el = $('chron');
+    var html = view === 'census' ? census(st)
+      : view === 'watch' ? chronicle(st) : feed(st);
+    write(el, html, { newestFirst: view !== 'census',
+                      reset: el._view !== view });
+    el._view = view;
   }
 
   function tab(name, st) {
     view = TABS.some(function (t) { return t[0] === name; }) ? name : 'chron';
     TABS.forEach(function (t) {
       $(t[1]).classList.toggle('on', t[0] === view);
+      if ($(t[1]).setAttribute) {
+        $(t[1]).setAttribute('aria-selected', t[0] === view ? 'true' : 'false');
+      }
     });
     if (st) render(st);
   }
 
   /* ----------------------------------------------------------- the card */
 
-  function bar(v, max) {
+  /* A level as a bar and a word. Needs run 0-4 and higher wants more
+   * (engine/residents.py): a word for the reader, and the bar turns warm
+   * when the need is pressing. */
+  var NEED_HOT = 2.6;
+  function needWord(v) {
+    return v < 1.3 ? 'fine' : v < NEED_HOT ? 'wants' : 'needs it badly';
+  }
+  function bar(v, max, hot) {
     var pc = Math.max(0, Math.min(100, (Number(v) / Number(max)) * 100));
-    return '<span class="bar"><i style="width:' + pc.toFixed(0) + '%"></i>' +
-      '</span> ' + Number(v).toFixed(2);
+    if (!isFinite(pc)) pc = 0;
+    return '<span class="bar' + (hot ? ' hot' : '') + '"><i style="width:' +
+      pc.toFixed(0) + '%"></i></span>';
   }
 
-  function row(label, n) {
-    return '<li><span>' + esc(label) + '</span><span>' + num(n) +
+  /* wear as a word: the fixtures run 1 (new) to 0 (broken) */
+  function wear(c) {
+    c = Number(c);
+    if (!isFinite(c)) return '—';
+    return c <= 0 ? 'broken' : c < 0.4 ? 'worn' : c <= 0.75 ? 'fine'
+      : 'good';
+  }
+
+  function row(label, value) {
+    return '<li><span>' + esc(label) + '</span><span>' + value +
       '</span></li>';
+  }
+  function line(text) {
+    return '<li><span>' + text + '</span><span></span></li>';
+  }
+  function header(text) {
+    return '<li class="hd"><span>' + esc(text) + '</span><span></span></li>';
+  }
+  function conditionRow(c) {
+    return '<li class="need"><span>condition</span>' + bar(c, 1) +
+      '<span>' + esc(wear(c)) + '</span></li>';
+  }
+
+  /* "a bench", "2 benches and a table" */
+  var PLURAL = { bench: 'benches', bus_stop: 'bus stops' };
+  function kindName(k) {
+    return FIXTURE_NAME[k] || String(k).replace(/_/g, ' ');
+  }
+  function some(list) {
+    var n = {};
+    var order = [];
+    list.forEach(function (f) {
+      if (!n[f.kind]) { n[f.kind] = 0; order.push(f.kind); }
+      n[f.kind]++;
+    });
+    var words = order.map(function (k) {
+      return n[k] === 1 ? 'a ' + kindName(k)
+        : fmt(n[k]) + ' ' + (PLURAL[k] || kindName(k) + 's');
+    });
+    return words.length <= 1 ? words.join('')
+      : words.slice(0, -1).join(', ') + ' and ' + words[words.length - 1];
   }
 
   /* what a fixture is called on its card, where its kind is not a word */
   var FIXTURE_NAME = { school: 'school gate', bus_stop: 'bus stop' };
+  /* the word for one use of each kind of fixture */
+  var USE_WORD = { bench: 'sits', table: 'games', playground: 'visits',
+                   shop: 'visits', school: 'times through the gate',
+                   bus_stop: 'boardings' };
+  /* the places people sit, play and shop: the things a lamp lights and a
+   * tree shades */
+  var LIVING = { lamp: 1, tree: 1 };
+  var SITE_WORD = { path: 'footpath', paved: 'paving', play: 'play area',
+                    water: 'pond', building: 'building', yard: 'schoolyard' };
+  function siteWord(s) { return SITE_WORD[s] || String(s || 'ground'); }
+  var LIT_PHASES = { evening: 1, night: 1, dawn: 1 };
+
+  function cellIndex(x, y) {
+    return Number(y) * (ground ? Number(ground.width) : 0) + Number(x);
+  }
+  function siteOf(x, y) {
+    if (!ground || !ground.rows || !ground.rows[y] ||
+        ground.rows[y][x] === undefined) return '';
+    return ground.codes[ground.rows[y][x]];
+  }
+  function field(st, name, x, y) {
+    var v = Number((st[name] || [])[cellIndex(x, y)]);
+    return isFinite(v) ? v : 0;
+  }
+  function near(st, x, y, reach, test) {
+    return (st.fixtures || []).filter(function (f) {
+      var d = Math.abs(f.x - x) + Math.abs(f.y - y);
+      return test(f, Math.abs(f.x - x), Math.abs(f.y - y)) && d <= reach;
+    });
+  }
+  function nearest(st, x, y, reach) {
+    var best = null;
+    var bd = Infinity;
+    (st.fixtures || []).forEach(function (f) {
+      if (LIVING[f.kind]) return;
+      var d = Math.abs(f.x - x) + Math.abs(f.y - y);
+      if (d < bd) { bd = d; best = f; }
+    });
+    return bd <= reach ? best : null;
+  }
+
+  /* how many are using a fixture now: out on the plan, at its cell, and
+   * it was the last thing they used */
+  function usingNow(st, f) {
+    return (st.people || []).filter(function (p) {
+      return !p['in'] && p.fixture === f.id && p.x === f.x && p.y === f.y;
+    }).length;
+  }
 
   function needRows(p) {
     var needs = p.needs || {};
-    return Object.keys(needs).sort().map(function (n) {
-      return '<li><span>' + esc(glyphOf('needs', n)) + ' ' + esc(n) +
-        '</span><span>' + bar(needs[n], 4) + '</span></li>';
+    var rows = Object.keys(needs).sort(function (a, b) {
+      return (Number(needs[b]) || 0) - (Number(needs[a]) || 0) ||
+        (a < b ? -1 : a > b ? 1 : 0);
+    }).map(function (n) {
+      var v = Number(needs[n]);
+      return '<li class="need"><span>' + esc(glyphOf('needs', n)) + ' ' +
+        esc(n) + '</span>' + bar(v, 4, v >= NEED_HOT) +
+        '<span class="w">' + (isFinite(v) ? needWord(v) : '—') +
+        '</span></li>';
     }).join('');
+    return rows ? header('needs') + rows : '';
   }
 
   /* The household, one row each: name, role and age, and who a young
@@ -295,7 +428,7 @@
       if (!m) return '';
       return '<li><span>' + esc(glyphOf('roles', m.role)) + ' ' +
         esc(m.name || 'a resident') + '</span><span>' + esc(m.role) +
-        ' · ' + num(m.age) + '</span></li>';
+        ', ' + ageWord(m.age) + '</span></li>';
     }).join('');
     var w = p['with'] !== null && p['with'] !== undefined
       ? byId[p['with']] : null;
@@ -303,131 +436,301 @@
       rows = '<li><span>out with</span><span>' +
         esc(w.name || 'a resident') + '</span></li>' + rows;
     }
-    return rows ? '<li><span>— family —</span><span></span></li>' + rows
-                : '';
+    return rows ? header('household') + rows : '';
+  }
+
+  /* a baby's age is not "0" */
+  function ageWord(a) {
+    return Number(a) >= 0 && Number(a) < 1 && a !== null && a !== ''
+      ? 'under 1' : fmt(a);
+  }
+
+  /* how a household kind reads in a sentence about one of its people */
+  function livesWith(p) {
+    var k = p.kind;
+    var WORDS = { family: 'in a family', couple: 'lives as a couple',
+                  flat_share: 'in a flat share', elder: 'lives with an elder',
+                  single: 'lives alone' };
+    if (!WORDS[k]) return 'in a ' + kindWord(k || 'household') + ' household';
+    /* a household whose others have left is one person on their own */
+    if (k === 'single' || !(p.family || []).length) return 'lives alone';
+    return WORDS[k];
+  }
+
+  function flatWords(unit) {
+    var u = ground && ground.units ? ground.units[String(unit)] : null;
+    if (unit === null || unit === undefined) return 'at home';
+    var b = u ? (ground.buildings || []).filter(function (x) {
+      return x.id === u.b;
+    })[0] : null;
+    return 'at home · flat ' + fmt(unit) +
+      (u ? ', floor ' + fmt(u.f) : '') + (b ? ', ' + b.name : '');
+  }
+
+  function residentCard(st, sel) {
+    var p = (st.people || []).filter(function (x) {
+      return x.id === sel.id;
+    })[0];
+    if (!p) {
+      return { name: sel.name || 'a resident',
+               state: esc(sel.name || 'they') + ' has left the estate',
+               rows: '' };
+    }
+    var where;
+    if (p.mode === 'school') where = 'at school, inside the fence';
+    else if (p.mode === 'away') where = 'away at work, off the estate';
+    else if (p['in']) where = flatWords(p.unit);
+    else {
+      var at = (st.fixtures || []).filter(function (f) {
+        return f.id === p.fixture && f.x === p.x && f.y === p.y;
+      })[0];
+      var by = at || nearest(st, p.x, p.y, 3);
+      where = at ? 'out · at the ' + kindName(at.kind)
+        : by ? 'out · near the ' + kindName(by.kind)
+        : 'out · on the ' + siteWord(siteOf(p.x, p.y));
+    }
+    var day = p.pupil ? 'at school on weekdays'
+      : p.job ? 'works off the estate on weekdays' : '';
+    var stress = Number(p.stress);
+    var mood = stress >= 5 ? 'very stressed' : stress >= 1 ? 'stressed' : '';
+    var order = ((st.phases && st.phases.order) ||
+                 ['dawn', 'morning', 'afternoon', 'evening', 'night'])
+      .slice();
+    Object.keys(p.habit || {}).forEach(function (k) {
+      if (order.indexOf(k) < 0) order.push(k);
+    });
+    var nowPhase = st.viewPhase || clockPhase;
+    var habit = order.filter(function (k) {
+      return p.habit && p.habit[k] !== undefined;
+    }).map(function (k) {
+      var place = p.habit[k];
+      var g = place === 'home' ? '🏠' : glyphOf('fixtures', place);
+      var cur = k === nowPhase;
+      return '<li' + (cur ? ' class="now"' : '') + '><span>' + esc(k) +
+        '</span><span>' + (g ? esc(g) + ' ' : '') + esc(kindName(place)) +
+        '</span></li>';
+    }).join('');
+    return {
+      name: p.name || 'a resident',
+      state: esc(glyphOf('roles', p.role)) + ' ' + esc(p.role) + ', ' +
+        ageWord(p.age) + ' · ' + esc(livesWith(p)) + '<br>' + esc(where) +
+        (mood ? ' · ' + mood : '') + (day ? '<br>' + esc(day) : ''),
+      rows: needRows(p) + familyRows(st, p) +
+        (habit ? header('usually') + habit : ''),
+    };
+  }
+
+  /* The shop is a building with the stall at its door: one place, so one
+   * card whichever of the two was clicked. */
+  function shopCard(st) {
+    var b = (ground && ground.buildings || []).filter(function (x) {
+      return x.kind === 'shop';
+    })[0];
+    var f = (st.fixtures || []).filter(function (x) {
+      return x.kind === 'shop';
+    })[0];
+    var d = b ? (st.buildings || []).filter(function (x) {
+      return x.id === b.id;
+    })[0] || {} : {};
+    var rows = '';
+    if (f) {
+      rows += row('on the shelves',
+                  f.stock === null || f.stock === undefined ? '—'
+                    : fmt(f.stock)) +
+        row('visits so far', fmt(f.uses)) +
+        row('inside now', fmt(usingNow(st, f)) + ' of ' + fmt(f.cap)) +
+        conditionRow(f.c);
+    }
+    var open = f && Number(f.c) <= 0 ? '⚠ broken, closed until mended'
+      : 'open';
+    return {
+      name: glyphOf('fixtures', 'shop') + ' ' + (b ? b.name : 'the shop'),
+      state: open + offs(d),
+      rows: rows,
+    };
+  }
+
+  /* the school is the building and the gate in its fence: one card */
+  function schoolCard(st) {
+    var b = (ground && ground.buildings || []).filter(function (x) {
+      return x.kind === 'school';
+    })[0];
+    var f = (st.fixtures || []).filter(function (x) {
+      return x.kind === 'school';
+    })[0];
+    var d = b ? (st.buildings || []).filter(function (x) {
+      return x.id === b.id;
+    })[0] || {} : {};
+    var dn = daytime(st);
+    var rows = row('pupils on the roll', fmt(dn.enrolled)) +
+      row('in today', fmt(dn.inToday)) + row('in school now', fmt(dn.school));
+    if (f) rows += row('through the gate so far', fmt(f.uses)) +
+      conditionRow(f.c);
+    return {
+      name: glyphOf('fixtures', 'school') + ' ' +
+        (b ? b.name : 'the school'),
+      state: (b ? fmt(b.floors) + ' floors · ' : '') +
+        'a weekday school for the estate\'s children' + offs(d),
+      rows: rows,
+    };
+  }
+
+  /* power and water are news only when they are off */
+  function offs(d) {
+    return (d.power === false ? '<br>⚠ no power' : '') +
+      (d.water === false ? '<br>⚠ no water' : '');
+  }
+
+  function blockCard(st, b) {
+    var d = (st.buildings || []).filter(function (x) {
+      return x.id === b.id;
+    })[0] || {};
+    var units = (ground && ground.units) || {};
+    var home = function (p) {
+      var u = p.unit !== null && p.unit !== undefined ? p.unit : p.punit;
+      return units[String(u)];
+    };
+    var here = (st.people || []).filter(function (p) {
+      var u = home(p);
+      return u && u.b === b.id;
+    });
+    var inNow = here.filter(function (p) { return p['in']; }).length;
+    var kinds = {};
+    var seen = {};
+    here.forEach(function (p) {
+      var u = p.unit !== null && p.unit !== undefined ? p.unit : p.punit;
+      if (seen[u]) return;
+      seen[u] = 1;
+      kinds[p.kind] = (kinds[p.kind] || 0) + 1;
+    });
+    var hh = Object.keys(kinds).sort(function (a, c) {
+      return kinds[c] - kinds[a];
+    }).map(function (k) {
+      return '<li><span>' + esc(glyphOf('households', k)) + ' ' +
+        esc(kindWord(k)) + '</span><span>' + fmt(kinds[k]) + '</span></li>';
+    }).join('');
+    return {
+      name: b.name,
+      state: fmt(b.floors) + ' floors · ' + fmt(d.lived) + ' of ' +
+        fmt(d.units) + ' flats lived in' + offs(d),
+      rows: row('people live here', fmt(here.length)) +
+        row('at home now', fmt(inNow)) +
+        (hh ? header('households') + hh : ''),
+    };
+  }
+
+  function fixtureCard(st, f) {
+    if (f.kind === 'shop') return shopCard(st);
+    if (f.kind === 'school') return schoolCard(st);
+    var spec = glyphOf('fixtures', f.kind) + ' ' + kindName(f.kind);
+    var rows = '';
+    var bits = [];
+    var c = Number(f.c);
+    if (f.kind === 'lamp') {
+      var ph = st.viewPhase || clockPhase;
+      bits.push(!(c > 0) ? '⚠ out, bulb gone'
+        : LIT_PHASES[ph] ? 'lit' : 'off in daylight');
+      var lit = near(st, f.x, f.y, 2, function (g) {
+        return !LIVING[g.kind];
+      });
+      bits.push(lit.length ? 'lights ' + some(lit)
+        : 'lights the ' + siteWord(siteOf(f.x, f.y)));
+      rows = conditionRow(f.c);
+    } else if (f.kind === 'tree') {
+      var shaded = near(st, f.x, f.y, 2, function (g, dx, dy) {
+        return !LIVING[g.kind] && dx <= 1 && dy <= 1;
+      });
+      bits.push(shaded.length ? 'shades ' + some(shaded)
+        : 'shades the ' + siteWord(siteOf(f.x, f.y)));
+      if (st.weather === 'storm') bits.push('could come down in a storm');
+    } else if (f.kind === 'bus_stop') {
+      var dn = daytime(st);
+      bits.push('the bus to work, on weekdays');
+      rows = row('work off the estate', fmt(dn.workers)) +
+        row('at work now', fmt(dn.away)) +
+        row('boardings so far', fmt(f.uses)) + conditionRow(f.c);
+    } else {
+      if (f.kind === 'bench' && f.perimeter) spec += ' by the footpath';
+      if (!(c > 0)) bits.push('⚠ broken');
+      if (field(st, 'shade', f.x, f.y) >= 2) bits.push('in the shade of a tree');
+      if (f.kind !== 'playground' && field(st, 'light', f.x, f.y) >= 3) {
+        bits.push('lamplit after dark');
+      }
+      var now = usingNow(st, f);
+      var cap = Number(f.cap) || 0;
+      rows = row((USE_WORD[f.kind] || 'uses') + ' so far', fmt(f.uses)) +
+        (cap ? row(f.kind === 'bench' ? 'seats taken'
+                   : f.kind === 'table' ? 'at the table' : 'here now',
+                   fmt(now) + ' of ' + fmt(cap)) : '') +
+        conditionRow(f.c);
+    }
+    if (!bits.length) bits.push('on the ' + siteWord(siteOf(f.x, f.y)));
+    return { name: spec, state: esc(bits.join(' · ')), rows: rows };
+  }
+
+  /* shade and lamplight on the ground, 0-9 from the server */
+  function shadeWord(v) {
+    return v >= 6 ? 'deep' : v >= 3 ? 'some' : v > 0 ? 'a little' : 'none';
+  }
+  function lightWord(v) {
+    return v >= 6 ? 'bright after dark' : v >= 3 ? 'lit after dark'
+      : v > 0 ? 'dim after dark' : 'dark at night';
+  }
+
+  function cellCard(st, sel) {
+    var site = siteOf(sel.x, sel.y);
+    if (!site) return null;
+    var shade = field(st, 'shade', sel.x, sel.y);
+    var light = field(st, 'light', sel.x, sel.y);
+    var by = nearest(st, sel.x, sel.y, 3);
+    var rows = '<li class="need"><span>shade</span>' + bar(shade, 9) +
+      '<span>' + shadeWord(shade) + '</span></li>' +
+      '<li class="need"><span>lamplight</span>' + bar(light, 9) +
+      '<span>' + lightWord(light) + '</span></li>';
+    return {
+      name: glyphOf('sites', site) + ' ' + siteWord(site),
+      state: by ? 'near the ' + esc(kindName(by.kind)) : '',
+      rows: rows,
+    };
   }
 
   function cardFor(st, sel) {
     if (!st || !sel) return null;
-    if (sel.kind === 'resident') {
-      var p = (st.people || []).filter(function (x) {
-        return x.id === sel.id;
-      })[0];
-      if (!p) return { name: 'a person', state: 'gone', rows: '' };
-      var where = p.mode === 'school' ? 'at school, inside the fence'
-        : p.mode === 'away' ? 'away at work, off the estate'
-        : p.in
-        ? 'inside, flat ' + (p.unit === null || p.unit === undefined
-                             ? '' : Number(p.unit))
-        : 'out at ' + Number(p.x) + ',' + Number(p.y);
-      var day = p.pupil ? ' · at school on weekdays'
-        : p.job ? ' · works off the estate on weekdays' : '';
-      var family = familyRows(st, p);
-      var habit = Object.keys(p.habit || {}).map(function (k) {
-        return '<li><span>' + esc(k) + '</span><span>' +
-          esc(p.habit[k]) + '</span></li>';
-      }).join('');
-      return {
-        name: p.name || 'a resident',
-        state: esc(glyphOf('roles', p.role)) + ' ' + esc(p.role) + ' · age ' +
-          num(p.age) + ' · ' + esc(p.kind || '') + ' household' +
-          esc(day) + '<br>' +
-          esc(where) +
-          (p.stress >= 1 ? ' · frayed ' + Number(p.stress) : ''),
-        rows: needRows(p) + family + (habit ?
-          '<li><span>— today —</span><span></span></li>' + habit : ''),
-      };
-    }
+    if (sel.kind === 'resident') return residentCard(st, sel);
+    if (sel.kind === 'shop') return shopCard(st);
+    if (sel.kind === 'school') return schoolCard(st);
     if (sel.kind === 'fixture') {
       var f = (st.fixtures || []).filter(function (x) {
         return x.id === sel.id;
       })[0];
       if (!f) return { name: 'a place', state: 'gone', rows: '' };
-      /* the name is plain text: the card writes it with textContent */
-      var spec = glyphOf('fixtures', f.kind) + ' ' +
-        (FIXTURE_NAME[f.kind] || f.kind);
-      var extra = '';
-      if (f.kind === 'school' || f.kind === 'bus_stop') {
-        var dn = daytime(st);
-        extra = f.kind === 'school'
-          ? row('pupils on the roll', dn.enrolled) +
-            row('in today', dn.inToday) + row('in school now', dn.school)
-          : row('work off the estate', dn.workers) +
-            row('at work now', dn.away);
-      }
-      return {
-        name: spec,
-        state: 'at ' + Number(f.x) + ',' + Number(f.y) + ' · ' +
-          (f.kind === 'school' ? 'gone through ' :
-           f.kind === 'bus_stop' ? 'boarded ' : 'used ') +
-          num(f.uses) + ' times' +
-          (f.stock !== null && f.stock !== undefined
-            ? ' · stock ' + Number(f.stock) : ''),
-        rows: extra + '<li><span>condition</span><span>' + bar(f.c, 1) +
-          '</span></li>',
-      };
+      return fixtureCard(st, f);
     }
     if (sel.kind === 'building') {
       var b = (ground && ground.buildings || []).filter(function (x) {
         return x.id === sel.id;
       })[0];
-      var d = (st.buildings || []).filter(function (x) {
-        return x.id === sel.id;
-      })[0] || {};
       if (!b) return null;
       /* each kind of building says what it is for: a school's card counts
        * pupils, not the flats it does not have */
-      var rows;
-      if (b.kind === 'school') {
-        var ds = daytime(st);
-        rows = row('pupils on the roll', ds.enrolled) +
-          row('in today', ds.inToday) + row('in school now', ds.school);
-      } else if (b.kind === 'shop') {
-        rows = '';
-      } else {
-        rows = row('flats', d.units || 0) + row('lived in', d.lived || 0);
-      }
-      var where = b.kind === 'school' && b.gate
-        ? ' · gate at ' + Number(b.gate[0]) + ',' + Number(b.gate[1])
-        : ' · door at ' + Number(b.door[0]) + ',' + Number(b.door[1]);
-      return {
-        name: b.name,
-        state: esc(b.kind) + ' · ' + num(b.floors) + ' floors' + where +
-          '<br>' +
-          (d.power ? 'power on' : 'no power') + ' · ' +
-          (d.water ? 'water on' : 'no water'),
-        rows: rows,
-      };
+      if (b.kind === 'shop') return shopCard(st);
+      if (b.kind === 'school') return schoolCard(st);
+      return blockCard(st, b);
     }
-    if (sel.kind === 'cell') {
-      if (!ground || !ground.rows || !ground.rows[sel.y] ||
-          ground.rows[sel.y][sel.x] === undefined) return null;
-      var site = ground.codes[ground.rows[sel.y][sel.x]];
-      var i = sel.y * ground.width + sel.x;
-      var shade = Number((st.shade || [])[i]);
-      var light = Number((st.light || [])[i]);
-      if (!isFinite(shade)) shade = 0;
-      if (!isFinite(light)) light = 0;
-      return {
-        name: glyphOf('sites', site) + ' ' + site,
-        state: 'at ' + Number(sel.x) + ',' + Number(sel.y),
-        rows: '<li><span>shade</span><span>' +
-          (shade / 9).toFixed(2) + '</span></li>' +
-          '<li><span>lamp</span><span>' +
-          (light / 9).toFixed(2) + '</span></li>',
-      };
-    }
+    if (sel.kind === 'cell') return cellCard(st, sel);
     return null;
   }
 
-  /* Write the card for `sel`, or close it. Returns whether it is open. */
+  /* Write the card for `sel`, or close it. Returns whether it is open.
+   * The rows are written only when they changed, so a card being read (or
+   * scrolled) is not rebuilt under the reader on every poll. */
   function card(st, sel) {
     var c = cardFor(st, sel);
     var el = $('card');
     if (!c) { el.classList.remove('on'); return false; }
     $('cardName').textContent = c.name;
-    $('cardState').innerHTML = c.state;
-    $('cardRows').innerHTML = c.rows;
+    write($('cardState'), c.state);
+    write($('cardRows'), c.rows);
     el.classList.add('on');
     return true;
   }
@@ -446,7 +749,9 @@
     card: card,
     glyphOf: glyphOf,
     esc: esc,
-    num: num,
+    num: fmt,
+    voiceLine: voiceLine,
+    needWord: needWord,
     phaseView: phaseView,
     scrubber: scrubber,
     view: function () { return view; },

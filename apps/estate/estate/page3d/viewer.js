@@ -114,14 +114,18 @@ function framed(st) {
 function drawShows(st) {
   const box = $('shows');
   if (!box || !HUD) return;
-  box.innerHTML = HUD.scrubber(st, S.show);
-  Array.prototype.forEach.call(box.querySelectorAll('button'), b => {
-    b.onclick = () => {
-      S.show = Number(b.dataset.i);
-      if (S.world) S.world.setPhaseView(S.show);
-      if (S.state) show(S.state);
-    };
-  });
+  /* written only when it changed (patch.js), so a button is not
+   * replaced under the click that is pressing it; the one click handler
+   * is on the box (wire) */
+  window.Patch.write(box, HUD.scrubber(st, S.show));
+}
+
+function pickShow(ev) {
+  const b = ev.target && ev.target.closest && ev.target.closest('button');
+  if (!b || b.dataset.i === undefined) return;
+  S.show = Number(b.dataset.i);
+  if (S.world) S.world.setPhaseView(S.show);
+  if (S.state) show(S.state);
 }
 
 function show(st) {
@@ -213,8 +217,17 @@ function phaseLabel(info) {
 /* ------------------------------------------------------------- the card */
 
 function drawCard() {
-  if (HUD) HUD.card(framed(S.state), S.selected);
-  else $('card').classList.remove('on');
+  const open = HUD ? HUD.card(framed(S.state), S.selected) : false;
+  if (!HUD) $('card').classList.remove('on');
+  /* on a phone the card takes the bottom sheet's place (style.css) */
+  document.body.classList.toggle('carded', !!open);
+}
+
+/* a new thing picked starts its card at the top */
+function select(sel) {
+  S.selected = sel;
+  $('card').scrollTop = 0;
+  drawCard();
 }
 
 function siteAt(x, y) {
@@ -380,10 +393,12 @@ function wire() {
     post({ paused: p });
   };
   $('stepBtn').onclick = () => post({ step: 1 });
-  $('cardClose').onclick = () => {
-    S.selected = null;
-    drawCard();
-  };
+  $('cardClose').onclick = () => select(null);
+  $('shows').addEventListener('click', pickShow);
+  /* a list under a finger, or with text selected in it, is not rewritten
+   * until it is let go (patch.js) */
+  window.Patch.hold($('chron'));
+  window.Patch.hold($('card'), [$('cardState'), $('cardRows')]);
   $('fsBtn').onclick = () => {
     if (document.fullscreenElement) document.exitFullscreen();
     else document.documentElement.requestFullscreen();
@@ -408,17 +423,18 @@ function wire() {
     if (!S.world) return;
     const r = canvas.getBoundingClientRect();
     const hit = S.world.pick(ev.clientX, ev.clientY, r, true);
-    if (!hit) { S.selected = null; drawCard(); return; }
+    if (!hit) { select(null); return; }
     if (hit.kind === 'resident') {
-      S.selected = { kind: 'resident', id: hit.person.id };
+      /* the name stays with the pick, so a card for someone who has since
+       * left can still say who */
+      select({ kind: 'resident', id: hit.person.id, name: hit.person.name });
     } else if (hit.kind === 'building') {
-      S.selected = { kind: 'building', id: hit.building.id };
+      select({ kind: 'building', id: hit.building.id });
     } else if (hit.kind === 'fixture') {
-      S.selected = { kind: 'fixture', id: hit.fixture.id };
+      select({ kind: 'fixture', id: hit.fixture.id });
     } else {
-      S.selected = { kind: 'cell', x: hit.cell.x, y: hit.cell.y };
+      select({ kind: 'cell', x: hit.cell.x, y: hit.cell.y });
     }
-    drawCard();
   });
 
   window.addEventListener('resize', () => {
