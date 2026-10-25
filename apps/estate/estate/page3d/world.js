@@ -1118,6 +1118,9 @@ export function createWorld(ground, canvas, opts) {
   let fixturesBuilt = false;
   let fixtureEntries = [];
   let treeEntries = [];
+  /* the frame's own fixtures by id, so a click on a bench can return the
+   * fact the server sent rather than a second copy kept by the page */
+  let fixtureById = {};
   /* The benches, by cell, with the way each one faces. A resident on a
    * bench's cell is seated on it (up to its capacity), and `focus=bench`
    * needs to know where the benches are without inventing a second copy of
@@ -1296,10 +1299,10 @@ export function createWorld(ground, canvas, opts) {
     const key = (st.fixtures || []).map(f => f.id + ':' + f.kind).join(',');
     if (!fixturesBuilt || key !== fixtureKey) buildFixtures(st);
     syncFixtureSeason(st.season || 0);
-    const byId = {};
-    (st.fixtures || []).forEach(f => { byId[f.id] = f; });
+    fixtureById = {};
+    (st.fixtures || []).forEach(f => { fixtureById[f.id] = f; });
     fixtureEntries.forEach(fx => {
-      const f = byId[fx.id];
+      const f = fixtureById[fx.id];
       const c = f ? clamp01(f.c == null ? 1 : f.c) : 1;
       const k = 0.55 + 0.45 * c;
       fx.mats.forEach(m => {
@@ -1483,7 +1486,10 @@ export function createWorld(ground, canvas, opts) {
 
   /* -------------------------------------------------------------- pick */
 
-  function pick(clientX, clientY, rect) {
+  /* `withGround` is the click's privilege: a hover asks only what is on
+   * top of the ground, while a click may also name the cell that was hit.
+   * Raycasting every tile on every pointer move would be wasted work. */
+  function pick(clientX, clientY, rect, withGround) {
     if (!clock.haveState) return null;
     ndc.set(((clientX - rect.left) / rect.width) * 2 - 1,
             -((clientY - rect.top) / rect.height) * 2 + 1);
@@ -1501,6 +1507,30 @@ export function createWorld(ground, canvas, opts) {
     if (bh.length) {
       const id = bh[0].object.userData.pick.id;
       return { kind: 'building', id, building: buildingById[id] };
+    }
+    /* a fixture's own group carries the id; the ray lands on a mesh inside
+     * it, so walk back up to the group that owns the pick */
+    const fh = raycaster.intersectObjects(fixtureGroup.children, true);
+    if (fh.length) {
+      let o = fh[0].object;
+      while (o && !o.userData.pick) o = o.parent;
+      const pick = o && o.userData.pick;
+      if (pick) {
+        return { kind: 'fixture', id: pick.id,
+                 fixture: fixtureById[pick.id] ||
+                          { id: pick.id, kind: 'a place' } };
+      }
+    }
+    /* the ground itself: an instanced tile knows its own cell, so a click
+     * on a lawn or the water can say which one it was */
+    if (withGround) {
+      const th = raycaster.intersectObject(tiles, false);
+      if (th.length && th[0].instanceId !== undefined) {
+        const i = th[0].instanceId;
+        const x = i % W, y = (i - x) / W;
+        return { kind: 'cell', x, y,
+                 cell: { x, y, site: ground.codes[ground.rows[y][x]] } };
+      }
     }
     return null;
   }

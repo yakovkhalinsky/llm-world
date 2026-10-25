@@ -83,8 +83,55 @@ html, body {
 /* the moon is not a lamp: at night the glyph takes the sky's own blue */
 .watchline .d.night { color: #cfe0ff; }
 .watchline .dim { color: var(--dim); }
+.watchline.phase { border-top: 0; padding-top: 0; margin-top: 5px; }
+.voiceline { font-size: 11px; color: var(--dim); margin-top: 3px; }
 
-.ctl { bottom: 14px; left: 16px; }
+/* the bottom-left corner holds the feed and the controls, stacked, as the
+   plan page held them; the estate itself stays clear above them */
+.bl {
+  position: absolute;
+  bottom: 14px; left: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: min(340px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.bl > * { pointer-events: auto; }
+.bl .panel { position: static; }
+
+.feed {
+  width: 320px;
+  max-height: 30vh;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.chron {
+  list-style: none; margin: 0; padding: 0;
+  overflow-y: auto;
+  font-size: 12.5px;
+}
+.chron li {
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(233, 229, 220, 0.06);
+  color: var(--dim);
+}
+.chron li:first-child { color: var(--ink); }
+.chron li.quiet { color: var(--dim); opacity: 0.75; }
+.chron li .shape { color: var(--dim); }
+.chron li .news { color: var(--ink); display: block; padding-left: 26px; }
+.chron li .d { color: var(--lamp); font-variant-numeric: tabular-nums; }
+
+.tabs {
+  display: flex; gap: 6px;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--edge);
+}
+.tabs button { flex: 1; }
+
 .row { display: flex; gap: 6px; flex-wrap: wrap; }
 .speedrow { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
 .speedrow .hint { font-size: 11px; color: var(--dim); }
@@ -142,6 +189,17 @@ button.on { background: rgba(255, 202, 122, 0.18); border-color: var(--lamp); }
   font-variant-numeric: tabular-nums;
 }
 
+/* a bar for a need, drawn rather than described */
+.bar {
+  display: inline-block;
+  width: 74px; height: 6px;
+  background: rgba(233, 229, 220, 0.12);
+  border-radius: 3px;
+  overflow: hidden;
+  vertical-align: middle;
+}
+.bar i { display: block; height: 100%; background: var(--lamp); }
+
 /* -------------------------------------------------------------- the rest */
 
 .hint.foot {
@@ -192,7 +250,8 @@ body.nogl #view, body.nogl .hud { display: none; }
   .idbox { top: auto; bottom: 76px; right: 10px; left: 10px;
            max-width: none; }
   .title { top: 10px; left: 10px; }
-  .ctl { bottom: 10px; left: 10px; }
+  .bl { bottom: 10px; left: 10px; right: 10px; max-width: none; }
+  .feed { width: auto; max-height: 22vh; }
   .card { bottom: 10px; right: 10px; width: min(320px, calc(100vw - 20px)); }
   .hint.foot { display: none; }
 }

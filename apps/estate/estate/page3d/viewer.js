@@ -55,6 +55,11 @@ const PHASE_ALIAS = {
   dusk: 3, sunset: 3, evening: 3, night: 4, midnight: 4,
 };
 
+/* the panels are a classic script (hud.js), pure DOM and testable in Node;
+ * this module gives them the ground once and a state on every poll */
+const HUD = (typeof globalThis !== 'undefined' && globalThis.EstateHUD) ||
+            null;
+
 const $ = id => document.getElementById(id);
 
 const params = new URLSearchParams(window.location.search);
@@ -122,25 +127,12 @@ function fallback(why) {
 
 /* --------------------------------------------------------------- the HUD */
 
-const WEATHER_WORD = { clear: 'clear', rain: 'rain', storm: 'storm',
-                       heat: 'heat', frost: 'frost' };
-
-function glyphOf(group, key) {
-  const g = (S.ground && S.ground.glyphs) || {};
-  return ((g[group] || {})[key]) || '';
-}
-
-function head(st) {
-  $('when').textContent =
-    'day ' + st.day + ' · ' + st.season_name + ' · ' + st.weekday;
-  $('weather').textContent =
-    glyphOf('weather', st.weather) + ' ' +
-    (WEATHER_WORD[st.weather] || st.weather);
-  const blocks = (st.buildings || []).filter(b => b.kind === 'block').length;
-  $('pops').innerHTML = '<b>' + Number(st.residents) + '</b> people · <b>' +
-    Number(blocks) + '</b> blocks · <b>' +
-    Number(st.units) + '</b> flats' +
-    (st.waiting ? ' · <b>' + Number(st.waiting) + '</b> waiting' : '');
+/* The header, the day feed, the census and the watcher tab live in hud.js
+ * so the same words can be checked without a browser. This module owns the
+ * scene and the controls; it hands the panels a ground once and a state on
+ * every poll. */
+function updateHUD(st) {
+  if (HUD) HUD.update(st);
   markPace(st.tick_seconds);
   const b = $('pauseBtn');
   b.textContent = st.paused ? '▶ play' : '⏸ pause';
@@ -165,54 +157,15 @@ function phaseLabel(info) {
 
 /* ------------------------------------------------------------- the card */
 
-function cardFor(sel) {
-  const st = S.state;
-  if (!st || !sel) return null;
-  if (sel.kind === 'resident') {
-    const p = st.people.filter(x => x.id === sel.id)[0];
-    if (!p) return null;
-    const needs = Object.keys(p.needs || {}).sort()
-      .map(n => '<li><span>' + esc(glyphOf('needs', n)) + ' ' + esc(n) +
-                '</span><span>' + Number(p.needs[n]).toFixed(2) +
-                '</span></li>')
-      .join('');
-    return {
-      name: p.name || 'a resident',
-      state: esc(glyphOf('roles', p.role)) + ' ' + esc(p.role) + ' · age ' +
-        Number(p.age) + ' · ' + esc(p.kind || '') + ' household<br>' +
-        (p.in ? 'inside, flat ' + esc(p.unit)
-              : 'out at ' + Number(p.x) + ',' + Number(p.y)) +
-        (p.stress >= 1 ? ' · frayed ' + Number(p.stress) : ''),
-      rows: needs,
-    };
-  }
-  if (sel.kind === 'building') {
-    const b = (S.ground.buildings || []).filter(x => x.id === sel.id)[0];
-    const d = (st.buildings || []).filter(x => x.id === sel.id)[0] || {};
-    if (!b) return null;
-    return {
-      name: b.name,
-      state: esc(b.kind) + ' · ' + Number(b.floors) + ' floors · door at ' +
-        Number(b.door[0]) + ',' + Number(b.door[1]) + '<br>' +
-        (d.power ? 'power on' : 'no power') + ' · ' +
-        (d.water ? 'water on' : 'no water'),
-      rows: '<li><span>flats</span><span>' + Number(d.units || 0) +
-        '</span></li>' +
-        '<li><span>lived in</span><span>' + Number(d.lived || 0) +
-        '</span></li>',
-    };
-  }
-  return null;
+function drawCard() {
+  if (HUD) HUD.card(S.state, S.selected);
+  else $('card').classList.remove('on');
 }
 
-function drawCard() {
-  const c = cardFor(S.selected);
-  const el = $('card');
-  if (!c) { el.classList.remove('on'); return; }
-  $('cardName').textContent = c.name;
-  $('cardState').innerHTML = c.state;
-  $('cardRows').innerHTML = c.rows;
-  el.classList.add('on');
+function siteAt(x, y) {
+  const g = S.ground;
+  if (!g || !g.rows || !g.rows[y] || g.rows[y][x] === undefined) return '';
+  return g.codes[g.rows[y][x]];
 }
 
 function showHover(hit) {
@@ -221,8 +174,13 @@ function showHover(hit) {
   S.hover = hit;
   if (hit.kind === 'resident') {
     tip.textContent = hit.person.name + ' · ' + hit.person.role;
-  } else {
+  } else if (hit.kind === 'building') {
     tip.textContent = hit.building.name + ' · ' + hit.building.kind;
+  } else if (hit.kind === 'fixture') {
+    const kind = (hit.fixture && hit.fixture.kind) || 'a place';
+    tip.textContent = (HUD ? HUD.glyphOf('fixtures', kind) + ' ' : '') + kind;
+  } else {
+    tip.textContent = siteAt(hit.cell.x, hit.cell.y) || 'the ground';
   }
   tip.style.left = (S.pointerX + 14) + 'px';
   tip.style.top = (S.pointerY + 14) + 'px';
@@ -308,7 +266,7 @@ function poll() {
     S.state = st;
     if (S.world) {
       S.world.setState(st);
-      head(st);
+      updateHUD(st);
       if (S.selected) drawCard();
       /* The first state is drawn here rather than waiting for the next
        * animation frame. A headless check may never get one — and
@@ -370,6 +328,13 @@ function wire() {
     S.selected = null;
     drawCard();
   };
+  $('fsBtn').onclick = () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen();
+  };
+  $('tabChron').onclick = () => HUD && HUD.tab('chron', S.state);
+  $('tabCensus').onclick = () => HUD && HUD.tab('census', S.state);
+  $('tabWatch').onclick = () => HUD && HUD.tab('watch', S.state);
 
   const canvas = $('view');
   canvas.addEventListener('pointermove', ev => {
@@ -386,11 +351,17 @@ function wire() {
   canvas.addEventListener('click', ev => {
     if (!S.world) return;
     const r = canvas.getBoundingClientRect();
-    const hit = S.world.pick(ev.clientX, ev.clientY, r);
+    const hit = S.world.pick(ev.clientX, ev.clientY, r, true);
     if (!hit) { S.selected = null; drawCard(); return; }
-    S.selected = hit.kind === 'resident'
-      ? { kind: 'resident', id: hit.person.id }
-      : { kind: 'building', id: hit.building.id };
+    if (hit.kind === 'resident') {
+      S.selected = { kind: 'resident', id: hit.person.id };
+    } else if (hit.kind === 'building') {
+      S.selected = { kind: 'building', id: hit.building.id };
+    } else if (hit.kind === 'fixture') {
+      S.selected = { kind: 'fixture', id: hit.fixture.id };
+    } else {
+      S.selected = { kind: 'cell', x: hit.cell.x, y: hit.cell.y };
+    }
     drawCard();
   });
 
@@ -411,6 +382,7 @@ function start() {
   }
   fetchJSON('/api/ground').then(g => {
     S.ground = g;
+    if (HUD) HUD.setGround(g);
     try {
       S.world = createWorld(g, $('view'), {
         forcedPhase, clockFrac, staticMode: STATIC, topView: TOP,

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Highfield — 3D</title>
+<title>Highfield</title>
 <!-- no favicon on this page; an empty data URL stops the browser asking
      for /favicon.ico and logging a 404 on every visit -->
 <link rel="icon" href="data:,">
@@ -29,20 +29,34 @@
       <span id="weather">…</span>
     </div>
     <div class="poplines" id="pops"></div>
-    <div class="watchline">
+    <div class="watchline" id="watch"></div>
+    <div class="voiceline" id="voice"></div>
+    <div class="watchline phase">
       <span class="d" id="phaseGlyph">·</span> <span id="phase">…</span>
       <span class="dim"> · the five phases turn the light</span>
     </div>
   </div>
 
-  <div class="panel ctl">
-    <div class="row">
-      <button id="pauseBtn">⏸ pause</button>
-      <button id="stepBtn">+ day</button>
+  <div class="bl">
+    <div class="panel feed">
+      <ul class="chron" id="chron"></ul>
+      <div class="tabs">
+        <button class="on" id="tabChron">the day</button>
+        <button id="tabCensus">who lives here</button>
+        <button id="tabWatch">☾ watcher</button>
+      </div>
     </div>
-    <div class="speedrow">
-      <span class="hint">a day every</span>
-      <span id="speeds"></span>
+
+    <div class="panel ctl">
+      <div class="row">
+        <button id="pauseBtn">⏸ pause</button>
+        <button id="stepBtn">+ day</button>
+        <button id="fsBtn">⛶ full</button>
+      </div>
+      <div class="speedrow">
+        <span class="hint">a day every</span>
+        <span id="speeds"></span>
+      </div>
     </div>
   </div>
 
@@ -56,7 +70,7 @@
   </div>
 
   <div class="hint foot" id="hint">
-    drag to orbit · wheel to zoom · right-drag to pan · click a person or block
+    drag to orbit · wheel to zoom · right-drag to pan · click a person, block or place
   </div>
 </div>
 
@@ -70,9 +84,11 @@
   </div>
 </div>
 
-<!-- the walk router. Classic script before the module: modules are deferred,
-     so `EstateWalk` exists by the time the viewer runs. -->
+<!-- the walk router and the HUD panels, classic scripts before the module:
+     modules are deferred, so `EstateWalk` and `EstateHUD` exist by the time
+     the viewer runs -->
 <script src="/3d/walk.js"></script>
+<script src="/3d/hud.js"></script>
 <!-- the day clock and light table, pure and testable: classic script before
      the module, like the router -->
 <script src="/3d/clock.js"></script>
