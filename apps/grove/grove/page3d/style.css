@@ -112,11 +112,14 @@ html, body {
   flex-direction: column;
   align-items: flex-start;
   gap: 10px;
-  max-width: min(340px, calc(100vw - 32px));
+  /* a set width, not a cap: the five-button row no longer stretches the
+   * corner past the feed above it */
+  width: min(340px, calc(100vw - 32px));
   pointer-events: none;
 }
 /* the feed and the controls one width, so the panels line up */
-.bl > .ctl { align-self: stretch; }
+.bl > .ctl, .bl > .feed { align-self: stretch; }
+.bl > .feed { width: auto; }
 .bl > * { pointer-events: auto; }
 .bl .panel { position: static; }
 
@@ -409,7 +412,7 @@ body.calm .hint.foot {
   /* the chips in rows, each whole; none hidden off the side */
   .poplines { display: flex; flex-wrap: wrap; gap: 2px 12px; }
   .bl > .feed, .bl > .ctl { width: auto; align-self: stretch; }
-  .bl { bottom: 10px; left: 10px; right: 10px; max-width: none; }
+  .bl { bottom: 10px; left: 10px; right: 10px; width: auto; max-width: none; }
   .feed { width: auto; max-height: 24vh; }
   .card { left: 10px; right: 10px; bottom: 10px; width: auto;
           max-height: 60vh; }

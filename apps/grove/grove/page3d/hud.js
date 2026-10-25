@@ -402,7 +402,10 @@
       if (sel.kind === 'animal') {
         return {
           name: heading(st, 'animal', e),
-          state: fmt(e.ag) + ' weeks old' + (e.h ? ' · hungry' : ''),
+          /* with the needs rows open the hunger row is the one word for
+           * it ("starving" under a state line saying "hungry" disagreed) */
+          state: fmt(e.ag) + ' weeks old' +
+            (e.h && !needRows(b) ? ' · hungry' : ''),
           rows: needRows(b) + ledgerRows(led),
         };
       }
@@ -426,12 +429,13 @@
       if (!(x >= 0 && y >= 0 && x < size && y < size)) return null;
       var c = (st.cells || [])[y * size + x];
       if (!c) return null;
-      var TERRAIN = { s: 'soil', w: 'water', r: 'rock' };
+      /* headed with a glyph, as a creature, a plant or an estate cell */
+      var TERRAIN = { s: '🟫 soil', w: '💧 water', r: '🪨 rock' };
       /* the words compare and the bars read Number: no NaN reaches a
        * reader whatever the frame holds */
       var glow = ((st.glow || [])[y * size + x] || 0) / 9;
       var grass = c[1], wet = c[2];
-      var name = c[0] === 'w' && WATER[c[6]] ? WATER[c[6]]
+      var name = c[0] === 'w' && WATER[c[6]] ? '💧 ' + WATER[c[6]]
         : TERRAIN[c[0]] || 'the ground';
       var here = hereWords(st, x, y);
       return {

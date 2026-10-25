@@ -219,7 +219,7 @@ ok('the plant\'s place is not written',
 
 step('a cell\'s card', () => H.card(state, { kind: 'cell', x: 0, y: 0 }));
 clean('cell card');
-ok('the cell card is open on soil', els.cardName.textContent === 'soil',
+ok('the cell card is open on soil', els.cardName.textContent === '🟫 soil',
    els.cardName.textContent);
 ok('the cell\'s grass and moisture are dashes, and no glow is no row',
    (els.cardRows.innerHTML.match(/<span>—<\/span>/g) || []).length === 2 &&
@@ -229,13 +229,13 @@ ok('the cell\'s grass and moisture are dashes, and no glow is no row',
 step('a cell picked with its coordinates as strings',
      () => H.card(state, { kind: 'cell', x: '1', y: '0' }));
 ok('coordinates are read as numbers, not joined as strings',
-   els.cardName.textContent === 'water' &&
+   els.cardName.textContent === '💧 water' &&
    els.cardState.innerHTML === 'open water', els.cardName.textContent + ' / ' +
    els.cardState.innerHTML);
 step('the same, a row down', () =>
   H.card(state, { kind: 'cell', x: '0', y: '1e0' }));
 ok('the row is read as a number too',
-   els.cardName.textContent === 'soil' &&
+   els.cardName.textContent === '🟫 soil' &&
    els.cardState.innerHTML === 'low, by the water · nothing grows or walks here',
    els.cardName.textContent + ' / ' + els.cardState.innerHTML);
 ok('a cell off the map gets no card',
@@ -397,6 +397,11 @@ step('a rabbit', () => H.card(plain, { kind: 'animal', id: 1 }));
 ok('an animal: emoji, "a wild", its age with a comma, hungry in words',
    els.cardName.textContent === '🐇 a wild rabbit' &&
    els.cardState.innerHTML === '1,052 weeks old · hungry', cardText());
+step('the rabbit with its needs open', () => H.card(plain, { kind: 'animal', id: 1 },
+  { id: 1, state: 'ok', b: { id: 1, alive: true, hunger: 12, energy: 5, events: [] } }));
+ok('with the needs rows open the hunger row is the one word for it',
+   els.cardState.innerHTML === '1,052 weeks old' &&
+   els.cardRows.innerHTML.indexOf('<span>starving</span>') >= 0, cardText());
 step('a named owl', () => H.card(plain, { kind: 'animal', id: 2 }));
 ok('a named animal keeps its name',
    els.cardName.textContent === '🦉 Hoot · owl', els.cardName.textContent);
@@ -420,7 +425,7 @@ ok('a cell\'s ground is in words, with bars',
    els.cardRows.innerHTML.indexOf('width:70%') >= 0, els.cardRows.innerHTML);
 step('the creek', () => H.card(plain, { kind: 'cell', x: 1, y: 0 }));
 ok('water is named for what it is, with no ground rows',
-   els.cardName.textContent === 'the creek' &&
+   els.cardName.textContent === '💧 the creek' &&
    els.cardState.innerHTML === 'open water' &&
    els.cardRows.innerHTML.indexOf('grass') < 0, cardText());
 step('a bare cell', () => H.card(plain, { kind: 'cell', x: 0, y: 1 }));
@@ -428,6 +433,7 @@ ok('an empty cell says so', els.cardState.innerHTML ===
    'on the slope · nothing grows or walks here', els.cardState.innerHTML);
 step('rock', () => H.card(plain, { kind: 'cell', x: 1, y: 1 }));
 ok('rock: low, a log, remains, a faint glow',
+   els.cardName.textContent === '🪨 rock' &&
    els.cardState.innerHTML === 'low, by the water · an oak' &&
    els.cardRows.innerHTML.indexOf('remains</span><span>here') >= 0 &&
    els.cardRows.innerHTML.indexOf('glows faintly at night') >= 0, cardText());
