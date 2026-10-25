@@ -902,11 +902,11 @@ export function createWorld(ground, canvas, opts) {
       headMesh.setColorAt(i, _c1);
     }
 
-    /* Who is on a bench. A resident whose cell holds a bench is seated on
-     * it, up to the bench's capacity, side by side (the lowest ids first, so
-     * the picture does not shuffle between polls); anyone else on that cell
-     * stands beside it rather than inside the sitter. A fixture is a place,
-     * and the state already says who is standing on it. */
+    /* Who is on a bench. A resident is seated only when the bench is the
+     * fixture they chose last phase; someone whose walk merely ended on
+     * that cell is standing there, not sitting. Seats go to those users
+     * first, side by side (lowest ids first, so the picture does not
+     * shuffle between polls); anyone else stands clearly beside the bench. */
     seatedCount = 0;
     const onBench = {};
     for (let i = 0; i < people.length; i++) {
@@ -919,7 +919,13 @@ export function createWorld(ground, canvas, opts) {
     const seatNow = {};
     for (const key in onBench) {
       const b = benchByCell[key];
-      const idx = onBench[key].sort((a, c) => people[a].id - people[c].id);
+      const idx = onBench[key].sort((a, c) => {
+        const ua = people[a].fixture != null &&
+                   Number(people[a].fixture) === b.id ? 0 : 1;
+        const uc = people[c].fixture != null &&
+                   Number(people[c].fixture) === b.id ? 0 : 1;
+        return ua - uc || people[a].id - people[c].id;
+      });
       /* local +x, which runs along the seat, in world coordinates */
       const ax = Math.cos(b.yaw), az = -Math.sin(b.yaw);
       for (let rank = 0; rank < idx.length; rank++) {
@@ -936,9 +942,13 @@ export function createWorld(ground, canvas, opts) {
           seatNow[p.id] = { cell: key, x: toX[i], z: toZ[i] };
           seatedCount++;
         } else {
-          /* no room on the seat: stand at the end of it, not on top */
+          /* No room on the seat: stand clearly past the end of it, not on
+           * top. The seat is 0.9 long (±0.45) and a body is 0.32 wide, so
+           * a centre nearer than 0.61 overlaps the slats and reads as a
+           * third sitter — which is exactly how a two-seat bench came to
+           * be reported as seating three. */
           const side = (p.id & 1) ? 1 : -1;
-          const off = side * (0.52 + hash01(p.id, 41) * 0.12);
+          const off = side * (0.74 + hash01(p.id, 41) * 0.10);
           toX[i] = b.x + ax * off;
           toZ[i] = b.z + az * off;
           offX[i] = offZ[i] = 0;
@@ -1195,7 +1205,8 @@ export function createWorld(ground, canvas, opts) {
       addBox(g, metal.mat, 0.07, 0.42, 0.3, -0.34, 0.21, 0);
       addBox(g, metal.mat, 0.07, 0.42, 0.3, 0.34, 0.21, 0);
       /* local +z is the way it faces; local +x runs along the seat */
-      bench = { key: f.x + ',' + f.y, cx: f.x, cy: f.y,
+      bench = { key: f.x + ',' + f.y, id: Number(f.id),
+                cx: f.x, cy: f.y,
                 x: f.x + 0.5, z: f.y + 0.5,
                 fx: face.fx, fz: face.fz, yaw: face.yaw,
                 perimeter: !!f.perimeter,

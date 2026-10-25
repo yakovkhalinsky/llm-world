@@ -152,8 +152,14 @@ def _utility(w, r, c, need, phase, rng):
         cost = 0.0
     else:
         f = c["fixture"]
+        # A seat's capacity is hard: a full bench is not a worse bench, it
+        # is no bench. The chooser falls through to the next candidate, so
+        # the tenth person at the edge walks to the next free seat rather
+        # than piling onto the first.
+        if places.full(c["kind"], f["occupants"]):
+            return None
         eff = places.effective(c["kind"], need, f["condition"],
-                               len(f["occupants"]))
+                               len(f["occupants"]), f)
         # and the weather reaches the need without the weather module ever
         # knowing what a need is: a wet day keeps people in. The plan has
         # claimed this since it was written and nothing implemented it, so
@@ -170,14 +176,11 @@ def _utility(w, r, c, need, phase, rng):
             eff *= 1.0 + 0.7 * w["cells"][f["y"]][f["x"]]["light"]
         # The perimeter's own benches are worth the walk out: the quiet
         # and green of the ring road's margin, and the stroll for its own
-        # sake. The bonus lives in the pack beside the bench's affords, so
-        # the engine does not know which cells generation calls the edge;
-        # it only sees the mark. Rain damps it like every other outdoor
-        # draw, because nobody strolls the perimeter in a downpour.
-        if f.get("perimeter"):
-            bonus = rules.R["fixtures"][f["kind"]].get(
-                "perimeter_bonus", {}).get(need, 0.0)
-            eff += bonus * (1.0 - 0.45 * wet)
+        # sake. The bonus lives in the pack beside the bench's affords
+        # (`places.base_quality`) and is folded in *before* condition and
+        # crowding, so a worn or busy seat keeps no more of it than it
+        # keeps of the bench itself. Rain damps it with the rest of the
+        # outdoor draw, because nobody strolls the perimeter in a downpour.
         d = abs(c["x"] - px) + abs(c["y"] - py)
         if d > rules.R["engine"]["scan"]:
             return None
@@ -280,6 +283,10 @@ def _go_to(w, r, c):
     """Leave home if inside, walk, and arrive — or run out of the phase."""
     budget = rules.R["engine"]["steps_per_phase"] * r["mobility"]
     r["side"] = None                       # a new walk chooses its own way
+    # a walk starts from where you were; until you arrive and use a place,
+    # `where.fixture` is not a claim about this phase (the views seat only
+    # the residents whose chosen fixture is the bench they stand on)
+    r["where"]["fixture"] = None
     if r["where"]["mode"] == "in":
         unit = _unit_of(w, r)
         if unit is None:
@@ -311,8 +318,16 @@ def _satisfy(w, r, c, need, phase):
                                full * rules.R["engine"]["home_rest"])
         return
     f = c["fixture"]
-    restore = full * places.base_quality(f["kind"], need)
+    # The same base the chooser weighed, perimeter bonus included: what
+    # draws a resident out is what they get when they arrive. Restoring
+    # only the bare afford was the mismatch that made a far, quiet seat
+    # worth the walk out and then meet almost none of the need.
+    restore = full * places.base_quality(f["kind"], need, f)
     r["needs"][need] = max(0.0, r["needs"][need] - restore)
+    # who is actually using this place, for the views: a resident passing
+    # through a bench's cell has not sat on it, and must not be drawn as if
+    # they had. The engine itself never reads this back.
+    r["where"]["fixture"] = f["id"]
     f["occupants"].append(r["id"])
     f["uses_today"] = f.get("uses_today", 0) + 1
     f["use_total"] += 1

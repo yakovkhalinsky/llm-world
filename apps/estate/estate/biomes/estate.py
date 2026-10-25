@@ -93,12 +93,32 @@ SPEC = {
         # walk — the quiet and green of the ring road's margin, and the
         # stroll itself. It is a bonus on the place rather than a new need
         # or a new subsystem: the chooser already knows how to weigh one.
+        #
+        # The bonus is deliberately no larger than the bench's own afford
+        # for each need, and it is folded into the base *before* condition
+        # and congestion scale it. Both facts matter: a worn seat loses the
+        # bonus with its condition, and a full one loses it to the crowd,
+        # so an edge seat at capacity is worth no more than an empty
+        # courtyard seat — the edge is a nudge on the place, not a second
+        # bench on top of a bench. (Folded in afterwards, the old 0.55 /
+        # 0.45 / 0.75 bonus kept its full value on a worn or crowded seat,
+        # and for quiet it was four times the bench itself.)
+        #
+        # The values sit at the top of that band because a small bonus
+        # cannot pay for the walk out: travel is priced per cell, and a
+        # one-third bonus leaves the edge unvisited. At the bench's own
+        # afford the edge is worth the stroll to people already near it,
+        # and still loses to a fresh courtyard seat once it is full.
         "bench":      {"affords": {"rest": 0.55, "company": 0.25,
                                    "quiet": 0.18},
-                       "capacity": 2, "decay": 0.00030, "loud": 0.015,
-                       "carry": 2,
-                       "perimeter_bonus": {"rest": 0.55, "company": 0.45,
-                                           "quiet": 0.75},
+                       # A bench's capacity is a hard seat count, not only
+                       # the congestion term: two people sit on it, and a
+                       # third is not "a bit less comfortable", they are
+                       # standing. The chooser reads `hard_capacity`.
+                       "capacity": 2, "hard_capacity": True,
+                       "decay": 0.00030, "loud": 0.015, "carry": 2,
+                       "perimeter_bonus": {"rest": 0.55, "company": 0.25,
+                                           "quiet": 0.18},
                        "upkeep": 1.0, "break_prob": 0.0034, "glyph": "🪑"},
         "playground": {"affords": {"play": 0.95},
                        "capacity": 12, "decay": 0.00040, "loud": 0.110, "carry": 12,

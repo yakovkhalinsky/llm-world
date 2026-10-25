@@ -302,7 +302,8 @@ const Scene = (() => {
     const benches = {};
     st.fixtures.forEach(f => {
       if (f.kind === 'bench' && f.cap > 0) {
-        benches[f.x + ',' + f.y] = { x: f.x, y: f.y, cap: f.cap };
+        benches[f.x + ',' + f.y] = { id: Number(f.id), x: f.x, y: f.y,
+                                     cap: f.cap };
       }
     });
     SC.benchByCell = benches;
@@ -310,20 +311,30 @@ const Scene = (() => {
     st.people.forEach(p => {
       if (p.in) return;
       const key = p.x + ',' + p.y;
-      if (benches[key]) (groups[key] = groups[key] || []).push(p.id);
+      if (benches[key]) (groups[key] = groups[key] || []).push(p);
     });
     const sitAt = {};
     for (const key in groups) {
       const b = benches[key];
       const base = atop({ x: b.x, y: b.y });
-      groups[key].slice().sort((a, c) => a - c).forEach((id, rank) => {
+      /* only the residents who chose this bench are sitting on it; a walk
+       * that merely ended on its cell leaves someone standing there */
+      groups[key].slice().sort((a, c) => {
+        const ua = a.fixture != null && Number(a.fixture) === b.id ? 0 : 1;
+        const uc = c.fixture != null && Number(c.fixture) === b.id ? 0 : 1;
+        return ua - uc || a.id - c.id;
+      }).forEach((p, rank) => {
+        const id = p.id;
         if (rank < b.cap) {
           const off = b.cap > 1 ? (rank - (b.cap - 1) / 2) * 6 : 0;
           sitAt[id] = { x: base.x + off, y: base.y - 1, seated: true,
                         cell: key, off: off };
         } else {
+          /* no room on the seat: stand clearly past the end of it. The
+           * bench is 20 px wide and a figure is about 7 px, so a centre
+           * nearer than 14 px overlaps the seat and reads as a sitter. */
           const side = (id & 1) ? 1 : -1;
-          const off = side * (10 + (id % 3) * 2);
+          const off = side * (17 + (id % 3) * 2);
           sitAt[id] = { x: base.x + off, y: base.y, seated: false,
                         cell: key, off: off };
         }

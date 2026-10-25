@@ -20,17 +20,54 @@ from .. import world as W
 from . import weather
 
 
-def base_quality(kind, need):
-    return rules.R["fixtures"][kind]["affords"].get(need, 0.0)
+def perimeter_bonus(kind, need):
+    """The pack's extra draw for a fixture that stands on the estate's edge.
+
+    Read by `need` because the pack keys it by need, exactly as `affords`
+    is. It lives behind a named reader so the config audit can see that the
+    table is consumed even though its keys are reached dynamically.
+    """
+    return rules.R["fixtures"][kind].get("perimeter_bonus", {}).get(need, 0.0)
 
 
-def effective(kind, need, condition, occupants):
+def base_quality(kind, need, fixture=None):
+    """What this sort of place affords for this need before wear and crowd.
+
+    A perimeter fixture's bonus is folded in here, with the base, so that
+    condition and congestion scale it exactly as they scale the bench's own
+    affords. Added afterwards it kept its full value when the bench was
+    worn or full, and a crowded edge stopped spreading people along itself.
+    """
+    q = rules.R["fixtures"][kind]["affords"].get(need, 0.0)
+    if fixture is not None and fixture.get("perimeter"):
+        q += perimeter_bonus(kind, need)
+    return q
+
+
+def effective(kind, need, condition, occupants, fixture=None):
     """What a place is worth for a need right now: its base quality, cut
     down by how worn it is and by how full it already is."""
     cap = max(1, rules.R["fixtures"][kind]["capacity"])
     k = rules.R["engine"]["congestion"]
-    return base_quality(kind, need) * condition / \
+    return base_quality(kind, need, fixture) * condition / \
         (1.0 + k * occupants / cap)
+
+
+def full(kind, occupants):
+    """Is this place physically full?
+
+    For most places capacity is only the congestion governor: a twelfth
+    person on a playground is not turned away, they just find less there.
+    A seat is different — you cannot sit on a lap — so a bench carries
+    `hard_capacity` in the pack and the chooser refuses a full one. Without
+    it the soft term happily put six people on a two-seat bench; the
+    renderers could only draw two of them sitting, which read as a third
+    person on the seat.
+    """
+    spec = rules.R["fixtures"][kind]
+    if not spec.get("hard_capacity"):
+        return False
+    return len(occupants) >= max(1, spec["capacity"])
 
 
 # --------------------------------------------------------------- noise
