@@ -34,10 +34,10 @@
   var GAP = 0.04;
   /* how far from a solid fixture's middle a body's edge must stay, by kind:
    * the table top is 0.82 square, the stall 0.9; a lamp or a tree is only
-   * its pole or trunk. The playground is for climbing on, so children may
+   * its pole (0.045 across the radius) or trunk (0.13 at its foot). The playground is for climbing on, so children may
    * stand in its frame. A kind the page has never seen keeps a small
    * plinth's distance. */
-  var KEEP = { table: 0.42, shop: 0.46, lamp: 0.06, tree: 0.12,
+  var KEEP = { table: 0.42, shop: 0.46, lamp: 0.06, tree: 0.14,
                playground: 0 };
   var KEEP_OTHER = 0.26;
   /* seats along a bench, centre to centre; a stander past its end */
@@ -77,24 +77,24 @@
     return m;
   }
 
+  /* How far a body's edge keeps from the middle of the fixture on cell
+   * (hx, hy): 0 when there is none. */
+  function keepAt(fixAt, hx, hy) {
+    var f = fixAt && fixAt[hx + ',' + hy];
+    if (!f) return 0;
+    return Object.prototype.hasOwnProperty.call(KEEP, f.kind)
+      ? KEEP[f.kind] : KEEP_OTHER;
+  }
+
   /* May a body stand at (x, z), when (hx, hy) is the cell it belongs to?
-   * Its own cell is always allowed (a door, a fixture's cell); every other
-   * cell its body touches must be open ground with no solid in it; and in
-   * a solid fixture's cell it keeps out of the fixture itself. */
+   * Its own cell is allowed (a door, a fixture's cell); every other cell
+   * its body touches must be open ground with no solid in it; and in a
+   * solid fixture's cell it keeps out of the fixture itself (clearAt's
+   * `keep`). */
   function okAt(Walk, grid, fixAt, x, z, hx, hy) {
     if (!grid) return true;
-    var home = hy * grid.W + hx;
-    if (!Walk.clearAt(grid, x, z, R, home)) return false;
-    var f = fixAt[hx + ',' + hy];
-    if (f && grid.solid[home]) {
-      var keep = Object.prototype.hasOwnProperty.call(KEEP, f.kind)
-        ? KEEP[f.kind] : KEEP_OTHER;
-      if (keep > 0 && Math.max(Math.abs(x - hx - 0.5),
-                               Math.abs(z - hy - 0.5)) < keep + R) {
-        return false;
-      }
-    }
-    return true;
+    return Walk.clearAt(grid, x, z, R, hy * grid.W + hx,
+                        keepAt(fixAt, hx, hy));
   }
 
   /* Where everyone outdoors stands. `people` is the snapshot's list;
@@ -134,7 +134,7 @@
     var rs = idx.map(function () { return R; });
     var got = Walk ? Walk.pack(rs, hx + 0.5, hy + 0.5, {
       gap: GAP, reach: 1.6, recentre: !solid,
-      ok: function (x, z) { return okAt(Walk, grid, fixAt, x, z, hx, hy); },
+      ok: function (k, x, z) { return okAt(Walk, grid, fixAt, x, z, hx, hy); },
     }) : null;
     for (var k = 0; k < idx.length; k++) {
       if (got) { out.x[idx[k]] = got.xs[k]; out.z[idx[k]] = got.zs[k]; }
@@ -170,7 +170,7 @@
                     b.z + b.fz * f + az * s * END_STEP]);
       });
     }
-    var used = 0;
+    var used = 0, over = [], taken = [];
     for (var rank = 0; rank < idx.length; rank++) {
       var i = idx[rank];
       out.fx[i] = b.fx; out.fz[i] = b.fz;
@@ -181,18 +181,70 @@
         out.sit[i] = 1;
         out.seats[people[i].id] = { cell: b.key, x: out.x[i], z: out.z[i] };
         out.seated++;
+        taken.push({ x: out.x[i], z: out.z[i], r: R });
         continue;
       }
       out.sit[i] = 2;
-      out.x[i] = b.x + ax * END; out.z[i] = b.z + az * END;
+      var stood = false;
       while (used < spots.length) {
         var s = spots[used++];
         if (okAt(Walk, grid, fixAt, s[0], s[1], b.cx, b.cy)) {
           out.x[i] = s[0]; out.z[i] = s[1];
+          taken.push({ x: s[0], z: s[1], r: R });
+          stood = true;
           break;
         }
       }
+      if (!stood) over.push(i);
     }
+    /* more standers than places by the bench (a crowd, or a bench in a
+     * nook with no room past its ends): packed round it like any shared
+     * tile, clear of the seated and those already standing, on ground
+     * okAt allows — never in a wall, never on top of each other */
+    if (!over.length) return;
+    var got = Walk ? Walk.pack(over.map(function () { return R; }), b.x, b.z, {
+      gap: GAP, reach: 1.6, fixed: taken,
+      ok: function (k, x, z) {
+        return okAt(Walk, grid, fixAt, x, z, b.cx, b.cy);
+      },
+    }) : null;
+    over.forEach(function (i, k) {
+      out.x[i] = got ? got.xs[k] : b.x + ax * END;
+      out.z[i] = got ? got.zs[k] : b.z + az * END;
+    });
+  }
+
+  /* The page's spacing for one frame: `Walk.separate` on F's n figures
+   * (rx/rz their raw points), with the guard every push must pass — the
+   * body stays on open ground (clearAt, at its full radius when its raw
+   * point was clear, else its centre at least) and out of the fixture in
+   * the cell its route has it in (the fixture's keep; a body whose raw
+   * point is already nearer than that is never moved nearer). One place
+   * for the page and the checks. */
+  var SP = { Walk: null, grid: null, F: null, m: [], home: [], keep: [] };
+  function spaceOk(k, x, z) {
+    return SP.Walk.clearAt(SP.grid, x, z, SP.m[k], SP.home[k], SP.keep[k]);
+  }
+  function space(Walk, grid, fixAt, F, n) {
+    for (var k = n; k < F.layer.length; k++) F.layer[k] = -1;
+    if (grid) {
+      for (k = 0; k < n; k++) {
+        var x = F.rx[k], z = F.rz[k];
+        var hx = Math.floor(x), hz = Math.floor(z);
+        var home = hz * grid.W + hx;
+        var m = Walk.clearAt(grid, x, z, F.r[k], home) ? F.r[k] : 0;
+        var keep = 0;
+        if (grid.solid[home] && hx >= 0 && hx < grid.W) {
+          keep = keepAt(fixAt, hx, hz);
+          var box = Math.max(Math.abs(x - hx - 0.5), Math.abs(z - hz - 0.5));
+          keep = Math.max(0, Math.min(keep, box - m));
+        }
+        SP.m[k] = m; SP.home[k] = home; SP.keep[k] = keep;
+      }
+      SP.Walk = Walk; SP.grid = grid; SP.F = F;
+    }
+    return Walk.separate(F, n, { iters: 8, pad: 0.06, maxOff: 0.5,
+                                 ok: grid ? spaceOk : null });
   }
 
   /* The walk to (tx, tz) for resident p: from the door if they are coming
@@ -260,7 +312,7 @@
   var api = {
     R: R, GAP: GAP, KEEP: KEEP, SEAT_STEP: SEAT_STEP, END: END,
     benchFacing: benchFacing, bench: bench, fixtureMap: fixtureMap,
-    okAt: okAt, place: place, route: route,
+    okAt: okAt, keepAt: keepAt, place: place, route: route, space: space,
     queue: queue, fit: fit, QUEUE_MS: QUEUE_MS,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

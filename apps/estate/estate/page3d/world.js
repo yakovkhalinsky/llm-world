@@ -804,7 +804,7 @@ export function createWorld(ground, canvas, opts) {
   /* the figures handed to Walk.separate each frame (see updateResidents),
    * and the smallest gap it left, for the HUD and the checks */
   let crowdF = null, crowdIdx = [];
-  let crowdGap = Infinity;
+  let crowdFix = null;
 
   /* ----------------------------------------------------------- trace */
   /* `?trace=1` draws every current route; `?trace=<id>` draws one. It is a
@@ -939,8 +939,9 @@ export function createWorld(ground, canvas, opts) {
      * shared tile packed round its middle, never inside a table or a stall.
      * A function of the snapshot alone, so a poll that repeats the state
      * repeats the picture. */
+    crowdFix = Crowd ? Crowd.fixtureMap(st.fixtures) : null;
     const spots = Crowd ? Crowd.place(Walk, grid, people, benchByCell,
-                                      Crowd.fixtureMap(st.fixtures))
+                                      crowdFix)
                         : null;
     seatedCount = spots ? spots.seated : 0;
     const spotNow = {};
@@ -1063,12 +1064,12 @@ export function createWorld(ground, canvas, opts) {
    * bodies and passes oncoming walkers side by side. Seated figures do not
    * move; walkers give way more readily than those standing. No push takes
    * a body onto a wall, a solid or the water, or out of the cell its route
-   * has it in other than onto open ground (Walk.clearAt) — the walk's own
-   * guarantee holds after spacing too. Stateless, so a frame depends on
+   * has it in other than onto open ground (Walk.clearAt), nor into the
+   * lamp post, tree or table in its own cell (the fixture's keep,
+   * Crowd.space) — the walk's own guarantee holds after spacing too. Stateless, so a frame depends on
    * nothing but its own time. */
   const crowdDx = [], crowdDz = [];
   const crowdRaw = { x: 0, z: 0, dx: 0, dz: 0, moving: false };
-  const crowdM = [];
   function spaceResidents(now) {
     let n = 0;
     crowdF = Walk ? Walk.figures(crowdF, people.length) : null;
@@ -1086,23 +1087,13 @@ export function createWorld(ground, canvas, opts) {
       F.hz[n] = crowdRaw.moving ? crowdRaw.dz : 0;
       F.layer[n] = 0;
       F.id[n] = people[i].id;
-      /* a body may be pushed only to open ground; one whose route already
-       * hugs a corner keeps its centre on open ground at least */
-      const hx = Math.floor(crowdRaw.x), hz = Math.floor(crowdRaw.z);
-      const home = grid ? hz * grid.W + hx : -1;
-      crowdM[n] = grid && Walk.clearAt(grid, crowdRaw.x, crowdRaw.z,
-                                       F.r[n], home) ? F.r[n] : 0;
       crowdIdx[n] = i;
       n++;
     }
-    if (!crowdF || n === 0) { crowdGap = Infinity; return; }
-    for (let k = n; k < crowdF.layer.length; k++) crowdF.layer[k] = -1;
-    crowdGap = Walk.separate(crowdF, n, {
-      iters: 8, pad: 0.06, maxOff: 0.5,
-      ok: grid ? (k, x, z) => Walk.clearAt(grid, x, z, crowdM[k],
-          Math.floor(crowdF.rz[k]) * grid.W + Math.floor(crowdF.rx[k]))
-               : null,
-    });
+    if (!crowdF || n === 0) return;
+    /* pushed only to open ground, and never into the lamp post, tree or
+     * table in a body's own cell (crowd.js space) */
+    Crowd.space(Walk, grid, crowdFix, crowdF, n);
     for (let k = 0; k < n; k++) {
       const i = crowdIdx[k];
       crowdDx[i] = crowdF.x[k] - crowdF.rx[k];

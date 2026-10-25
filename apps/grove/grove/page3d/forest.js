@@ -188,7 +188,7 @@
       var c = st.cells[y * N + x];
       var water = c && c[0] === 'w';
       var rs = g.map(function (e) { return e.r; });
-      var ok = g[0].fly ? null : function (px, pz, k) {
+      var ok = g[0].fly ? null : function (k, px, pz) {
         var m = Math.min(rs[k], 0.2) * SUB;
         /* a cell that is all water: its creatures are where the engine put
          * them, so its own quarters are allowed, nothing beyond */
@@ -199,6 +199,9 @@
       };
       var got = Walk.pack(rs, x + 0.5, y + 0.5,
                           { gap: 0.02, reach: 1.4, ok: ok, recentre: true });
+      /* a creature with no clear place (`placed` 2: the least crowded open
+       * point) still beats the cell's middle; with no open point at all it
+       * takes its own quarter, as before */
       g.forEach(function (e, k) {
         out[e.a.id] = got.placed[k] ? { x: got.xs[k], z: got.zs[k] }
                                     : restSpot(e.a.id, e.x, e.y, st, taken);
@@ -218,6 +221,72 @@
    * in the map, and walks the whole glide as before. Ground walkers only:
    * the flyers have the air to themselves. */
   var FILE_STEP = 0.1, FILE_SPAN = 0.6;
+
+  /* A trunk's foot is at most 0.125 of a cell across its radius (an old,
+   * large tree); a body keeps that far from a trunk's middle, plus its own
+   * half-width. In cells. */
+  var TRUNK_KEEP = 0.13;
+
+  /* The page's spacing for one frame: `Walk.separate` on F's n figures
+   * (rx/rz their raw points, in cells; layer 0 the ground, 1 the air).
+   * Every push on the ground must pass the guard: open ground round the
+   * body (clearAt on the quartered grid, at its half-width when its raw
+   * point was clear, else its centre at least), and clear of every trunk
+   * near it, as a disk: TRUNK_KEEP plus the body's half-width from the
+   * trunk's middle — a body whose raw point is already nearer than that
+   * is never moved nearer. A flyer is kept over the map. One place for
+   * the page and the checks. */
+  var SP = { Walk: null, grid: null, F: null, N: 0, m: [], home: [],
+             t0: [], t1: [], T: [] };
+  function spaceOk(k, x, z) {
+    if (SP.F.layer[k] === 1) {
+      return x >= 0 && z >= 0 && x <= SP.N && z <= SP.N;
+    }
+    var T = SP.T;
+    for (var i = SP.t0[k]; i < SP.t1[k]; i += 3) {
+      var dx = x - T[i], dz = z - T[i + 1];
+      if (dx * dx + dz * dz < T[i + 2] * T[i + 2]) return false;
+    }
+    return SP.Walk.clearAt(SP.grid, x * SUB, z * SUB, SP.m[k], SP.home[k]);
+  }
+  /* a push moves a body at most half a cell; the trunks that could then
+   * touch it are within two quarters of its raw quarter */
+  var NEAR = 2;
+  function space(Walk, grid, F, n, N) {
+    for (var k = n; k < F.layer.length; k++) F.layer[k] = -1;
+    SP.Walk = Walk; SP.grid = grid; SP.F = F; SP.N = N;
+    var T = SP.T, t = 0;
+    for (k = 0; k < n; k++) {
+      SP.t0[k] = SP.t1[k] = t;
+      /* a flyer hovering just past the edge comes back over the map */
+      if (F.layer[k] === 1) {
+        F.rx[k] = Math.max(0, Math.min(N, F.rx[k]));
+        F.rz[k] = Math.max(0, Math.min(N, F.rz[k]));
+        continue;
+      }
+      if (!grid) continue;
+      var gx = F.rx[k] * SUB, gz = F.rz[k] * SUB;
+      var hx = Math.floor(gx), hz = Math.floor(gz);
+      var home = hz * grid.W + hx;
+      var rc = Math.min(F.r[k], 0.2);
+      var r = rc * SUB;
+      SP.m[k] = Walk.clearAt(grid, gx, gz, r, home) ? r : 0;
+      SP.home[k] = home;
+      for (var sz = hz - NEAR; sz <= hz + NEAR; sz++) {
+        if (sz < 0 || sz >= grid.H) continue;
+        for (var sx = hx - NEAR; sx <= hx + NEAR; sx++) {
+          if (sx < 0 || sx >= grid.W || !grid.solid[sz * grid.W + sx]) continue;
+          var cx = (sx + 0.5) / SUB, cz = (sz + 0.5) / SUB;
+          var d = Math.sqrt((F.rx[k] - cx) * (F.rx[k] - cx) +
+                            (F.rz[k] - cz) * (F.rz[k] - cz));
+          T[t++] = cx; T[t++] = cz; T[t++] = Math.min(TRUNK_KEEP + rc, d);
+        }
+      }
+      SP.t1[k] = t;
+    }
+    return Walk.separate(F, n, { iters: 8, pad: 0.04, maxOff: 0.5,
+                                 ok: grid ? spaceOk : null });
+  }
   function stagger(st, was) {
     var fly = {};
     ((st.biome && st.biome.flyers) || []).forEach(function (sp) { fly[sp] = 1; });
@@ -251,6 +320,7 @@
     hash: hash, subGround: subGround, trunks: trunks, restSpot: restSpot,
     route: route, kindOf: kindOf,
     frameOf: frameOf, figure: figure, restSpots: restSpots, stagger: stagger,
+    space: space, TRUNK_KEEP: TRUNK_KEEP,
     RADIUS: RADIUS, BODY_OF: BODY_OF, SCALE_OF: SCALE_OF,
   };
   if (typeof module !== 'undefined' && module.exports) {

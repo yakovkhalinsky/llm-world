@@ -1,17 +1,28 @@
-/* Two residents never stand inside each other.
+/* Two residents never stand inside each other, or in anything else.
  *
- * Runs the page's own spacing — walk.js (pack, separate, clearAt) and
- * crowd.js (who stands where on a tile, and the walk there) — on a crowded
- * day built from a real one (crowd_scene.js), and checks the picture:
+ * Runs the page's own placing and spacing — crowd.js (place, the walk
+ * there, and `space`, the per-frame push the page calls from world.js)
+ * on walk.js — and judges the picture with an oracle of its own, which
+ * shares no code with what it checks: the ground's blocked cells read
+ * straight from `rows`/`codes`/`walk`, and every fixture's body at its
+ * place in the state, at the size world.js draws it (a table's top, a
+ * stall, a lamp's pole, a tree's trunk). Penetration is measured as a
+ * disk against a box or a disk — never through clearAt or okAt.
  *
- *   snapshot  everyone where the day leaves them: no two bodies nearer
- *             than the sum of their radii; one figure per seat and no
- *             more seated than the bench holds; nobody standing in a
- *             table, a stall, a wall or the water.
- *   walking   the day's walks played out at 60 frames a second, through
- *             Walk.separate as the page draws them: no two figures nearer
- *             than MIN_WALK of their combined radii at any frame, and no
- *             push ever moves a body off open ground.
+ *   snapshot  everyone where the day leaves them, and after the page's
+ *             spacing: no two bodies nearer than the sum of their radii;
+ *             one figure per seat and no more seated than the bench holds;
+ *             no body in a table, a stall, a pole, a trunk, a wall or the
+ *             water (its own cell's ground excepted: a door).
+ *   walking   the day's walks at 60 frames a second, through Crowd.space as
+ *             the page draws them: no two figures nearer than MIN_WALK of
+ *             their combined radii, and no push ever takes a body further
+ *             into a wall, the water or a fixture than its walk had it.
+ *   scenes    small made-up places the day may never produce: a passer-by
+ *             at a lamp from every side (the lamp-post case), two walkers
+ *             meeting head-on a little to the wrong side (each must pass
+ *             on its own right), a crowd in a one-wide corridor, ten
+ *             people at a bench in a nook, fifteen at a lamp in a dead end.
  *
  * It reports the closest pair before spacing and after, so the gain is
  * visible, not just asserted.
@@ -19,8 +30,8 @@
  *   node tools/crowd_check.js ground.json state.json
  *
  * PAGE3D_WALK and PAGE3D_CROWD point it at another walk.js / crowd.js
- * (the tests use that to prove a page without spacing fails). Exits 1 on
- * a failure. */
+ * (the tests use that to prove mutants of the page fail). Exits 1 on a
+ * failure. */
 
 'use strict';
 
@@ -37,11 +48,112 @@ const CROWD = process.env.PAGE3D_CROWD ||
 
 /* allowed overlap at rest: none beyond rounding */
 const TOL = 1e-6;
+/* how far a body may sink into a wall or a fixture beyond where its walk
+ * had it: rounding, not a body inside a pole (a pole is 0.045 across) */
+const TOL_IN = 2e-3;
 /* while walking, figures may brush (a crowd squeezing out of one door),
  * never stand inside each other: centres at least this share of the sum
  * of their radii apart */
 const MIN_WALK = 0.8;
 const ROLE = { child: 0.78, elder: 0.92 };
+const R_BODY = 0.16;
+
+/* ------------------------------------------------------------ the oracle */
+/* What world.js draws on a fixture's cell, about the cell's middle: a
+ * table top 0.82 square, a stall 0.9, a lamp pole of radius 0.045, a
+ * tree trunk 0.13 at its foot, an unknown kind a 0.5 plinth. A bench is a
+ * seat and the playground an open frame people play in: no body here. */
+const BODY = { table: ['box', 0.41], shop: ['box', 0.45],
+               lamp: ['disk', 0.045], tree: ['disk', 0.13] };
+const NO_BODY = { bench: 1, playground: 1 };
+const PLINTH = ['box', 0.25];
+
+function oracle(ground, fixtures) {
+  const W = ground.width | 0, H = ground.height | 0;
+  const walk = ground.walk || {};
+  const blocked = (x, y) => {
+    if (x < 0 || y < 0 || x >= W || y >= H) return true;
+    const code = ground.codes[ground.rows[y][x]];
+    const c = Object.prototype.hasOwnProperty.call(walk, code) ? walk[code]
+      : (code === 'water' || code === 'building' ? null : 1);
+    return c === null || c === undefined || c <= 0;
+  };
+  const fix = {};
+  (fixtures || []).forEach(f => {
+    if (NO_BODY[f.kind]) return;
+    fix[f.x + ',' + f.y] = { x: f.x + 0.5, z: f.y + 0.5, kind: f.kind,
+                             body: BODY[f.kind] || PLINTH };
+  });
+  /* how deep a disk sinks into the box [x0,x1]x[z0,z1] (<= 0: clear) */
+  const intoBox = (x, z, r, x0, z0, x1, z1) => {
+    const dx = Math.max(x0 - x, 0, x - x1), dz = Math.max(z0 - z, 0, z - z1);
+    if (dx === 0 && dz === 0) {
+      return r + Math.min(x - x0, x1 - x, z - z0, z1 - z);
+    }
+    return r - Math.hypot(dx, dz);
+  };
+  /* deepest a body of radius r at (x, z) is in a wall or the water (cells
+   * other than `home`, the cell its walk has it in) and in a fixture */
+  function pen(x, z, r, hx, hy) {
+    let wall = -Infinity, into = -Infinity, what = null;
+    const cx = Math.floor(x), cz = Math.floor(z);
+    for (let y = cz - 1; y <= cz + 1; y++) {
+      for (let xx = cx - 1; xx <= cx + 1; xx++) {
+        if (!(xx === hx && y === hy) && blocked(xx, y)) {
+          wall = Math.max(wall, intoBox(x, z, r, xx, y, xx + 1, y + 1));
+        }
+        const f = fix[xx + ',' + y];
+        if (!f) continue;
+        const [shape, h] = f.body;
+        const d = shape === 'disk'
+          ? r + h - Math.hypot(x - f.x, z - f.z)
+          : intoBox(x, z, r, f.x - h, f.z - h, f.x + h, f.z + h);
+        if (d > into) { into = d; what = f.kind + '@' + xx + ',' + y; }
+      }
+    }
+    return { wall, into, what };
+  }
+  return { pen, blocked };
+}
+
+/* every body in F against the oracle: none further into a wall or a
+ * fixture than its raw point (rx/rz) was, beyond TOL_IN */
+function judgeFrame(orc, F, n, worst) {
+  for (let k = 0; k < n; k++) {
+    if (F.layer[k] < 0) continue;
+    const hx = Math.floor(F.rx[k]), hy = Math.floor(F.rz[k]);
+    const raw = orc.pen(F.rx[k], F.rz[k], F.r[k], hx, hy);
+    const got = orc.pen(F.x[k], F.z[k], F.r[k], hx, hy);
+    const dw = got.wall - Math.max(raw.wall, 0);
+    const df = got.into - Math.max(raw.into, 0);
+    if (dw > worst.wall.d) worst.wall = { d: dw, id: F.id[k], at: [F.x[k], F.z[k]] };
+    if (df > worst.into.d) {
+      worst.into = { d: df, id: F.id[k], what: got.what, at: [F.x[k], F.z[k]] };
+    }
+  }
+}
+const freshWorst = () => ({ wall: { d: -Infinity }, into: { d: -Infinity } });
+function worstFails(tag, worst, fails) {
+  const at = w => w.at.map(v => v.toFixed(3)).join(',');
+  if (worst.into.d > TOL_IN) {
+    fails.push(`${tag}: ${worst.into.id} pushed ${worst.into.d.toFixed(3)} ` +
+               `into the ${worst.into.what} at ${at(worst.into)}`);
+  }
+  if (worst.wall.d > TOL_IN) {
+    fails.push(`${tag}: ${worst.wall.id} pushed ${worst.wall.d.toFixed(3)} ` +
+               `into a wall or the water at ${at(worst.wall)}`);
+  }
+}
+function closestPair(xs, zs, rs, n, layer) {
+  let g = Infinity;
+  for (let a = 0; a < n; a++) {
+    for (let b = a + 1; b < n; b++) {
+      if (layer && (layer[a] < 0 || layer[b] < 0)) continue;
+      g = Math.min(g, Math.hypot(xs[a] - xs[b], zs[a] - zs[b]) / (rs[a] + rs[b]));
+    }
+  }
+  return g;
+}
 
 function load() {
   const ctx = {}; ctx.globalThis = ctx; vm.createContext(ctx);
@@ -49,6 +161,155 @@ function load() {
     vm.runInContext(fs.readFileSync(f, 'utf8'), ctx, { filename: f });
   }
   return { Walk: ctx.EstateWalk, Crowd: ctx.EstateCrowd };
+}
+
+/* ---------------------------------------------------------------- scenes */
+/* a made-up plan: . path, # building, ~ water, , lawn */
+function ascii(lines) {
+  const codes = ['path', 'building', 'water', 'lawn'];
+  const map = { '.': 0, '#': 1, '~': 2, ',': 3 };
+  return { width: lines[0].length, height: lines.length, codes,
+           rows: lines.map(l => [...l].map(c => map[c])),
+           walk: { path: 1, lawn: 2, building: null, water: null } };
+}
+
+function scenes(Walk, Crowd, fails) {
+  const ran = [];
+  const setup = (lines, fixtures) => {
+    const ground = ascii(lines);
+    const grid = Walk.buildGrid(ground);
+    Walk.setFixtures(grid, fixtures);
+    return { ground, grid, fixAt: Crowd.fixtureMap(fixtures),
+             orc: oracle(ground, fixtures) };
+  };
+  const fig = (F, k, x, z, w, hx, hz, id) => {
+    F.rx[k] = x; F.rz[k] = z; F.r[k] = R_BODY; F.w[k] = w;
+    F.hx[k] = hx; F.hz[k] = hz; F.layer[k] = 0; F.id[k] = id;
+  };
+
+  /* the lamp post: one resident standing at a lamp, the page's own slot,
+   * and a passer-by brushing them from every side */
+  {
+    const S = setup(['#####', '#...#', '#...#', '#...#', '#####'],
+                    [{ id: 1, kind: 'lamp', x: 2, y: 2 }]);
+    const s = Crowd.place(Walk, S.grid, [{ id: 7, x: 2, y: 2, in: false }], {}, S.fixAt);
+    const worst = freshWorst();
+    const F = Walk.figures(null, 2);
+    let cases = 0;
+    for (let a = 0; a < 360; a += 3) {
+      for (let off = 0.15; off <= 0.4001; off += 0.025) {
+        const hx = Math.cos(a * Math.PI / 180), hz = Math.sin(a * Math.PI / 180);
+        const wx = s.x[0] - hz * off, wz = s.z[0] + hx * off;
+        /* a walk never runs through the pole itself */
+        if (Math.hypot(wx - 2.5, wz - 2.5) < R_BODY + 0.045) continue;
+        fig(F, 0, s.x[0], s.z[0], 0.5, 0, 0, 7);
+        fig(F, 1, wx, wz, 1, hx, hz, 8);
+        Crowd.space(Walk, S.grid, S.fixAt, F, 2);
+        judgeFrame(S.orc, F, 2, worst);
+        cases++;
+      }
+    }
+    worstFails('lamp', worst, fails);
+    ran.push(`lamp ${cases}`);
+  }
+
+  /* head-on, each a twentieth of a cell to the wrong side: they must
+   * still pass on their own right (the estate keeps to the right) */
+  {
+    const S = setup(['#########', '#.......#', '#.......#', '#.......#', '#########'], []);
+    const F = Walk.figures(null, 2);
+    const worst = freshWorst();
+    let passed = null, gap = Infinity, frames = 0, prev = null;
+    for (let t = 0; t <= 1.0001; t += 0.01) {
+      fig(F, 0, 1.5 + 6 * t, 2.475, 1, 1, 0, 1);
+      fig(F, 1, 7.5 - 6 * t, 2.525, 1, -1, 0, 2);
+      Crowd.space(Walk, S.grid, S.fixAt, F, 2);
+      judgeFrame(S.orc, F, 2, worst);
+      frames++;
+      gap = Math.min(gap, closestPair(F.x, F.z, F.r, 2));
+      const along = F.x[1] - F.x[0];
+      if (prev !== null && prev > 0 && along <= 0 && passed === null) {
+        /* the moment they pass: is each on its own right of the other? */
+        const rightA = (F.z[0] - F.z[1]) * 1;     // a heads +x, its right +z
+        const rightB = (F.z[1] - F.z[0]) * -1;    // b heads -x, its right -z
+        passed = rightA > 0 && rightB > 0;
+      }
+      prev = along;
+    }
+    if (passed !== true) fails.push('head-on: the walkers did not pass on their own right');
+    if (gap < MIN_WALK) {
+      fails.push(`head-on: the walkers came ${(gap * 100).toFixed(0)}% of a body apart`);
+    }
+    worstFails('head-on', worst, fails);
+    ran.push(`head-on ${frames}`);
+  }
+
+  /* a corridor one cell wide, three walking each way */
+  {
+    const S = setup(['###########', '#.........#', '###########'], []);
+    const F = Walk.figures(null, 6);
+    const worst = freshWorst();
+    let frames = 0;
+    for (let t = 0; t <= 1.0001; t += 0.005) {
+      for (let k = 0; k < 3; k++) {
+        fig(F, k, 1.5 + 8 * t - k * 0.4, 1.5, 1, 1, 0, 10 + k);
+        fig(F, 3 + k, 9.5 - 8 * t + k * 0.4, 1.5, 1, -1, 0, 20 + k);
+      }
+      Crowd.space(Walk, S.grid, S.fixAt, F, 6);
+      judgeFrame(S.orc, F, 6, worst);
+      frames++;
+    }
+    worstFails('corridor', worst, fails);
+    ran.push(`corridor ${frames}`);
+  }
+
+  /* a crowd where there is no room for it: placed (Crowd.place) and then
+   * drawn (Crowd.space), every stander clear of the walls and fixtures */
+  const crowd = (tag, lines, fixtures, cell, N, apart) => {
+    const S = setup(lines, fixtures);
+    const benches = {};
+    fixtures.forEach(f => {
+      if (f.kind === 'bench') benches[f.x + ',' + f.y] = Crowd.bench(S.ground, f);
+    });
+    const people = [];
+    for (let k = 0; k < N; k++) {
+      people.push({ id: k + 1, x: cell[0], y: cell[1], in: false,
+                    fixture: fixtures[0].id });
+    }
+    const s = Crowd.place(Walk, S.grid, people, benches, S.fixAt);
+    const F = Walk.figures(null, N);
+    const seen = {};
+    for (let i = 0; i < N; i++) {
+      fig(F, i, s.x[i], s.z[i], s.sit[i] === 1 ? 0 : 0.5, 0, 0, i + 1);
+      const key = s.x[i].toFixed(3) + ',' + s.z[i].toFixed(3);
+      if (seen[key]) fails.push(`${tag}: ${seen[key]} and ${i + 1} on one spot ${key}`);
+      seen[key] = i + 1;
+      if (s.sit[i] === 1) continue;
+      const p = S.orc.pen(s.x[i], s.z[i], R_BODY, cell[0], cell[1]);
+      if (p.wall > TOL_IN) {
+        fails.push(`${tag}: ${i + 1} placed ${p.wall.toFixed(3)} into a wall ` +
+                   `at ${s.x[i].toFixed(2)},${s.z[i].toFixed(2)}`);
+      }
+      if (p.into > TOL_IN) {
+        fails.push(`${tag}: ${i + 1} placed ${p.into.toFixed(3)} into the ` +
+                   `${p.what} at ${s.x[i].toFixed(2)},${s.z[i].toFixed(2)}`);
+      }
+    }
+    const placedGap = closestPair(s.x, s.z, F.r, N);
+    if (apart && placedGap < 1 - TOL) {
+      fails.push(`${tag}: two placed ${(placedGap * 100).toFixed(0)}% of a body apart`);
+    }
+    Crowd.space(Walk, S.grid, S.fixAt, F, N);
+    const worst = freshWorst();
+    judgeFrame(S.orc, F, N, worst);
+    worstFails(tag, worst, fails);
+    ran.push(`${tag} ${N} (closest ${(placedGap * 100).toFixed(0)}%)`);
+  };
+  crowd('bench-nook', ['#####', '#...#', '##.##', '##.##', '#####'],
+        [{ id: 9, kind: 'bench', x: 2, y: 2, cap: 2 }], [2, 2], 10, true);
+  crowd('lamp-dead-end', ['#####', '#####', '##.##', '##.##', '##.##', '#####'],
+        [{ id: 5, kind: 'lamp', x: 2, y: 2 }], [2, 2], 15, false);
+  return ran;
 }
 
 function check(ground, state) {
@@ -64,7 +325,8 @@ function check(ground, state) {
     if (f.kind === 'bench') benchByCell[f.x + ',' + f.y] = Crowd.bench(ground, f);
   });
   const fails = [];
-  const rOf = p => Crowd.R * (ROLE[p.role] || 1);
+  const orc = oracle(ground, st.fixtures);
+  const rOf = p => R_BODY * (ROLE[p.role] || 1);
 
   /* ---------------------------------------------------------- snapshot */
   const spots = Crowd.place(Walk, grid, people, benchByCell, fixAt);
@@ -89,9 +351,14 @@ function check(ground, state) {
       seatSeen[k] = p.id;
       const cell = p.x + ',' + p.y;
       seatedAt[cell] = (seatedAt[cell] || 0) + 1;
-    } else if (!Crowd.okAt(Walk, grid, fixAt, spots.x[i], spots.z[i], p.x, p.y)) {
-      fails.push(`resident ${p.id} stands on blocked ground at ` +
-                 `${spots.x[i].toFixed(2)},${spots.z[i].toFixed(2)}`);
+    } else {
+      const pe = orc.pen(spots.x[i], spots.z[i], rOf(p), p.x, p.y);
+      if (pe.wall > TOL_IN || pe.into > TOL_IN) {
+        fails.push(`snapshot: resident ${p.id} stands ` +
+                   (pe.into > TOL_IN ? `${pe.into.toFixed(3)} into the ${pe.what}`
+                                     : `${pe.wall.toFixed(3)} into a wall`) +
+                   ` at ${spots.x[i].toFixed(2)},${spots.z[i].toFixed(2)}`);
+      }
     }
   }
   for (const cell in seatedAt) {
@@ -134,10 +401,9 @@ function check(ground, state) {
   });
   if (fallbacks) fails.push(`${fallbacks} walks found no path`);
   const F = Walk.figures(null, out.length);
-  const m = [];
   const s = { x: 0, z: 0, dx: 0, dz: 0, moving: false };
   let walkRaw = Infinity, walkGap = Infinity, walkWorst = null, frames = 0;
-  let offGround = 0;
+  const pushed = freshWorst();
   for (let ms = 0; ms <= longest + 50; ms += 1000 / 60) {
     frames++;
     out.forEach((i, k) => {
@@ -155,8 +421,6 @@ function check(ground, state) {
       F.w[k] = seated ? 0 : s.moving ? 1 : 0.5;
       F.hx[k] = s.moving ? s.dx : 0; F.hz[k] = s.moving ? s.dz : 0;
       F.id[k] = people[i].id;
-      const home = Math.floor(s.z) * grid.W + Math.floor(s.x);
-      m[k] = Walk.clearAt(grid, s.x, s.z, F.r[k], home) ? F.r[k] : 0;
     });
     const n = out.length;
     for (let a = 0; a < n; a++) {
@@ -166,14 +430,10 @@ function check(ground, state) {
         if (g < walkRaw) walkRaw = g;
       }
     }
-    Walk.separate(F, n, {
-      iters: 8, pad: 0.06, maxOff: 0.5,
-      ok: (k, x, z) => Walk.clearAt(grid, x, z, m[k],
-        Math.floor(F.rz[k]) * grid.W + Math.floor(F.rx[k])),
-    });
+    /* the page's own per-frame spacing (world.js spaceResidents) */
+    Crowd.space(Walk, grid, fixAt, F, n);
+    judgeFrame(orc, F, n, pushed);
     for (let a = 0; a < n; a++) {
-      const home = Math.floor(F.rz[a]) * grid.W + Math.floor(F.rx[a]);
-      if (!Walk.clearAt(grid, F.x[a], F.z[a], m[a], home)) offGround++;
       if (F.layer[a] < 0) continue;
       for (let b = a + 1; b < n; b++) {
         if (F.layer[b] < 0) continue;
@@ -189,10 +449,11 @@ function check(ground, state) {
     fails.push(`walking: residents ${walkWorst.slice(0, 2)} at ` +
                `${(walkGap * 100).toFixed(0)}% of a body apart, ${walkWorst[2]} ms in`);
   }
-  if (offGround) fails.push(`walking: ${offGround} pushes off open ground`);
+  worstFails('walking', pushed, fails);
 
+  const ran = scenes(Walk, Crowd, fails);
   return {
-    tiles: built.tiles, outdoor: out.length, seated: spots.seated,
+    tiles: built.tiles, outdoor: out.length, seated: spots.seated, scenes: ran,
     snapshot: { before: staticRaw, after: staticGap },
     walking: { frames, before: walkRaw, after: walkGap },
     fails,
@@ -212,6 +473,7 @@ if (require.main === module) {
   console.log(`walking: ${r.walking.frames} frames, closest pair ` +
               `${(r.walking.before * 100).toFixed(0)}% -> ` +
               `${(r.walking.after * 100).toFixed(0)}% of a body apart`);
+  console.log(`scenes: ${r.scenes.join('; ')}`);
   if (r.fails.length) {
     r.fails.forEach(f => console.log('FAIL ' + f));
     process.exit(1);

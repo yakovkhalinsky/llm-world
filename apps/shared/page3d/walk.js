@@ -448,35 +448,57 @@
     return pts;
   }
 
-  /* `rs[k]` is figure k's radius; returns { xs, zs, placed } where
-   * `placed[k]` is false for a figure no lattice point could take (it is
-   * left on the spot, and `separate` does what it can). `opts.gap` is the
-   * extra room between two bodies; `opts.ok(x, z, k)` vets a point;
+  /* `rs[k]` is figure k's radius; returns { xs, zs, placed }.
+   * `opts.gap` is the extra room between two bodies; `opts.ok(k, x, z)`
+   * vets a point (the same order as `separate`'s); `opts.fixed` lists
+   * bodies already standing there ({x, z, r}) to keep clear of too;
    * `opts.recentre` shifts the packed group so its middle is the spot,
-   * when every point still passes. */
+   * when every point still passes.
+   *
+   * `placed[k]` is 1 for a figure with a clear place of its own. When the
+   * crowd is bigger than the room, a figure no clear point is left for is
+   * not left on the spot (which may be a lamp post or a table): it takes
+   * the point `ok` accepts that is least crowded — the one whose nearest
+   * body is furthest off — and `placed[k]` is 2; `separate` does the rest.
+   * Only when `ok` accepts nothing at all within `reach` is it left on the
+   * spot, with `placed[k]` false. */
   function pack(rs, cx, cz, opts) {
     opts = opts || {};
     var gap = opts.gap || 0, ok = opts.ok || null;
     var reach = opts.reach || 2.2;
+    var fixed = opts.fixed || [];
     var L = lattice();
     var n = rs.length;
     var xs = new Array(n), zs = new Array(n), placed = new Array(n);
     for (var k = 0; k < n; k++) {
       xs[k] = cx; zs[k] = cz; placed[k] = false;
+      var best = -Infinity, bx = cx, bz = cz;
       for (var c = 0; c < L.length; c++) {
         if (L[c][2] > reach) break;
         var x = cx + L[c][0], z = cz + L[c][1];
-        var clear = true;
-        for (var q = 0; q < k; q++) {
-          if (!placed[q]) continue;
-          var need = rs[k] + rs[q] + gap;
-          var dx = x - xs[q], dz = z - zs[q];
-          if (dx * dx + dz * dz < need * need) { clear = false; break; }
+        /* the tightest fit here: the smallest room left to any body */
+        var room = Infinity;
+        for (var q = 0; q < k + fixed.length; q++) {
+          var ox, oz, orr;
+          if (q < k) {
+            if (!placed[q]) continue;
+            ox = xs[q]; oz = zs[q]; orr = rs[q];
+          } else {
+            var f = fixed[q - k];
+            ox = f.x; oz = f.z; orr = f.r;
+          }
+          var dx = x - ox, dz = z - oz;
+          var rm = Math.sqrt(dx * dx + dz * dz) - (rs[k] + orr + gap);
+          if (rm < room) room = rm;
+          if (room < 0 && room <= best) break;   // no better than the best
         }
-        if (!clear) continue;
-        if (ok && !ok(x, z, k)) continue;
-        xs[k] = x; zs[k] = z; placed[k] = true;
-        break;
+        if (room < 0 && room <= best) continue;
+        if (ok && !ok(k, x, z)) continue;
+        if (room >= 0) { bx = x; bz = z; best = room; break; }
+        best = room; bx = x; bz = z;
+      }
+      if (best > -Infinity) {
+        xs[k] = bx; zs[k] = bz; placed[k] = best >= 0 ? 1 : 2;
       }
     }
     if (opts.recentre && n > 1) {
@@ -485,7 +507,7 @@
       if (m > 1) {
         var sx = cx - mx / m, sz = cz - mz / m, all = true;
         for (k = 0; k < n && all; k++) {
-          if (placed[k] && ok && !ok(xs[k] + sx, zs[k] + sz, k)) all = false;
+          if (placed[k] && ok && !ok(k, xs[k] + sx, zs[k] + sz)) all = false;
         }
         if (all) {
           for (k = 0; k < n; k++) if (placed[k]) { xs[k] += sx; zs[k] += sz; }
@@ -499,11 +521,21 @@
    * The point and eight probes round it must each be on a walkable cell
    * with no solid in it — or on `home`, the cell the figure's own route
    * puts it in (a door, a fixture it is using, a cell that is all water),
-   * which it may always stand in. */
+   * which it may stand in. But a solid in its own cell is still a body:
+   * with `keep` > 0 the point must also be at least `keep` + m from the
+   * middle of a solid home cell (a box distance — the fixture's half-size
+   * plus the body's), so nobody stands in a lamp post or a tree. */
   var PROBE = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1],
                [0.7071, 0.7071], [-0.7071, 0.7071],
                [0.7071, -0.7071], [-0.7071, -0.7071]];
-  function clearAt(g, gx, gz, m, home) {
+  function clearAt(g, gx, gz, m, home, keep) {
+    if (keep > 0 && home >= 0 && g.solid[home]) {
+      var hx = home % g.W, hz = (home - hx) / g.W;
+      if (Math.max(Math.abs(gx - hx - 0.5), Math.abs(gz - hz - 0.5)) <
+          keep + m) {
+        return false;
+      }
+    }
     for (var k = 0; k < PROBE.length; k++) {
       var px = gx + PROBE[k][0] * m, pz = gz + PROBE[k][1] * m;
       var cx = Math.floor(px), cz = Math.floor(pz);
@@ -529,9 +561,14 @@
    * shortfall by weight; two walkers meeting head-on also lean to their
    * own right, so they pass side by side rather than shoving along the
    * path. No figure is moved further than `maxOff` from its raw point, and
-   * no move is taken that `ok(i, x, z)` refuses. Returns the smallest gap
-   * left (negative: an overlap it could not undo). */
+   * no move is taken that `ok(i, x, z)` refuses. With `opts.measure` it
+   * returns the smallest gap left (negative: an overlap it could not
+   * undo) — an O(n²) pass, for the checks; the page leaves it off. */
   var _head = new Int32Array(0), _next = new Int32Array(0);
+  /* how far (a share of two bodies) oncoming walkers may be on the wrong
+   * side of each other and still be steered to pass on their right */
+  var WRONG_SIDE = 0.75;
+
   function separate(F, n, opts) {
     opts = opts || {};
     var iters = opts.iters || 8;
@@ -551,7 +588,7 @@
       if (x[i] > maxX) maxX = x[i];
       if (z[i] > maxZ) maxZ = z[i];
     }
-    if (!(rmax > 0)) return Infinity;
+    if (!(rmax > 0)) return opts.measure ? Infinity : undefined;
     var cs = 2 * rmax + pad + 2 * maxOff / iters + 0.05;
     minX -= maxOff + cs; minZ -= maxOff + cs;
     var GW = Math.max(1, Math.ceil((maxX - minX + maxOff + cs) / cs) + 1);
@@ -601,12 +638,22 @@
       }
       var wa = w[a], wb = w[b];
       if (wa + wb <= 0) return;
-      /* oncoming walkers: lean right, weighted by how head-on it is */
-      var ax = -nx, az = -nz, bx = nx, bz = nz;
+      var ax, az, bx, bz;
       if (movA && movB) {
         var la = Math.hypot(hx[a], hz[a]), lb = Math.hypot(hx[b], hz[b]);
         var ux = hx[a] / la, uz = hz[a] / la, vx = hx[b] / lb, vz = hz[b] / lb;
         var dot = ux * vx + uz * vz;
+        /* oncoming, with b on a's right — the wrong side — but by less
+         * than most of a body: they pass the right way, so the push is the
+         * mirror of the plain one across a's line. Without it the lean
+         * below fades as they come abreast and the plain push takes over,
+         * and each would jump to its left at the moment they pass. */
+        var side = -uz * nx + ux * nz;            // > 0: b on a's right
+        if (dot < -0.3 && side > 0 && side * d < WRONG_SIDE * (r[a] + r[b])) {
+          nx -= 2 * side * -uz; nz -= 2 * side * ux;
+        }
+        ax = -nx; az = -nz; bx = nx; bz = nz;
+        /* oncoming walkers: lean right, weighted by how head-on it is */
         var lat = Math.abs(-uz * nx + ux * nz);   // how far to a's side b is
         var k = Math.max(0, Math.min(1, (-dot - 0.3) / 0.4)) *
                 Math.max(0, Math.min(1, 1 - lat / 0.6));
@@ -617,6 +664,8 @@
           var l1 = Math.hypot(ax, az) || 1, l2 = Math.hypot(bx, bz) || 1;
           ax /= l1; az /= l1; bx /= l2; bz /= l2;
         }
+      } else {
+        ax = -nx; az = -nz; bx = nx; bz = nz;
       }
       var sa = wa / (wa + wb), sb = wb / (wa + wb);
       var movedA = sa > 0 && tryMove(a, x[a] + ax * need * sa,
@@ -654,7 +703,7 @@
         }
       }
     }
-    return minGap(F, n);
+    return opts.measure ? minGap(F, n) : undefined;
   }
 
   /* The smallest r-adjusted gap between two drawn figures on one layer

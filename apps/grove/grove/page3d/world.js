@@ -889,21 +889,12 @@ export function createWorld(first, canvas, opts) {
    * its body keeps clear (forest.js), flyers in a layer of their own, and
    * any two closer than their bodies are pushed apart — oncoming walkers
    * to their own right, so they pass side by side. No push takes a body
-   * into the water or a trunk's quarter (Walk.clearAt on the router's
-   * grid). `b.x`/`b.z` stay where the walk has them; only the drawing
-   * moves. Stateless: a frame depends on nothing but its own time. */
+   * into the water or another trunk's quarter (Walk.clearAt on the
+   * router's grid), nor nearer any trunk than its body allows, and no
+   * flyer off the map (Forest.space). `b.x`/`b.z` stay where the walk
+   * has them; only the drawing moves. Stateless: a frame depends on nothing but its own time. */
   let crowdF = null;
-  const crowdM = [], crowdMove = [];
-  let crowdGap = Infinity;
-  function spaceBeasts(n) {
-    crowdGap = Walk.separate(crowdF, n, {
-      iters: 8, pad: 0.04, maxOff: 0.5,
-      ok: grid ? (k, x, z) => crowdF.layer[k] === 1 ||
-        Walk.clearAt(grid, x * SUB, z * SUB, crowdM[k],
-                     Math.floor(crowdF.rz[k] * SUB) * grid.W +
-                     Math.floor(crowdF.rx[k] * SUB)) : null,
-    });
-  }
+  const crowdMove = [];
 
   function updateBeasts(now, dark) {
     let n = 0;
@@ -950,18 +941,8 @@ export function createWorld(first, canvas, opts) {
       F.hz[i] = moving ? sampleOut.dz : 0;
       F.layer[i] = b.fly ? 1 : 0;
       F.id[i] = b.id;
-      const home = grid ? Math.floor(pz * SUB) * grid.W + Math.floor(px * SUB)
-                        : -1;
-      const m = Math.min(b.r, 0.2) * SUB;
-      crowdM[i] = grid && !b.fly && Walk.clearAt(grid, px * SUB, pz * SUB, m,
-                                                 home) ? m : 0;
     }
-    if (crowdF) {
-      for (let k = beasts.length; k < crowdF.layer.length; k++) {
-        crowdF.layer[k] = -1;
-      }
-      spaceBeasts(beasts.length);
-    }
+    if (crowdF) Forest.space(Walk, grid, crowdF, beasts.length, N);
     for (let i = 0; i < beasts.length; i++) {
       const b = beasts[i];
       const moving = crowdMove[i];
