@@ -195,17 +195,55 @@
 
   /* ------------------------------------------------------------ the card */
 
+  /* The card's ledger rows: the chronicle's own sentences about this soul
+   * (`/api/bio`, model text among them). `led` is the viewer's record of
+   * the ask: { id, state: 'wait' | 'ok' | 'fail', b }. A frame poll redraws
+   * the card every 0.7 s, so these rows come from that record each time,
+   * never from a one-off write the next poll would wipe. */
+  function ledgerRows(led) {
+    if (!led || led.state === 'wait') {
+      return '<li class="ev"><span class="wk">…</span>consulting the ' +
+        'ledger…</li>';
+    }
+    if (led.state !== 'ok' || !led.b) {
+      return '<li class="ev"><span class="wk">—</span>the ledger did not ' +
+        'answer; what is above is from the live grove.</li>';
+    }
+    var rows = led.b.events || [];
+    return rows.length ? rows.map(function (ev) {
+      return '<li class="ev"><span class="wk">wk' + Number(ev.tick) +
+        '</span>' + esc(ev.text) + '</li>';
+    }).join('') : '<li class="ev"><span class="wk">—</span>no marked ' +
+      'events yet; its story is still quiet.</li>';
+  }
+
+  /* A living creature's needs, from the ledger's answer (0–10 scales). */
+  function needRows(b) {
+    if (!b || !b.alive || b.hunger === undefined) return '';
+    return '<li><span>hunger</span><span>' + Number(b.hunger).toFixed(1) +
+      ' / 10</span></li>' +
+      '<li><span>energy</span><span>' + Number(b.energy).toFixed(1) +
+      ' / 10</span></li>';
+  }
+
   /* What the frame itself says about a creature or a plant, written the
-   * moment it is clicked; the biography (`bio`) follows when the ledger
-   * answers. The name is plain text: the card writes it with textContent. */
-  function cardFor(st, sel) {
+   * moment it is clicked; the ledger's rows follow when it answers. The
+   * name is plain text: the card writes it with textContent. */
+  function cardFor(st, sel, ledger) {
     if (!st || !sel) return null;
     if (sel.kind === 'animal' || sel.kind === 'plant') {
+      var led = ledger && Number(ledger.id) === Number(sel.id) ? ledger
+        : null;
+      var b = led && led.state === 'ok' ? led.b : null;
       var list = sel.kind === 'animal' ? st.animals : st.plants;
       var e = (list || []).filter(function (x) { return x.id === sel.id; })[0];
       if (!e) {
-        return { name: sel.name || 'one of the grove', state: 'gone',
-                 rows: '' };
+        return {
+          name: b ? (b.name || sel.name || 'a wild ' + (b.sp || 'thing')) +
+            (b.sp ? ' · ' + b.sp : '') : (sel.name || 'one of the grove'),
+          state: b ? 'remembered in the chronicle' : 'gone',
+          rows: ledgerRows(led),
+        };
       }
       var what = sel.kind === 'animal'
         ? 'age ' + Number(e.ag) + 'wk' + (e.h ? ' · hungry' : '')
@@ -214,8 +252,7 @@
       return {
         name: (e.n || 'a wild ' + e.sp) + ' · ' + e.sp,
         state: what + ' · at ' + Number(e.x) + ',' + Number(e.y),
-        rows: '<li class="ev"><span class="wk">…</span>consulting the ' +
-          'ledger…</li>',
+        rows: needRows(b) + ledgerRows(led),
       };
     }
     if (sel.kind === 'cell') {
@@ -242,8 +279,8 @@
     return null;
   }
 
-  function card(st, sel) {
-    var c = cardFor(st, sel);
+  function card(st, sel, ledger) {
+    var c = cardFor(st, sel, ledger);
     var el = $('card');
     if (!c) { el.classList.remove('on'); return false; }
     $('cardName').textContent = c.name;
@@ -251,23 +288,6 @@
     $('cardRows').innerHTML = c.rows;
     el.classList.add('on');
     return true;
-  }
-
-  /* The ledger's answer for the open card: `/api/bio`. The events are the
-   * chronicle's own sentences about this soul — model text among them. */
-  function bio(b, fallbackName) {
-    if (!b) return;
-    var state = b.gone ? 'remembered in the chronicle'
-      : (b.alive ? 'alive in the grove' : '…');
-    $('cardName').textContent = (b.name || fallbackName ||
-      'a wild ' + (b.sp || 'thing')) + (b.sp ? ' · ' + b.sp : '');
-    $('cardState').textContent = state;
-    var rows = b.events || [];
-    $('cardRows').innerHTML = rows.length ? rows.map(function (ev) {
-      return '<li class="ev"><span class="wk">wk' + Number(ev.tick) +
-        '</span>' + esc(ev.text) + '</li>';
-    }).join('') : '<li class="ev"><span class="wk">—</span>no marked ' +
-      'events yet; its story is still quiet.</li>';
   }
 
   function update(st) {
@@ -279,7 +299,6 @@
     update: update,
     tab: tab,
     card: card,
-    bio: bio,
     setTuning: setTuning,
     tune: tune,
     esc: esc,
