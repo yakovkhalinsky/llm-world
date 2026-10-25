@@ -29,7 +29,14 @@ ASK_SCHEMA = {
 def embed(llm, texts, timeout=150.0):
     """Embeddings from the local nomic model; list of float-vectors or
     None on any failure. The timeout must survive a chat call that
-    holds the ollama runner before ours starts."""
+    holds the ollama runner before ours starts.
+
+    Through the client when it can (llm.embed): the same model lock as
+    the chat calls, the configured --embed-model (a bare name matches its
+    :latest tag), and a 404 reported as a missing embedder rather than
+    an ask that silently finds nothing."""
+    if hasattr(llm, "embed"):
+        return llm.embed(texts, timeout=timeout)
     payload = {"model": EMBED_MODEL, "input": list(texts)}
     req = urllib.request.Request(
         llm.host + "/api/embed", data=json.dumps(payload).encode(),

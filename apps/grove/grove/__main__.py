@@ -141,11 +141,20 @@ def cmd_step(args):
         # the pending soul decision applies at the next tick inside sim.tick
         if w["tick"] >= w["next_op"]:
             recent = [r[2] for r in g.db.chronicle_lines(5)]
-            raw = g.llm.chat_json(operator.system(),
-                                  operator.digest(w, recent),
-                                  operator.schema(), max_tokens=140,
-                                  temperature=0.8)
-            w["pending_effect"] = operator.validate(raw)
+            if g.llm.decide == "rules":
+                effect = operator.choose(w)
+                raw = g.llm.chat_json(operator.system(),
+                                      operator.words_prompt(w, effect,
+                                                            recent),
+                                      operator.WORDS_SCHEMA, max_tokens=100,
+                                      temperature=0.8, job="op")
+                w["pending_effect"] = operator.with_words(effect, raw)
+            else:
+                raw = g.llm.chat_json(operator.system(),
+                                      operator.digest(w, recent),
+                                      operator.schema(), max_tokens=140,
+                                      temperature=0.8, job="op")
+                w["pending_effect"] = operator.validate(raw)
         items = chronicler.batch(notable, w)
         if items and w["tick"] - last_chron_week >= 4:
             for item in items[:5]:    # one flat call per event
@@ -240,15 +249,15 @@ def _add_llm_flags(sp):
     sp.add_argument("--offline", action="store_true",
                     help="pure deterministic sim; no LLM calls")
     sp.add_argument("--model", default="auto",
-                    help='a model name, or "auto" (cloud-first with '
-                         'local fallback)')
+                    help='pin one model for every job, or "auto" (the '
+                         'per-job defaults below, cloud-first)')
     sp.add_argument("--tier", choices=("local", "cloud", "hybrid"),
                     default="cloud",
-                    help='"cloud" (default) = every job on one cloud '
-                         'model (glm-5.3-flash) with local fallback; '
-                         '"local" = fully offline, the forest on the '
-                         'llama; "hybrid" = like cloud (kept for old '
-                         'scripts)')
+                    help='"cloud" (default) = each job tries the cloud '
+                         'model first, then its local model; "local" = '
+                         'local models only (--choice-model, '
+                         '--prose-model); "hybrid" = like cloud (kept for '
+                         'old scripts)')
     sp.add_argument("--token-budget", type=int, default=None,
                     help="max cloud tokens per day; over it the grove "
                          "thins to local narration and slows the soul")
@@ -260,6 +269,7 @@ def _add_llm_flags(sp):
                     help="the steward only offers; the keeper accepts on "
                          "the dashboard")
     sp.add_argument("--host", default=None)
+    llmm.add_flags(sp)
 
 
 def build_parser():
