@@ -35,8 +35,9 @@
   /* how far from a solid fixture's middle a body's edge must stay, by kind:
    * the table top is 0.82 square, the stall 0.9; a lamp or a tree is only
    * its pole (0.045 across the radius) or trunk (0.13 at its foot); the bus
-   * shelter its posts at ±0.42 and its glass at 0.32 behind the middle, so
-   * the queue waits round it (daytime.stop_spots). The playground is for climbing on, so children may
+   * shelter all of its 0.86 square — posts, glass, seat, roof and the
+   * stop's pole are drawn inside it — so the queue waits round it
+   * (daytime.stop_spots). The playground is for climbing on, so children may
    * stand in its frame. A kind the page has never seen keeps a small
    * plinth's distance. */
   var KEEP = { table: 0.42, shop: 0.46, lamp: 0.06, tree: 0.14,
@@ -282,8 +283,8 @@
   /* What world.js draws on a solid fixture's cell, about its middle, for
    * the per-frame push: a box's half-size or a disk's radius (Walk's
    * KEEP_BOX / KEEP_DISK) — a table top 0.82 square, a stall 0.9, a lamp's
-   * pole, a tree's trunk at its foot, the bus shelter's posts and glass
-   * (±0.42 by −0.32). The playground is for climbing on: no
+   * pole, a tree's trunk at its foot, the bus shelter's 0.86 square that
+   * holds its posts, glass, roof and the stop's pole. The playground is for climbing on: no
    * body. A solid kind the page has never seen is a small plinth. A body's
    * edge keeps BODY_GAP clear of any of them. */
   var BODY = { table: [0, 0.41], shop: [0, 0.45], lamp: [1, 0.045],
@@ -358,7 +359,20 @@
       scy = p.py == null ? p.y : p.py;
       sx = scx + 0.5; sz = scy + 0.5;
       var was = prev && prev[p.id];
-      if (was && was.cell === scx + ',' + scy) { sx = was.x; sz = was.z; }
+      if (was && was.cell === scx + ',' + scy) {
+        sx = was.x; sz = was.z;
+        /* a place just off a solid fixture's cell — beside a café table,
+         * in the bus stop's queue round its shelter — is on the open cell
+         * it stands in: the walk away sets off from that cell, as the walk
+         * there ended in it, not back across the fixture's (the stop-passer
+         * scene walked them through the shelter) */
+        var wx = Math.floor(sx), wz = Math.floor(sz);
+        if (grid && (wx !== scx || wz !== scy) && wx >= 0 && wz >= 0 &&
+            wx < grid.W && wz < grid.H && grid.solid[scy * grid.W + scx] &&
+            grid.base[wz * grid.W + wx] && !grid.solid[wz * grid.W + wx]) {
+          scx = wx; scy = wz;
+        }
+      }
       /* staying on the tile with no earlier spot to come from (the page
        * has just opened): already standing there, as before */
       else if (scx === p.x && scy === p.y) return null;
@@ -385,6 +399,7 @@
                          grid, R);
         });
       }
+      if (fixAt) r = byMiddles(r, grid, fixAt, scx, scy, tcx, tcy);
       return { route: r, fallback: false, from: [scx, scy] };
     }
     return { route: Walk ? Walk.straight(sx, sz, tx, tz)
@@ -433,6 +448,47 @@
     return { wall: wall, into: into };
   }
 
+  /* An end off its cell's middle — a place beside a café table or in the
+   * bus stop's queue round its shelter — can cut the corner of a solid
+   * fixture's cell that the search's line of sight, middle to middle,
+   * cleared (the stop-passer scene: 0.11 into the shelter's roof post).
+   * Such an end leg goes by its own cell's middle instead, when that cell
+   * is open and the leg so goes less deep into the fixture and no deeper
+   * into a wall. Two short legs measured per end, and only when the plain
+   * one touches something. */
+  function byMiddles(r, grid, fixAt, scx, scy, tcx, tcy) {
+    var xs = Array.prototype.slice.call(r.xs);
+    var zs = Array.prototype.slice.call(r.zs);
+    var leg = function (ax, az, bx, bz) {
+      return depthAlong({ xs: [ax, bx], zs: [az, bz], n: 2 }, grid, fixAt);
+    };
+    var by = function (i, j, cx, cy) {
+      /* the leg from point i to point j (adjacent), by (cx, cy)'s middle */
+      var mx = cx + 0.5, mz = cy + 0.5;
+      if (grid.solid[cy * grid.W + cx] || !grid.base[cy * grid.W + cx]) return false;
+      if (Math.hypot(xs[i] - mx, zs[i] - mz) < 1e-6 ||
+          Math.hypot(xs[j] - mx, zs[j] - mz) < 1e-6) return false;
+      var now = leg(xs[i], zs[i], xs[j], zs[j]);
+      if (now.into <= 0) return false;
+      var a = leg(xs[i], zs[i], mx, mz), b = leg(mx, mz, xs[j], zs[j]);
+      if (Math.max(a.into, b.into) >= now.into ||
+          Math.max(a.wall, b.wall) > Math.max(now.wall, 0) + 1e-9) return false;
+      xs.splice(Math.max(i, j), 0, mx);
+      zs.splice(Math.max(i, j), 0, mz);
+      return true;
+    };
+    var changed = by(xs.length - 2, xs.length - 1, tcx, tcy);
+    if (by(0, 1, scx, scy)) changed = true;
+    if (!changed) return r;
+    var cum = new Float64Array(xs.length), total = 0;
+    for (var i = 1; i < xs.length; i++) {
+      total += Math.hypot(xs[i] - xs[i - 1], zs[i] - zs[i - 1]);
+      cum[i] = total;
+    }
+    return { xs: new Float64Array(xs), zs: new Float64Array(zs), cum: cum,
+             n: xs.length, total: total };
+  }
+
   /* A young child's walk with their guardian: the guardian's own route,
    * from where the child stands to the child's place beside them, so the
    * pair walk one way round every wall (the guardian's path is the one
@@ -446,7 +502,21 @@
    * pole and trunk beside them by the same detour `route` takes (#12's
    * Walk.around). And when the page has the ground (`grid`), the follow
    * is kept only if it goes no deeper into a wall or a fixture than the
-   * child's own route: otherwise the child walks their own way. */
+   * child's own route: otherwise the child walks their own way.
+   *
+   * The detour only rounds disks (a pole, a trunk); a table top, a stall
+   * or a wall's corner beside an end leg is the depth guard's alone, and
+   * crowd_check's follow-guard scene has end legs that graze each.
+   *
+   * Cost: Walk.around runs once per pole or trunk in the cells within one
+   * of each end leg's box, so it is bounded by that box (an end leg spans
+   * a cell or two), plus two depthAlong walks; the adversarial worst the
+   * #10 review timed was 12.7 ms for one follow.
+   *
+   * FOLLOW_TOL is rounding, in cells: a follow deeper than the child's
+   * own route by more than this is refused. It is not slack — at 0.05 a
+   * follow grazing a table top by 0.02 would be kept (the follow-guard
+   * scene fails). */
   var FOLLOW_TOL = 1e-3;
   function follow(lead, leadFrom, own, ownFrom, Walk, grid, fixAt) {
     if (!lead || !own || !leadFrom || !ownFrom ||
@@ -467,8 +537,11 @@
     if (!grid) return r;
     if (Walk && Walk.around && fixAt) {
       /* every pole or trunk within a cell of either end leg */
-      var seen = {}, legs = [[0, 1], [r.n - 2, r.n - 1]];
-      legs.forEach(function (lg) {
+      var seen = {};
+      [0, 1].forEach(function (end) {
+        /* read afresh: a detour on the first leg adds points, so the last
+         * leg's indices are only known once it is done */
+        var lg = end ? [r.n - 2, r.n - 1] : [0, 1];
         var x0 = Math.floor(Math.min(r.xs[lg[0]], r.xs[lg[1]])) - 1;
         var x1 = Math.floor(Math.max(r.xs[lg[0]], r.xs[lg[1]])) + 1;
         var z0 = Math.floor(Math.min(r.zs[lg[0]], r.zs[lg[1]])) - 1;

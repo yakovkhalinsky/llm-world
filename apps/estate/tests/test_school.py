@@ -630,6 +630,48 @@ class BusStopTest(unittest.TestCase):
         for most, fair in worst:
             self.assertLessEqual(most, fair)
 
+    def test_the_bus_drops_them_where_they_waited(self):
+        """Off the bus at the spot they waited on, round the shelter —
+        never on the shelter's own cell, which the page draws solid
+        (#14 follow-up)."""
+        import copy
+        w = gen.generate(42)
+        s = daytime.stop(w)
+        spots = set(daytime.stop_spots(w))
+        seen = []
+
+        def watch(w, phase):
+            if phase == "afternoon" and not seen and any(
+                    r["where"]["mode"] == daytime.AWAY
+                    for r in w["residents"].values()):
+                seen.append(copy.deepcopy(w))
+        _watching(w, 7, watch)
+        self.assertTrue(seen)
+        w = seen[0]
+        away = {rid: (r["where"]["x"], r["where"]["y"])
+                for rid, r in w["residents"].items()
+                if r["where"]["mode"] == daytime.AWAY}
+        self.assertTrue(away)
+        for rid in away:
+            self.assertNotIn("evening", daytime.shift(w, w["residents"][rid]))
+        daytime.begin(w, "evening")
+        for rid, was in away.items():
+            r = w["residents"][rid]
+            at = (r["where"]["x"], r["where"]["y"])
+            self.assertEqual(r["where"]["mode"], "at", rid)
+            self.assertEqual(at, was, rid)
+            self.assertIn(at, spots, rid)
+            self.assertNotEqual(at, (s["x"], s["y"]), rid)
+
+
+class FamilyCheckTest(unittest.TestCase):
+    def test_a_cell_over_its_share_is_a_failure(self):
+        """`yard_over` counts toward the check's verdict (#14 follow-up)."""
+        t = family_check.new_tally()
+        self.assertEqual(family_check.failures(t), 0)
+        t["yard_over"] = 1
+        self.assertGreater(family_check.failures(t), 0)
+
 
 class HashSeedTest(unittest.TestCase):
     def test_the_same_seed_lives_the_same_days_in_another_process(self):
