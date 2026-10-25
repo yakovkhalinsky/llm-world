@@ -246,7 +246,8 @@ function showHover(hit) {
     tip.textContent = hit.building.name;   // as the card heads it
   } else if (hit.kind === 'fixture') {
     const kind = (hit.fixture && hit.fixture.kind) || 'a place';
-    tip.textContent = (HUD ? HUD.glyphOf('fixtures', kind) + ' ' : '') + kind;
+    // as the card heads it: "🚏 bus stop", not the raw kind
+    tip.textContent = HUD ? HUD.glyphOf('fixtures', kind) + ' ' + HUD.kindName(kind) : kind;
   } else {
     tip.textContent = siteAt(hit.cell.x, hit.cell.y) || 'the ground';
   }

@@ -754,6 +754,7 @@
     tab: tab,
     card: card,
     glyphOf: glyphOf,
+    kindName: kindName,
     esc: esc,
     num: fmt,
     voiceLine: voiceLine,

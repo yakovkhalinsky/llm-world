@@ -83,8 +83,11 @@ html, body {
 .idbox > div {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* a long date pushes the weather to a line of its own, never off the end */
+.idbox > .idrow { white-space: normal; overflow: visible; flex-wrap: wrap; }
+.idrow > span { white-space: nowrap; }
 .idrow {
-  display: flex; justify-content: space-between; gap: 12px;
+  display: flex; justify-content: space-between; gap: 2px 12px;
   font-variant-numeric: tabular-nums;
 }
 .poplines { margin-top: 6px; font-size: 12px; color: var(--dim); }
