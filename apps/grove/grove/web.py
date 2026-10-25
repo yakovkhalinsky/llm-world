@@ -106,7 +106,11 @@ def snapshot(grove, runner, lock):
                               round(c["moisture"], 2),
                               1 if c["mushroom"] else 0,
                               1 if c["carcass"] else 0,
-                              round(c.get("elev", 0), 2)))
+                              round(c.get("elev", 0), 2),
+                              # which water: creek, pond or a ford across
+                              "f" if c.get("ford") else
+                              {"creek": "c", "pond": "p"}.get(
+                                  c.get("water"), "")))
         plants = [{"id": p["id"], "sp": p["sp"], "x": p["x"], "y": p["y"],
                    "st": p["stage"],
                    "el": 1 if p.get("elder") or p["id"] in w["elder_ids"]
@@ -118,6 +122,8 @@ def snapshot(grove, runner, lock):
                     "px": a.get("px", a["x"]), "py": a.get("py", a["y"]),
                     "ag": round(a.get("age", 0)),
                     "h": 1 if a["hunger"] > 5 else 0,
+                    # drank at the water this week or last
+                    "dr": 1 if a.get("drank", -9) >= w["tick"] - 1 else 0,
                     "n": names.get(str(a["id"]))}
                    for a in w["animals"].values()]
 
@@ -187,7 +193,10 @@ def snapshot(grove, runner, lock):
             "pop_chips": pop_chips,
             "plants": plants_now,
             "size": size,
+            "seed": w["seed"],
             "cells": cells,
+            # each creek's cells from source to mouth, for its flow
+            "creeks": w.get("creeks", []),
             "plants": plants,
             "animals": animals,
             "map": render.render_map(w).splitlines(),

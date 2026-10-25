@@ -212,6 +212,10 @@ function select(sel) {
   if (!sel || sel.kind !== 'animal') S.follow = false;
   if (drawCard()) askBio(sel);
   if (S.world) S.world.follow(S.follow && sel ? sel.id : null);
+  /* the trees before a selected creature fade, followed or not */
+  if (S.world && S.world.select) {
+    S.world.select(sel && sel.kind === 'animal' ? sel.id : null);
+  }
 }
 
 function showHover(hit) {
