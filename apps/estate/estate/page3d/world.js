@@ -37,6 +37,11 @@ const Walk = (typeof globalThis !== 'undefined' && globalThis.EstateWalk) ||
 const Clock = (typeof globalThis !== 'undefined' && globalThis.EstateClock) ||
               null;
 
+/* The light field's painter (`/3d/field.js`, shared with the grove), a
+ * classic script before this module like the clock. */
+const Field = (typeof globalThis !== 'undefined' && globalThis.Page3DField) ||
+              null;
+
 const FLOOR_H = 1.35;          // world units per storey
 const TILE_TOP = 0.12;         // the walking surface: top of a ground tile
 const WALK_Y = TILE_TOP + 0.005;
@@ -120,6 +125,7 @@ function doorFace(b) {
 export function createWorld(ground, canvas, opts) {
   opts = opts || {};
   if (!Clock) throw new Error('the day clock (clock.js) did not load');
+  if (!Field) throw new Error('the light field (field.js) did not load');
   const forcedPhase = Number.isFinite(opts.forcedPhase) ? opts.forcedPhase
                                                           : -1;
   /* `?clock=0.15` pins the day's fraction for screenshots of mid-dawn or
@@ -654,39 +660,14 @@ export function createWorld(ground, canvas, opts) {
   glow.visible = false;
   scene.add(glow);
 
+  /* the painting itself is `field.js`, shared with the grove's view */
+  const glowPainter = Field.makePainter(W, H, GLOW_PX, glowCanvas, glowCells);
   let glowCount = 0;
-  let glowKey = '';
   function buildGlow(st) {
-    const light = (st && st.light) || [];
-    const key = light.join(',');
-    if (key === glowKey) return;       // the field changes when a lamp does
-    glowKey = key;
-    const small = glowCells.getContext('2d');
-    const img = small.createImageData(W, H);
-    let n = 0;
-    for (let i = 0; i < W * H; i++) {
-      const v = Math.max(0, Math.min(9, Number(light[i]) || 0)) / 9;
-      if (v) n++;
-      /* eased a little so the rim of a pool is a fade, not a ledge: the
-       * field steps 0-9 per cell and this keeps the low steps faint */
-      const a = Math.round(255 * Math.pow(v, 1.3));
-      img.data[i * 4] = 255;
-      img.data[i * 4 + 1] = 255;
-      img.data[i * 4 + 2] = 255;
-      img.data[i * 4 + 3] = a;
-    }
-    small.putImageData(img, 0, 0);
-    const big = glowCanvas.getContext('2d');
-    big.clearRect(0, 0, glowCanvas.width, glowCanvas.height);
-    big.imageSmoothingEnabled = true;
-    big.imageSmoothingQuality = 'high';
-    /* the blur takes the corners off the smoothing's diamonds; a browser
-     * without canvas filters still gets the smooth upscale */
-    if ('filter' in big) big.filter = `blur(${GLOW_PX * 0.6}px)`;
-    big.drawImage(glowCells, 0, 0, glowCanvas.width, glowCanvas.height);
-    if ('filter' in big) big.filter = 'none';
+    const r = glowPainter.paint((st && st.light) || []);
+    if (!r.changed) return;            // the field changes when a lamp does
     glowTex.needsUpdate = true;
-    glowCount = n;
+    glowCount = r.lit;
   }
 
   /* --------------------------------------------------------- windows lit */

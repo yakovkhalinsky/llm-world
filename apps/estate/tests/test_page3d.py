@@ -63,6 +63,14 @@ class WalkModuleTest(unittest.TestCase):
         self.assertLess(page.index("/3d/walk.js"),
                         page.index("/3d/viewer.js"))
 
+    def test_the_page_loads_the_light_field_before_its_module(self):
+        """The lamplight is painted by the shared `field.js`; the world
+        throws without it, so it must load before the module runs."""
+        page = web._page3d("index.html")[0].decode()
+        self.assertIn('src="/3d/field.js"', page)
+        self.assertLess(page.index("/3d/field.js"),
+                        page.index("/3d/viewer.js"))
+
 
 class Page3dTest(unittest.TestCase):
     def test_page_resolves(self):
@@ -122,8 +130,8 @@ class Page3dTest(unittest.TestCase):
         (the grove's 3D view reads the same files); they are still served
         under the estate's `/3d/`, and only from that folder."""
         shared = os.path.realpath(web.SHARED3D)
-        for rel in ("clock.js", "walk.js", "vendor/three.module.min.js",
-                    "vendor/OrbitControls.js"):
+        for rel in ("clock.js", "walk.js", "field.js",
+                    "vendor/three.module.min.js", "vendor/OrbitControls.js"):
             with self.subTest(rel=rel):
                 got = web._page3d(rel)
                 self.assertIsNotNone(got)
