@@ -14,6 +14,7 @@ exists to catch (Grove's b20: a gate that lied about what it checked).
 """
 
 import argparse
+import fnmatch
 import pathlib
 import sys
 
@@ -25,6 +26,16 @@ from estate import rules                                  # noqa: E402
 # Never a reader: where the keys are defined, and where a pack ships them.
 NOT_READERS = ("rules.py",)
 NOT_READER_DIRS = ("biomes",)
+
+# Some tables are read *by* the key that names them — `.get(need)` — so the
+# key's own word never appears in a reader and the literal check below
+# cannot see it. A table read that way names the function that reads it;
+# the function still has to exist in a reader, so deleting the reader
+# re-opens the report. This is deliberately a short, explicit list: a
+# wildcard that swallowed whole sections would be the audit lying.
+DYNAMIC_READERS = {
+    "fixtures.*.perimeter_bonus.*": "perimeter_bonus",
+}
 
 
 def readers() -> str:
@@ -48,12 +59,23 @@ def leaves(node, path=()):
             yield ".".join(path + (str(k),))
 
 
+def read_dynamically(path, blob):
+    """A dynamic reader counts only if the reader it names is present."""
+    for pattern, reader in DYNAMIC_READERS.items():
+        if fnmatch.fnmatchcase(path, pattern) and reader in blob:
+            return True
+    return False
+
+
 def unread():
     blob = readers()
     out = {}
     for path in leaves(rules.R):
-        if path.split(".")[-1] not in blob:
-            out.setdefault(path.split(".")[0], []).append(path)
+        if path.split(".")[-1] in blob:
+            continue
+        if read_dynamically(path, blob):
+            continue
+        out.setdefault(path.split(".")[0], []).append(path)
     return out
 
 
