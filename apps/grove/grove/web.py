@@ -436,6 +436,8 @@ def make_handler(g, lock, runner, data_dir, emb=None, hosts=None):
                     oid = int((qs.get("id") or ["0"])[0])
                 except ValueError:
                     oid = 0
+                if not -2 ** 63 <= oid < 2 ** 63:
+                    oid = 0         # past sqlite's integers: simply gone
                 with lock:
                     world_w = g.world
                     if world_w is None:

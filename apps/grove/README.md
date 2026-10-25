@@ -74,7 +74,9 @@ Debug parameters: `?phase=dawn|morning|afternoon|evening|night` freezes
 the light, `?clock=0.2` pins the day's fraction, `?static=1` draws the
 first state and stops (for screenshots), `?view=top` looks straight down.
 The page's headless checks: `node tools/hud_check.js` (every model string
-escaped), `node tools/route_check.js <state.json>` (no walk crosses a
+escaped), `node tools/viewer_check.js` (the card's ledger ask: kept across
+polls, never crossed between creatures, given up after 4 s, re-asked once
+a week and never over an ask still waiting), `node tools/route_check.js <state.json>` (no walk crosses a
 trunk or water), `node tools/glow_check.js <state.json>
 [<next-week.json>]` (about one mushroom ring in three glows on a night,
 deterministically, with the server's light arithmetic, and the lit set
@@ -215,9 +217,10 @@ all species must persist).
 | `grove/__main__.py` | CLI + run loop |
 | `tools/balance.py` | the ecologist's gate: seeded worlds × years, all must pass |
 | `tools/hud_check.js` | the HUD's escaping check: hostile strings in every field must come out inert |
+| `tools/viewer_check.js` | the card's ask check: the real viewer.js with a stub DOM and clock — the ledger's answer survives polls, a late answer never lands on another card, a hung ask fails plainly |
 | `tools/route_check.js` | the walk check: every creature's route on a snapshot avoids trunks and water |
 | `tools/glow_check.js` | the glow check: tonight's lit rings on a snapshot — deterministic, about one in three with no rota, never none, whole rings, the server's field when all are lit; given next week's snapshot too, no surviving ring flips in the dark |
-| `tests/` | the server's routes and headers, the light field, and the two checks above (with mutants) |
+| `tests/` | the server's routes and headers, the light field, and the checks above (with mutants) |
 | `tools/render_svg.py` | the README's scene, rendered from the live world |
 | `docs/ARCHITECTURE.md` | how it all works: tick order, contracts, threads |
 | `docs/ECOLOGY.md` | the field guide: how the biome's mechanics work |
