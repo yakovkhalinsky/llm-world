@@ -228,17 +228,17 @@ function poll() {
       S.world.setState(st);
       head(st);
       if (S.selected) drawCard();
-    }
-    if (STATIC) {
-      /* one frame, then hold perfectly still — a screenshot should not
-       * depend on which millisecond the browser got around to it */
-      if (S.world) {
+      /* The first state is drawn here rather than waiting for the next
+       * animation frame. A headless check may never get one — and
+       * `ready` means the estate is on screen, not that a compositor
+       * decided to tick. */
+      if (!ready) {
         const info = S.world.frame(performance.now());
         phaseLabel(info);
         publishReady();
       }
-      return;
     }
+    if (STATIC) return;
     pollTimer = window.setTimeout(poll, 700);
   }).catch(() => {
     if (!STATIC) pollTimer = window.setTimeout(poll, 2000);
