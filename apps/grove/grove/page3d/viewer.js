@@ -22,7 +22,8 @@
  * When the first state has been drawn it publishes `window.__grove3d =
  * {ready, plants, animals, trees, flyers, walking, glow, phase, dayFrac,
  * static, routes}` — `routes` is `{active, maxWaypoints, fallbacks}` from
- * the shared router, `glow` how many cells the mushrooms' light reaches.
+ * the shared router, `glow` how many cells the mushrooms' light reaches,
+ * `rings` and `ringsLit` the mushroom rings and how many glow tonight.
  */
 
 import { createWorld } from './world.js';

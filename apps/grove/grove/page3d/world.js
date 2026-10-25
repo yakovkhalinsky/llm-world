@@ -27,6 +27,7 @@ const Walk = G.Page3DWalk || null;
 const Clock = G.Page3DClock || null;
 const Field = G.Page3DField || null;
 const Forest = G.GroveForest || null;
+const Glow = G.GroveGlow || null;
 
 /* the floor: a cell is a world unit; the engine's elevation is lifted by
  * ELEV, the water's bed sunk below its surface */
@@ -45,7 +46,7 @@ const KIND_SHAPE = { tree: 'deciduous', shrub: 'bush',
 const TRUNK = { birch: 0xd9d4c9, willow: 0x8a7663 };
 const TRUNK_DEFAULT = 0x5b422f;
 const SEASON_NAMES = ['spring', 'summer', 'autumn', 'winter'];
-const GLOW_HEX = 0x7dffc4;    // the mushrooms' cold green-blue light
+const GLOW_HEX = 0x9ff5d0;    // the mushrooms' pale mint light
 const BODY_DEFAULT = 0x8c7a66;
 
 /* the weather greys the sky: the estate's own table */
@@ -225,6 +226,7 @@ export function createWorld(first, canvas, opts) {
   if (!Clock) throw new Error('the day clock (clock.js) did not load');
   if (!Field) throw new Error('the light field (field.js) did not load');
   if (!Forest) throw new Error('the forest (forest.js) did not load');
+  if (!Glow) throw new Error('the mushroom light (glow.js) did not load');
   const staticMode = !!opts.staticMode;
   const clock = Clock.makeClock({ clockPin: opts.clockFrac,
                                   forcedPhase: opts.forcedPhase });
@@ -241,12 +243,16 @@ export function createWorld(first, canvas, opts) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  /* set every frame from the clock (lightAt's exposure) */
+  renderer.toneMappingExposure = Clock.EXPOSURE_DAY;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(Clock.LIGHT[3].sky);
-  scene.fog = new THREE.Fog(Clock.LIGHT[3].sky, N * 1.1, N * 2.6);
+  /* the fog starts just inside the grove's own size, so the floor's apron
+   * is already fogging where it reaches the frame's corners; its colour is
+   * the sky's, leaned a little toward the ground by day (updateSky) */
+  scene.fog = new THREE.Fog(Clock.LIGHT[3].sky, N * 0.9, N * 2.6);
 
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 300);
   camera.position.set(centre.x + N * 0.55, N * 0.72, centre.z + N * 0.95);
@@ -490,8 +496,15 @@ export function createWorld(first, canvas, opts) {
    * canvas that covers the whole floor, and laid on the floor as a second
    * skin — the floor's own geometry, added to whatever is under it — so
    * the light follows every bank and hollow. `dark` scales it: it comes
-   * up through the dusk and goes out through the dawn. */
+   * up through the dusk and goes out through the dawn.
+   *
+   * Only some rings glow on a given night (glow.js): the page builds the
+   * field from those rings itself, with the server's arithmetic, rather
+   * than painting the server's field of every mushroom. */
   const GLOW_PX = 12;
+  /* the pool's strength at full dark: low, so a lit ring is a pool of
+   * mint light on the floor and the night around it stays blue */
+  const GLOW_OPACITY = 0.17;
   const glowCanvas = document.createElement('canvas');
   glowCanvas.width = GW * GLOW_PX;
   glowCanvas.height = GW * GLOW_PX;
@@ -515,8 +528,19 @@ export function createWorld(first, canvas, opts) {
                                         glowCells);
   const glowWide = new Array(GW * GW).fill(0);
   let glowCount = 0;
+  let litCell = new Uint8Array(N * N);
+  let ringCount = 0, ringsLit = 0;
+  /* the night the lit rings were chosen for: the day number, taken only
+   * while it is light (or on the first frame), so the choice never changes
+   * in the dark — the swap happens by day, when no ring is glowing */
+  let nightKey = null;
+  let dayNow = 0;
   function buildGlow(st) {
-    const f = st.glow || [];
+    const ch = Glow.choose(st.cells, N, nightKey | 0);
+    litCell = ch.litCell;
+    ringCount = ch.rings.length;
+    ringsLit = ch.lit.length;
+    const f = Glow.field(litCell, N);
     for (let y = 0; y < N; y++) {
       for (let x = 0; x < N; x++) {
         glowWide[(y + MARGIN) * GW + x + MARGIN] = Number(f[y * N + x]) || 0;
@@ -555,6 +579,10 @@ export function createWorld(first, canvas, opts) {
   const fruitMat = new THREE.MeshStandardMaterial({ roughness: 0.5 });
   const mushMat = new THREE.MeshStandardMaterial({
     roughness: 0.6, emissive: GLOW_HEX, emissiveIntensity: 0 });
+  /* the caps of a ring that is not glowing tonight: the faint day sheen,
+   * fading after dark so an unlit ring reads as a pale cap, not a lamp */
+  const mushDimMat = new THREE.MeshStandardMaterial({
+    roughness: 0.6, emissive: GLOW_HEX, emissiveIntensity: 0.15 });
   const stemMat = new THREE.MeshStandardMaterial({ color: 0xe8e0cc,
                                                     roughness: 0.8 });
 
@@ -569,7 +597,8 @@ export function createWorld(first, canvas, opts) {
     arm: makeBatch(scene, cylGeo, leafMat, 256),
     log: makeBatch(scene, cylGeo, barkMat, 64),
     stem: makeBatch(scene, cylGeo, stemMat, 256, { noShadow: true }),
-    cap: makeBatch(scene, capGeo, mushMat, 256, { noShadow: true }),
+    cap: makeBatch(scene, capGeo, mushDimMat, 256, { noShadow: true }),
+    capLit: makeBatch(scene, capGeo, mushMat, 256, { noShadow: true }),
     mound: makeBatch(scene, ballGeo, barkMat, 32),
   };
   /* what a click on each batch means: a plant by id, or nothing */
@@ -705,14 +734,17 @@ export function createWorld(first, canvas, opts) {
       }
     }
     Object.keys(B).forEach(k => {
-      if (k !== 'stem' && k !== 'cap' && k !== 'mound') B[k].end();
+      if (k !== 'stem' && k !== 'cap' && k !== 'capLit' && k !== 'mound') {
+        B[k].end();
+      }
     });
   }
 
   /* mushrooms (their caps glow after dark) and the fallen, cell by cell */
   let mushCount = 0;
   function buildCells(st) {
-    B.stem.begin(N * 3); B.cap.begin(N * 3); B.mound.begin(16);
+    B.stem.begin(N * 3); B.cap.begin(N * 3); B.capLit.begin(N * 3);
+    B.mound.begin(16);
     mushCount = 0;
     for (let i = 0; i < N * N; i++) {
       const c = st.cells[i];
@@ -727,8 +759,9 @@ export function createWorld(first, canvas, opts) {
           const r = 0.07 + h01(i, 99 + m) * 0.05;
           B.stem.add(place(px, gy, pz, r * 0.45, r * 1.4, r * 0.45, 0),
                      _c1.setHex(0xe8e0cc), null);
-          B.cap.add(place(px, gy + r * 1.3, pz, r * 2.2, r * 1.6, r * 2.2, 0),
-                    _c1.setHex(0xd9f5e6), null);
+          (litCell[i] ? B.capLit : B.cap).add(
+            place(px, gy + r * 1.3, pz, r * 2.2, r * 1.6, r * 2.2, 0),
+            _c1.setHex(0xd9f5e6), null);
         }
       }
       if (c[4]) {
@@ -737,7 +770,7 @@ export function createWorld(first, canvas, opts) {
                           h01(i, 7) * 6.28), _c1.setHex(0x6b5a4c), null);
       }
     }
-    B.stem.end(); B.cap.end(); B.mound.end();
+    B.stem.end(); B.cap.end(); B.capLit.end(); B.mound.end();
   }
 
   /* ------------------------------------------------------- the router */
@@ -916,13 +949,21 @@ export function createWorld(first, canvas, opts) {
                     y + h01(i, 210 + k) * 1.6 - 0.3, h01(i, 220 + k) * 6.28]);
     }
   }
+  /* each fly flickers on its own, between 0.3 and 1.0 of full: a vertex
+   * colour (the spark's colour times its brightness) under additive
+   * blending, so no two blink together */
+  const FLY_HEX = new THREE.Color(0xe9ff9a);
+  const flyCol = new Float32Array(FLY_MAX * 3);
   const flyGeo = new THREE.BufferGeometry();
   const flyAttr = new THREE.BufferAttribute(flyPos, 3);
+  const flyColAttr = new THREE.BufferAttribute(flyCol, 3);
   flyGeo.setAttribute('position', flyAttr);
+  flyGeo.setAttribute('color', flyColAttr);
   flyGeo.setDrawRange(0, flyHome.length);
   const fireflies = new THREE.Points(flyGeo, new THREE.PointsMaterial({
-    color: 0xe9ff9a, size: 0.12, transparent: true, opacity: 0,
-    depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+    color: 0xffffff, vertexColors: true, size: 0.08, transparent: true,
+    opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
+    fog: false }));
   fireflies.frustumCulled = false;
   fireflies.visible = false;
   scene.add(fireflies);
@@ -939,10 +980,15 @@ export function createWorld(first, canvas, opts) {
       flyPos[i * 3 + 1] = heightAt(h[0], h[1]) + 0.5 +
         Math.sin(t * 0.9 + h[2] * 2) * 0.25;
       flyPos[i * 3 + 2] = h[1] + Math.cos(t * 0.4 + h[2]) * 0.4;
+      /* 0.3..1.0, at this fly's own rate and phase */
+      const b = 0.65 + 0.35 * Math.sin(t * (2.2 + h[2] * 0.25) + h[2] * 3);
+      flyCol[i * 3] = FLY_HEX.r * b;
+      flyCol[i * 3 + 1] = FLY_HEX.g * b;
+      flyCol[i * 3 + 2] = FLY_HEX.b * b;
     }
     flyAttr.needsUpdate = true;
-    fireflies.material.opacity = (dark - 0.35) * 1.5 *
-      (0.6 + 0.4 * Math.sin(t * 3));
+    flyColAttr.needsUpdate = true;
+    fireflies.material.opacity = Math.min(1, (dark - 0.35) * 1.5);
   }
 
   /* ---------------------------------------------------------- weather */
@@ -1038,6 +1084,7 @@ export function createWorld(first, canvas, opts) {
   /* ------------------------------------------------------------ the sky */
 
   const skyColour = new THREE.Color();
+  const groundColour = new THREE.Color();
   let darkNow = 0;
 
   function updateSky(dayFrac) {
@@ -1049,7 +1096,9 @@ export function createWorld(first, canvas, opts) {
     hemi.color.setRGB(l.hemiSky[0], l.hemiSky[1], l.hemiSky[2]);
     hemi.groundColor.setRGB(l.hemiGround[0], l.hemiGround[1],
                             l.hemiGround[2]);
+    groundColour.copy(hemi.groundColor);
     darkNow = l.dark;
+    renderer.toneMappingExposure = l.exposure;
     const wt = WEATHER_SKY[weather];
     if (wt) {
       _c1.setHex(wt.hex);
@@ -1058,7 +1107,11 @@ export function createWorld(first, canvas, opts) {
     }
     if (flash > 0) skyColour.lerp(_c1.setHex(0xcfd8ff), flash * 0.5);
     scene.background.copy(skyColour);
-    scene.fog.color.copy(skyColour);
+    /* the horizon a little below the sky's value by day, so the grove
+     * sits on the ground; at night the fog is the night sky's own colour
+     * (clock.js fogGroundMix) */
+    scene.fog.color.copy(skyColour)
+      .lerp(groundColour, Clock.fogGroundMix(darkNow));
     const k = N / 24;
     sun.position.set(centre.x + l.offset[0] * k,
                      Math.max(SUN_MIN_Y, l.offset[1] * k),
@@ -1084,6 +1137,8 @@ export function createWorld(first, canvas, opts) {
     Clock.setPace(clock, now, (Number(st.tick_seconds) || 12) * wpd);
     Clock.onState(clock, now, { paused: !!st.paused,
                                 day: Math.floor((Number(st.tick) || 0) / wpd) });
+    dayNow = Math.floor((Number(st.tick) || 0) / wpd);
+    if (nightKey === null) nightKey = dayNow;
     warm = st.season === 'spring' || st.season === 'summer';
     if (Number(st.tick) !== builtTick) {
       builtTick = Number(st.tick);
@@ -1095,8 +1150,8 @@ export function createWorld(first, canvas, opts) {
       trunkTaken = t.taken;
       if (grid) Walk.setFixtures(grid, t.fixtures);
       buildPlants(st);
+      buildGlow(st);      // first: it chooses the lit rings the caps show
       buildCells(st);
-      buildGlow(st);
     }
     syncBeasts(st, now);
     syncWeather(st);
@@ -1115,9 +1170,16 @@ export function createWorld(first, canvas, opts) {
     updateWeather(dt, now);
     updateSky(f);
     const dark = darkNow;
-    glowMat.opacity = dark * 0.42;
+    /* a new night's rings, chosen while it is light */
+    if (dark <= 0.02 && nightKey !== dayNow && builtTick >= 0) {
+      nightKey = dayNow;
+      buildGlow(st0);
+      buildCells(st0);
+    }
+    glowMat.opacity = dark * GLOW_OPACITY;
     glow.visible = glowCount > 0 && dark > 0.02;
     mushMat.emissiveIntensity = 0.15 + dark * 1.6;
+    mushDimMat.emissiveIntensity = 0.15 - dark * 0.13;
     updateBeasts(now, dark);
     updateFireflies(now, dark);
     if (followId !== null && beastById[followId]) {
@@ -1218,6 +1280,8 @@ export function createWorld(first, canvas, opts) {
       walking,
       mushrooms: mushCount,
       glow: glowCount,
+      rings: ringCount,
+      ringsLit,
     };
   }
 
