@@ -405,6 +405,286 @@
     return out;
   }
 
+  /* ------------------------------------------------------------ spacing
+   *
+   * Two figures never share a point. The sims put several walkers in one
+   * cell on purpose (a playground holds a dozen children, a grove cell a
+   * deer and three rabbits) and say nothing finer than the cell; where in
+   * the cell each one stands is the renderer's choice. These pick it so
+   * bodies do not stand inside each other, without touching the sims: they
+   * are pure, deterministic functions of the positions they are given, so
+   * the same frame of the same snapshot draws the same picture.
+   *
+   *   pack      places a group sharing a spot: each figure, in the order
+   *             given, at the nearest point (on a fine hex lattice round the
+   *             spot) that keeps its radius clear of those already placed
+   *             and that the caller's `ok` accepts.
+   *   separate  pushes apart, each frame, figures closer than the sum of
+   *             their radii — walkers on one path, or a walker passing a
+   *             group — and passes oncoming walkers side by side.
+   *   clearAt   the guard both use: a point (and a ring of probes round it)
+   *             on open ground, so spacing never stands anyone in a wall, a
+   *             solid or the water, and never moves them across one. */
+
+  /* Unit hex lattice, nearest the origin first; points within `reach`. */
+  var LATTICE = null;
+  var LATTICE_STEP = 0.04;
+  function lattice() {
+    if (LATTICE) return LATTICE;
+    var pts = [];
+    var reach = 2.2, rows = Math.ceil(reach / (LATTICE_STEP * 0.866));
+    for (var j = -rows; j <= rows; j++) {
+      var zz = j * LATTICE_STEP * 0.8660254;
+      var shift = (j & 1) ? LATTICE_STEP / 2 : 0;
+      var cols = Math.ceil(reach / LATTICE_STEP) + 1;
+      for (var i = -cols; i <= cols; i++) {
+        var xx = i * LATTICE_STEP + shift;
+        var d = Math.hypot(xx, zz);
+        if (d <= reach) pts.push([xx, zz, d, Math.atan2(zz, xx)]);
+      }
+    }
+    pts.sort(function (a, b) { return (a[2] - b[2]) || (a[3] - b[3]); });
+    LATTICE = pts;
+    return pts;
+  }
+
+  /* `rs[k]` is figure k's radius; returns { xs, zs, placed } where
+   * `placed[k]` is false for a figure no lattice point could take (it is
+   * left on the spot, and `separate` does what it can). `opts.gap` is the
+   * extra room between two bodies; `opts.ok(x, z, k)` vets a point;
+   * `opts.recentre` shifts the packed group so its middle is the spot,
+   * when every point still passes. */
+  function pack(rs, cx, cz, opts) {
+    opts = opts || {};
+    var gap = opts.gap || 0, ok = opts.ok || null;
+    var reach = opts.reach || 2.2;
+    var L = lattice();
+    var n = rs.length;
+    var xs = new Array(n), zs = new Array(n), placed = new Array(n);
+    for (var k = 0; k < n; k++) {
+      xs[k] = cx; zs[k] = cz; placed[k] = false;
+      for (var c = 0; c < L.length; c++) {
+        if (L[c][2] > reach) break;
+        var x = cx + L[c][0], z = cz + L[c][1];
+        var clear = true;
+        for (var q = 0; q < k; q++) {
+          if (!placed[q]) continue;
+          var need = rs[k] + rs[q] + gap;
+          var dx = x - xs[q], dz = z - zs[q];
+          if (dx * dx + dz * dz < need * need) { clear = false; break; }
+        }
+        if (!clear) continue;
+        if (ok && !ok(x, z, k)) continue;
+        xs[k] = x; zs[k] = z; placed[k] = true;
+        break;
+      }
+    }
+    if (opts.recentre && n > 1) {
+      var mx = 0, mz = 0, m = 0;
+      for (k = 0; k < n; k++) if (placed[k]) { mx += xs[k]; mz += zs[k]; m++; }
+      if (m > 1) {
+        var sx = cx - mx / m, sz = cz - mz / m, all = true;
+        for (k = 0; k < n && all; k++) {
+          if (placed[k] && ok && !ok(xs[k] + sx, zs[k] + sz, k)) all = false;
+        }
+        if (all) {
+          for (k = 0; k < n; k++) if (placed[k]) { xs[k] += sx; zs[k] += sz; }
+        }
+      }
+    }
+    return { xs: xs, zs: zs, placed: placed };
+  }
+
+  /* Is (gx, gz), in grid units, clear ground for a body of half-width m?
+   * The point and eight probes round it must each be on a walkable cell
+   * with no solid in it — or on `home`, the cell the figure's own route
+   * puts it in (a door, a fixture it is using, a cell that is all water),
+   * which it may always stand in. */
+  var PROBE = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1],
+               [0.7071, 0.7071], [-0.7071, 0.7071],
+               [0.7071, -0.7071], [-0.7071, -0.7071]];
+  function clearAt(g, gx, gz, m, home) {
+    for (var k = 0; k < PROBE.length; k++) {
+      var px = gx + PROBE[k][0] * m, pz = gz + PROBE[k][1] * m;
+      var cx = Math.floor(px), cz = Math.floor(pz);
+      if (cx < 0 || cz < 0 || cx >= g.W || cz >= g.H) return false;
+      var i = cz * g.W + cx;
+      if (i === home) continue;
+      if (!g.base[i] || g.solid[i]) return false;
+    }
+    return true;
+  }
+
+  /* Push overlapping figures apart. `F` holds parallel arrays, `n` long:
+   *   rx, rz   where each figure would be drawn alone (read only)
+   *   x, z     where it is drawn (written)
+   *   r        body radius;  w  how readily it moves (0: seated, fixed)
+   *   hx, hz   heading while walking (0, 0 when still)
+   *   layer    who it can collide with (-1: not drawn, skipped)
+   *   id       a stable id, for breaking an exact tie the same way always
+   * Stateless: a fixed number of Gauss-Seidel sweeps from the raw points
+   * every frame, in index order, so the result depends only on this
+   * frame's input. Each pair closer than ri + rj (+ `pad` when either is
+   * walking, so a walker steps aside a little before contact) shares the
+   * shortfall by weight; two walkers meeting head-on also lean to their
+   * own right, so they pass side by side rather than shoving along the
+   * path. No figure is moved further than `maxOff` from its raw point, and
+   * no move is taken that `ok(i, x, z)` refuses. Returns the smallest gap
+   * left (negative: an overlap it could not undo). */
+  var _head = new Int32Array(0), _next = new Int32Array(0);
+  function separate(F, n, opts) {
+    opts = opts || {};
+    var iters = opts.iters || 8;
+    var maxOff = opts.maxOff == null ? 0.6 : opts.maxOff;
+    var pad = opts.pad || 0;
+    var ok = opts.ok || null;
+    var x = F.x, z = F.z, rx = F.rx, rz = F.rz, r = F.r, w = F.w;
+    var hx = F.hx, hz = F.hz, layer = F.layer, id = F.id;
+    var i, j, rmax = 0, minX = Infinity, minZ = Infinity;
+    var maxX = -Infinity, maxZ = -Infinity;
+    for (i = 0; i < n; i++) {
+      x[i] = rx[i]; z[i] = rz[i];
+      if (layer[i] < 0) continue;
+      if (r[i] > rmax) rmax = r[i];
+      if (x[i] < minX) minX = x[i];
+      if (z[i] < minZ) minZ = z[i];
+      if (x[i] > maxX) maxX = x[i];
+      if (z[i] > maxZ) maxZ = z[i];
+    }
+    if (!(rmax > 0)) return Infinity;
+    var cs = 2 * rmax + pad + 2 * maxOff / iters + 0.05;
+    minX -= maxOff + cs; minZ -= maxOff + cs;
+    var GW = Math.max(1, Math.ceil((maxX - minX + maxOff + cs) / cs) + 1);
+    var GH = Math.max(1, Math.ceil((maxZ - minZ + maxOff + cs) / cs) + 1);
+    if (GW * GH > 65536) {           // a stray far point: coarser buckets
+      cs = Math.max((maxX - minX) / 255, (maxZ - minZ) / 255, cs);
+      GW = Math.ceil((maxX - minX + maxOff + cs) / cs) + 1;
+      GH = Math.ceil((maxZ - minZ + maxOff + cs) / cs) + 1;
+    }
+    if (_head.length < GW * GH) _head = new Int32Array(GW * GH);
+    if (_next.length < n) _next = new Int32Array(Math.max(n, 64));
+
+    function tryMove(k, nx, nz) {
+      var ox = nx - rx[k], oz = nz - rz[k];
+      var off = Math.hypot(ox, oz);
+      if (off > maxOff) {
+        nx = rx[k] + ox * (maxOff / off);
+        nz = rz[k] + oz * (maxOff / off);
+      }
+      if (ok && !ok(k, nx, nz)) return false;
+      x[k] = nx; z[k] = nz;
+      return true;
+    }
+
+    function resolve(a, b) {
+      if (layer[a] !== layer[b]) return;
+      var dx = x[b] - x[a], dz = z[b] - z[a];
+      var d = Math.hypot(dx, dz);
+      var movA = hx[a] !== 0 || hz[a] !== 0;
+      var movB = hx[b] !== 0 || hz[b] !== 0;
+      var want = r[a] + r[b] + (movA || movB ? pad : 0);
+      var need = want - d;
+      if (need <= 0) return;
+      var nx, nz;
+      if (d > 1e-6) {
+        nx = dx / d; nz = dz / d;
+      } else {
+        /* the same point: across the heading if walking, else a fixed
+         * direction from the pair's ids — never a coin toss */
+        var hl = Math.hypot(hx[a], hz[a]);
+        var side = id[a] < id[b] ? 1 : -1;
+        if (hl > 0) { nx = -hz[a] / hl * side; nz = hx[a] / hl * side; }
+        else {
+          var ang = ((id[a] * 0.6180339 + id[b] * 0.3819660) % 1) * 6.2831853;
+          nx = Math.cos(ang); nz = Math.sin(ang);
+        }
+      }
+      var wa = w[a], wb = w[b];
+      if (wa + wb <= 0) return;
+      /* oncoming walkers: lean right, weighted by how head-on it is */
+      var ax = -nx, az = -nz, bx = nx, bz = nz;
+      if (movA && movB) {
+        var la = Math.hypot(hx[a], hz[a]), lb = Math.hypot(hx[b], hz[b]);
+        var ux = hx[a] / la, uz = hz[a] / la, vx = hx[b] / lb, vz = hz[b] / lb;
+        var dot = ux * vx + uz * vz;
+        var lat = Math.abs(-uz * nx + ux * nz);   // how far to a's side b is
+        var k = Math.max(0, Math.min(1, (-dot - 0.3) / 0.4)) *
+                Math.max(0, Math.min(1, 1 - lat / 0.6));
+        if (k > 0) {
+          /* a's right is (-uz, ux) in x/z; b's is (-vz, vx) */
+          ax += k * 1.5 * -uz; az += k * 1.5 * ux;
+          bx += k * 1.5 * -vz; bz += k * 1.5 * vx;
+          var l1 = Math.hypot(ax, az) || 1, l2 = Math.hypot(bx, bz) || 1;
+          ax /= l1; az /= l1; bx /= l2; bz /= l2;
+        }
+      }
+      var sa = wa / (wa + wb), sb = wb / (wa + wb);
+      var movedA = sa > 0 && tryMove(a, x[a] + ax * need * sa,
+                                        z[a] + az * need * sa);
+      if (!movedA && sa > 0 && wb > 0) sb = 1;
+      var movedB = sb > 0 && tryMove(b, x[b] + bx * need * sb,
+                                        z[b] + bz * need * sb);
+      if (!movedB && sb > 0 && sb < 1 && wa > 0 && movedA) {
+        tryMove(a, x[a] + ax * need * sb, z[a] + az * need * sb);
+      }
+    }
+
+    for (var it = 0; it < iters; it++) {
+      _head.fill(-1, 0, GW * GH);
+      for (i = 0; i < n; i++) {
+        if (layer[i] < 0) continue;
+        var bi = Math.min(GW - 1, Math.max(0, Math.floor((x[i] - minX) / cs))) +
+                 Math.min(GH - 1, Math.max(0, Math.floor((z[i] - minZ) / cs))) * GW;
+        _next[i] = _head[bi]; _head[bi] = i;
+      }
+      for (i = 0; i < n; i++) {
+        if (layer[i] < 0) continue;
+        var gx = Math.min(GW - 1, Math.max(0, Math.floor((x[i] - minX) / cs)));
+        var gz = Math.min(GH - 1, Math.max(0, Math.floor((z[i] - minZ) / cs)));
+        for (var oz = -1; oz <= 1; oz++) {
+          var zz = gz + oz;
+          if (zz < 0 || zz >= GH) continue;
+          for (var ox = -1; ox <= 1; ox++) {
+            var xx = gx + ox;
+            if (xx < 0 || xx >= GW) continue;
+            for (j = _head[zz * GW + xx]; j >= 0; j = _next[j]) {
+              if (j > i) resolve(i, j);
+            }
+          }
+        }
+      }
+    }
+    return minGap(F, n);
+  }
+
+  /* The smallest r-adjusted gap between two drawn figures on one layer
+   * (negative: they overlap by that much). For the checks and the HUD. */
+  function minGap(F, n) {
+    var best = Infinity;
+    for (var i = 0; i < n; i++) {
+      if (F.layer[i] < 0) continue;
+      for (var j = i + 1; j < n; j++) {
+        if (F.layer[j] !== F.layer[i]) continue;
+        var g = Math.hypot(F.x[i] - F.x[j], F.z[i] - F.z[j]) - F.r[i] - F.r[j];
+        if (g < best) best = g;
+      }
+    }
+    return best;
+  }
+
+  /* Parallel arrays for `separate`, grown to at least n. */
+  function figures(F, n) {
+    if (F && F.x.length >= n) return F;
+    var m = Math.max(n, 16, F ? F.x.length * 2 : 0);
+    return {
+      rx: new Float64Array(m), rz: new Float64Array(m),
+      x: new Float64Array(m), z: new Float64Array(m),
+      r: new Float64Array(m), w: new Float64Array(m),
+      hx: new Float64Array(m), hz: new Float64Array(m),
+      layer: new Int32Array(m).fill(-1), id: new Float64Array(m),
+    };
+  }
+
   var api = {
     SOLID: SOLID,
     buildGrid: buildGrid,
@@ -415,6 +695,11 @@
     duration: duration,
     sample: sample,
     WALK_CPS: WALK_CPS,
+    pack: pack,
+    clearAt: clearAt,
+    separate: separate,
+    minGap: minGap,
+    figures: figures,
   };
   /* `Page3DWalk` is the shared name; `EstateWalk` is kept because the
    * estate's module and its check were written against it. */

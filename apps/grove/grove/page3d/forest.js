@@ -123,10 +123,135 @@
     return { route: r, fallback: false, points: r.n };
   }
 
+  /* ------------------------------------------------------------ bodies */
+
+  /* The frames the page draws (world.js's PARTS), and the creatures with
+   * no frame of their own: the visitors and the pack's others take a
+   * resident's, a little larger. */
+  var FRAMES = { rabbit: 1, deer: 1, fox: 1, boar: 1, owl: 1, robin: 1,
+                 tortoise: 1 };
+  var BODY_OF = { stag: 'deer', wolf: 'fox', deer: 'deer' };
+  var SCALE_OF = { stag: 1.15, wolf: 1.3 };
+  /* How much ground each frame keeps to itself, in cells at scale 1: about
+   * half its body's length, less the thin ends (a fox's brush, a deer's
+   * muzzle) that may pass over a neighbour. */
+  var RADIUS = { rabbit: 0.15, robin: 0.1, owl: 0.13, fox: 0.25,
+                 boar: 0.3, deer: 0.32, tortoise: 0.2 };
+
+  function frameOf(sp, shape) {
+    var s = shape || sp;
+    if (FRAMES[s]) return s;
+    if (BODY_OF[s]) return BODY_OF[s];
+    return 'fox';              // a creature with no frame of its own
+  }
+
+  /* A creature's frame, its scale and the radius it keeps clear. */
+  function figure(st, sp) {
+    var shapes = (st.biome && st.biome.shapes) || {};
+    var frame = frameOf(sp, shapes[sp]);
+    var scale = SCALE_OF[sp] || 1;
+    return { frame: frame, scale: scale, r: RADIUS[frame] * scale };
+  }
+
+  /* Where every creature rests this week (`which` 'now', on x/y) or last
+   * week ('prev', on px/py), by id. One alone in its cell takes its own
+   * quarter, as it always has (`restSpot`). Two or more share the cell
+   * out: packed round its middle (Walk.pack), the largest first and then
+   * by id, each body clear of the rest, on open ground — never in the
+   * water, never in a trunk's quarter (Walk.clearAt on the router's own
+   * grid). Flyers hover in a layer of their own and are spread among
+   * themselves. Pure: the same week puts everyone in the same place. */
+  function restSpots(Walk, grid, st, taken, which) {
+    var prev = which === 'prev';
+    var N = Number(st.size) | 0;
+    var fly = {};
+    ((st.biome && st.biome.flyers) || []).forEach(function (sp) { fly[sp] = 1; });
+    var groups = {}, keys = [], out = {};
+    (st.animals || []).forEach(function (a) {
+      var x = prev ? a.px : a.x, y = prev ? a.py : a.y;
+      if (!(x >= 0 && y >= 0 && x < N && y < N)) return;
+      var key = x + ',' + y + ',' + (fly[a.sp] ? 1 : 0);
+      if (!groups[key]) { groups[key] = []; keys.push(key); }
+      groups[key].push({ a: a, x: x, y: y, r: figure(st, a.sp).r,
+                         fly: !!fly[a.sp] });
+    });
+    keys.forEach(function (key) {
+      var g = groups[key];
+      if (g.length === 1 || !Walk || !grid) {
+        g.forEach(function (e) {
+          out[e.a.id] = restSpot(e.a.id, e.x, e.y, st, taken);
+        });
+        return;
+      }
+      g.sort(function (p, q) { return (q.r - p.r) || (p.a.id - q.a.id); });
+      var x = g[0].x, y = g[0].y;
+      var c = st.cells[y * N + x];
+      var water = c && c[0] === 'w';
+      var rs = g.map(function (e) { return e.r; });
+      var ok = g[0].fly ? null : function (px, pz, k) {
+        var m = Math.min(rs[k], 0.2) * SUB;
+        /* a cell that is all water: its creatures are where the engine put
+         * them, so its own quarters are allowed, nothing beyond */
+        if (water) {
+          return Math.floor(px) === x && Math.floor(pz) === y;
+        }
+        return Walk.clearAt(grid, px * SUB, pz * SUB, m, -1);
+      };
+      var got = Walk.pack(rs, x + 0.5, y + 0.5,
+                          { gap: 0.02, reach: 1.4, ok: ok, recentre: true });
+      g.forEach(function (e, k) {
+        out[e.a.id] = got.placed[k] ? { x: got.xs[k], z: got.zs[k] }
+                                    : restSpot(e.a.id, e.x, e.y, st, taken);
+      });
+    });
+    return out;
+  }
+
+  /* Creatures that leave one cell for the same other cell take the same
+   * road, and two bodies cannot pass a trunk's gap side by side. So they
+   * go in file: the one furthest along the way first (by where it rested
+   * last week, `was` from restSpots; then by id), so nobody walks through
+   * one still waiting its turn, each a tenth of the glide behind the one before
+   * (closer when there are many), all at the same pace, so the gap holds
+   * the whole way. By id: { lag, span }, fractions of the glide — when to
+   * set off and how long the walk takes. A creature walking alone is not
+   * in the map, and walks the whole glide as before. Ground walkers only:
+   * the flyers have the air to themselves. */
+  var FILE_STEP = 0.1, FILE_SPAN = 0.6;
+  function stagger(st, was) {
+    var fly = {};
+    ((st.biome && st.biome.flyers) || []).forEach(function (sp) { fly[sp] = 1; });
+    var groups = {}, keys = [], out = {};
+    (st.animals || []).forEach(function (a) {
+      if (fly[a.sp] || !(a.px >= 0 && a.py >= 0)) return;
+      if (a.px === a.x && a.py === a.y) return;
+      var key = a.px + ',' + a.py + '>' + a.x + ',' + a.y;
+      if (!groups[key]) { groups[key] = []; keys.push(key); }
+      var w = was && was[a.id];
+      var ahead = w ? (w.x - a.px - 0.5) * (a.x - a.px) +
+                      (w.z - a.py - 0.5) * (a.y - a.py) : 0;
+      groups[key].push({ id: a.id, ahead: ahead });
+    });
+    keys.forEach(function (key) {
+      var ids = groups[key];
+      if (ids.length < 2) return;
+      ids.sort(function (p, q) {
+        return (q.ahead - p.ahead) || (p.id - q.id);
+      });
+      var step = Math.min(FILE_STEP, (1 - FILE_SPAN) / (ids.length - 1));
+      ids.forEach(function (e, k) {
+        out[e.id] = { lag: k * step, span: FILE_SPAN };
+      });
+    });
+    return out;
+  }
+
   var api = {
     SUB: SUB, QX: QX, QZ: QZ, WALK: WALK, STANDING: STANDING,
     hash: hash, subGround: subGround, trunks: trunks, restSpot: restSpot,
     route: route, kindOf: kindOf,
+    frameOf: frameOf, figure: figure, restSpots: restSpots, stagger: stagger,
+    RADIUS: RADIUS, BODY_OF: BODY_OF, SCALE_OF: SCALE_OF,
   };
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
