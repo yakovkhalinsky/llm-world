@@ -5,11 +5,16 @@
  * the frame to the world. The HUD reads the same frame, so a number in a
  * panel and a shape in the scene can never disagree.
  *
- * Two query parameters exist for the headless checks that look at this page:
+ * These query parameters exist for the headless checks that look at this
+ * page:
  *
- *   ?phase=night    freeze the light at one of the five phases
- *                   (dawn, morning, afternoon, evening, night; `day`,
- *                   `dusk` and `sunrise` are accepted as aliases)
+ *   ?phase=night    freeze the light at the middle of one of the five
+ *                   phases (dawn, morning, afternoon, evening, night;
+ *                   `day`, `dusk` and `sunrise` are accepted as aliases)
+ *   ?clock=0.2      pin the day's fraction, 0..1 from midnight to
+ *                   midnight, for a screenshot of mid-dawn (0.2),
+ *                   mid-dusk (0.8) or any hour between; it wins over
+ *                   `?phase=` if both are given.
  *   ?static=1       draw the first state and stop. With no `phase` the
  *                   frozen light is afternoon, so a screenshot is legible
  *                   rather than a dawn taken from a standing start.
@@ -27,11 +32,12 @@
  *
  * When the first state has been drawn it publishes
  * `window.__estate3d = {ready, residents, buildings, benches, seated,
- * outside, walking, perimeter, phase, routes}` — `seated` is how many
- * residents are on a bench now, `outside` how many are not in a flat,
- * `walking` how many the page is walking between cells, `perimeter` how
- * many are out on the estate's edge, and `routes` is
- * `{active, maxWaypoints, fallbacks}` from the router.
+ * outside, walking, perimeter, phase, dayFrac, routes}` — `phase` and
+ * `dayFrac` are the HUD's own clock and keep moving with the light;
+ * `seated` is how many residents are on a bench now, `outside` how many
+ * are not in a flat, `walking` how many the page is walking between
+ * cells, `perimeter` how many are out on the estate's edge, and `routes`
+ * is `{active, maxWaypoints, fallbacks}` from the router.
  */
 
 import { createWorld } from './world.js';
@@ -65,6 +71,11 @@ const parsedPhase = Object.prototype.hasOwnProperty.call(PHASE_ALIAS, phaseArg)
 /* static with no named phase freezes at afternoon for a legible shot */
 const forcedPhase = parsedPhase >= 0 ? parsedPhase
                    : (STATIC ? 2 : -1);
+/* a pinned fraction of the day, for a screenshot of any hour; -1 is unset */
+const clockArg = params.get('clock');
+const clockNum = clockArg == null || clockArg === '' ? NaN : Number(clockArg);
+const clockFrac = Number.isFinite(clockNum) &&
+                  clockNum >= 0 && clockNum <= 1 ? clockNum : -1;
 
 const S = {
   ground: null,
@@ -233,6 +244,7 @@ function publishReady() {
     walking: summary.walking,
     perimeter: summary.perimeter,
     phase: S.world.phaseName(),
+    dayFrac: S.world.dayFraction(),
     static: STATIC,
     routes: S.world.routeStats(),
   };
@@ -259,10 +271,20 @@ function applyFocus() {
   if (STATIC) S.world.frame(performance.now());
 }
 
+/* The debug hook carries the same clock the HUD and the light read, so a
+ * headless check can ask what hour the picture is at instead of guessing
+ * from the pixels. Two assignments, no object, no allocation per frame. */
+function publishClock(info) {
+  if (!ready) return;
+  window.__estate3d.phase = info.name;
+  window.__estate3d.dayFrac = info.dayFrac;
+}
+
 function tick(now) {
   if (!S.world) return;
   const info = S.world.frame(now);
   phaseLabel(info);
+  publishClock(info);
   if (!ready && S.world.hasState()) publishReady();
   if (S.hoverDirty && S.world) {
     S.hoverDirty = false;
@@ -385,7 +407,8 @@ function start() {
     S.ground = g;
     try {
       S.world = createWorld(g, $('view'), {
-        forcedPhase, staticMode: STATIC, topView: TOP, trace: TRACE,
+        forcedPhase, clockFrac, staticMode: STATIC, topView: TOP,
+        trace: TRACE,
       });
     } catch (e) {
       fallback('WebGL could not start: ' + e.message);

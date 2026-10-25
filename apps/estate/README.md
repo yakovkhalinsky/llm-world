@@ -105,17 +105,33 @@ and the residents gliding between them. The windows of lived-in flats warm
 at dusk while empty ones stay dark, lamps lay pools of light on the
 ground, seasons turn the grass and the trees, and rain falls as streaks.
 
+The light runs on one continuous clock rather than switching when a poll
+reports a new day: the sun crosses the sky, the sky and fog take its colour,
+and the lamps, windows and figures' warmth ease in and out over a long
+dawn and dusk. The clock is a day from midnight to midnight, and the five
+equal phases run dawn, morning, afternoon, evening and night, with the
+night straddling the day's turn: the hour either side of midnight is one
+phase, not two, and the darkest light is the same on both sides of the
+seam. So there is no moment where the scene jumps. A paused day freezes
+the light where it is, and changing pace changes the rate of the day, not
+the hour it is at.
+
 Drag to orbit, wheel to zoom, right-drag to pan (arrow keys pan too), and
 click or hover a resident or a block for its card. Pause, **+ day** and
 the three paces work exactly as they do on the plan page.
 
 For screenshots and headless checks:
 
-- `?phase=night` freezes the light at a phase (`dawn`, `morning`,
-  `afternoon`, `evening`, `night`; `day`, `dusk` and `sunrise` are
-  accepted). Without it the light turns with the tick.
-- `?static=1` draws the first state and stops — afternoon if no phase was
-  named — so a screenshot does not depend on when the browser was ready.
+- `?phase=night` freezes the light at the middle of a phase (`dawn`,
+  `morning`, `afternoon`, `evening`, `night`; `day`, `dusk` and `sunrise`
+  are accepted). Without it the light turns with the tick.
+- `?clock=0.2` pins the day's fraction instead, from 0 at midnight to 1 at
+  the next midnight; the five phases start at 0.1, 0.3, 0.5, 0.7 and 0.9,
+  so `?clock=0.2` is mid-dawn, `0.8` mid-dusk, and `0`/`1` are the
+  darkest hour. It is finer than `?phase=` and wins if both are given.
+- `?static=1` draws the first state and stops — afternoon if no phase or
+  clock was named — so a screenshot does not depend on when the browser
+  was ready.
 - `?view=top` starts overhead, for looking at the whole plan at once.
 - `?focus=bench` frames the camera close on the busiest occupied bench
   (any bench if the estate is indoors), so a screenshot can show people
@@ -124,10 +140,12 @@ For screenshots and headless checks:
   `?focus=x,y` frames a named cell instead.
 - once the first state is drawn the page publishes
   `window.__estate3d = {ready, residents, buildings, benches, seated,
-  outside, walking, perimeter, phase}` — `seated` is how many residents
-  are on a bench now, `outside` how many are not in a flat, `walking` how
-  many the page is gliding between cells, and `perimeter` how many are out
-  on the estate's edge.
+  outside, walking, perimeter, phase, dayFrac}` — `phase` and `dayFrac`
+  are the clock the HUD and the light are reading (the fraction is 0..1
+  and keeps moving), `seated` is how many residents are on a bench now,
+  `outside` how many are not in a flat, `walking` how many the page is
+  gliding between cells, and `perimeter` how many are out on the estate's
+  edge.
 
 Three.js **r170** (MIT) is vendored in `estate/page3d/vendor/` together
 with `OrbitControls` and the licence; the page's import map resolves
