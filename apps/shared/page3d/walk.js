@@ -622,8 +622,16 @@
    * route that passes nearer than `rho` to (cx, cz) round it instead:
    * along the tangent, an arc the shorter way round, and the tangent off
    * again, each chord short enough to stay `rho` clear. Legs that start
-   * or end inside `rho` are left alone (the router put them there). Pure;
-   * returns the route itself when nothing needs bending. */
+   * or end inside `rho` are left alone (the router put them there).
+   *
+   * With `grid` (and `m`, the body's half-width) a bend is never deeper
+   * into a wall, the water or off the map than the plain leg was: a
+   * tangent from far off can cut a building's corner the straight leg
+   * cleared. Then it tries the other way round; then the plain leg as far
+   * as the pole, the arc, and the plain leg on (the arc hugs the pole, so
+   * it stays on its cell); and if even that goes deeper, the leg is left
+   * as it was. The leg's own two cells (a door, the fixture's cell) don't
+   * count. Pure; returns the route itself when nothing needs bending. */
   var ARC_STEP = Math.PI / 6;
   function segDist(ax, az, bx, bz, cx, cz) {
     var vx = bx - ax, vz = bz - az, l2 = vx * vx + vz * vz;
@@ -631,7 +639,64 @@
     t = Math.max(0, Math.min(1, t));
     return Math.hypot(ax + vx * t - cx, az + vz * t - cz);
   }
-  function around(route, cx, cz, rho) {
+  function segBoxDist(ax, az, bx, bz, x0, z0, x1, z1) {
+    /* a segment and a box in 2D: touching, or nearest at an end of the
+     * segment or a corner of the box */
+    var t0 = 0, t1 = 1, dx = bx - ax, dz = bz - az;
+    var p = [-dx, dx, -dz, dz], q = [ax - x0, x1 - ax, az - z0, z1 - az];
+    var hit = true;
+    for (var k = 0; k < 4 && hit; k++) {
+      if (Math.abs(p[k]) < 1e-12) { if (q[k] < 0) hit = false; continue; }
+      var r = q[k] / p[k];
+      if (p[k] < 0) { if (r > t1) hit = false; else if (r > t0) t0 = r; }
+      else if (r < t0) hit = false; else if (r < t1) t1 = r;
+    }
+    if (hit) return 0;
+    var pt = function (x, z) {
+      var ox = Math.max(x0 - x, 0, x - x1), oz = Math.max(z0 - z, 0, z - z1);
+      return Math.hypot(ox, oz);
+    };
+    return Math.min(pt(ax, az), pt(bx, bz),
+                    segDist(ax, az, bx, bz, x0, z0), segDist(ax, az, bx, bz, x1, z0),
+                    segDist(ax, az, bx, bz, x0, z1), segDist(ax, az, bx, bz, x1, z1));
+  }
+  /* how far a body of half-width m on the polyline xs/zs reaches into the
+   * ground's blocked cells (off the map, or not walkable) other than
+   * cells skip0 and skip1: m less its nearest approach to one,
+   * a negative number when it stays clear (and m when it crosses one) */
+  function wallDepth(g, m, xs, zs, skip0, skip1) {
+    var worst = -Infinity;
+    for (var i = 1; i < xs.length; i++) {
+      var ax = xs[i - 1], az = zs[i - 1], bx = xs[i], bz = zs[i];
+      var gx0 = Math.floor(Math.min(ax, bx) - m), gx1 = Math.floor(Math.max(ax, bx) + m);
+      var gz0 = Math.floor(Math.min(az, bz) - m), gz1 = Math.floor(Math.max(az, bz) + m);
+      for (var z = gz0; z <= gz1; z++) {
+        for (var x = gx0; x <= gx1; x++) {
+          var off = x < 0 || z < 0 || x >= g.W || z >= g.H;
+          var c = z * g.W + x;
+          if (!off && (c === skip0 || c === skip1 || g.base[c])) continue;
+          var d = m - segBoxDist(ax, az, bx, bz, x, z, x + 1, z + 1);
+          if (d > worst) worst = d;
+        }
+      }
+    }
+    return worst;
+  }
+  /* the arc at radius rr about (cx, cz) from angle `from`, `sweep` the
+   * way s, in steps of no more than ARC_STEP, onto ox/oz */
+  function arcTo(ox, oz, cx, cz, rr, from, s, sweep) {
+    var steps = Math.max(1, Math.ceil(sweep / ARC_STEP - 1e-9));
+    for (var k = 0; k <= steps; k++) {
+      var ang = from + s * sweep * (k / steps);
+      ox.push(cx + Math.cos(ang) * rr); oz.push(cz + Math.sin(ang) * rr);
+    }
+  }
+  function sweepOf(s, from, to) {
+    var sweep = s * (to - from);
+    sweep = ((sweep % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+    return sweep > 2 * Math.PI - 1e-9 ? 0 : sweep;
+  }
+  function around(route, cx, cz, rho, grid, m) {
     var xs = route.xs, zs = route.zs, n = route.n;
     var rr = rho / Math.cos(ARC_STEP / 2);
     var ox = [xs[0]], oz = [zs[0]], bent = false;
@@ -644,22 +709,52 @@
         continue;
       }
       var aa = Math.atan2(az - cz, ax - cx), ab = Math.atan2(bz - cz, bx - cx);
+      /* the bends to try, best first: tangent on, arc, tangent off, the
+       * shorter way round, then the longer */
       var ta = Math.acos(Math.min(1, rr / Math.max(da, rr)));
       var tb = Math.acos(Math.min(1, rr / Math.max(db, rr)));
-      var best = null;
+      var tries = [];
       for (var s = -1; s <= 1; s += 2) {
-        var from = aa + s * ta, to = ab - s * tb;
-        var sweep = s * (to - from);
-        sweep = ((sweep % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-        if (sweep > 2 * Math.PI - 1e-9) sweep = 0;
-        if (!best || sweep < best.sweep) best = { s: s, from: from, sweep: sweep };
+        var from = aa + s * ta;
+        tries.push({ s: s, from: from, sweep: sweepOf(s, from, ab - s * tb) });
       }
-      var steps = Math.max(1, Math.ceil(best.sweep / ARC_STEP - 1e-9));
-      for (var k = 0; k <= steps; k++) {
-        var ang = best.from + best.s * best.sweep * (k / steps);
-        ox.push(cx + Math.cos(ang) * rr); oz.push(cz + Math.sin(ang) * rr);
+      if (tries[1].sweep < tries[0].sweep) tries.reverse();
+      if (grid) {
+        /* then: the plain leg to where it meets the circle rr, the arc
+         * (which starts and ends on the leg, or straight out from an end
+         * already inside rr), and the plain leg on */
+        var vx = bx - ax, vz = bz - az, L2 = vx * vx + vz * vz;
+        var fx = ax - cx, fz = az - cz;
+        var B = fx * vx + fz * vz, C = fx * fx + fz * fz - rr * rr;
+        var disc = Math.sqrt(Math.max(0, B * B - L2 * C));
+        var u1 = Math.max(0, (-B - disc) / L2), u2 = Math.min(1, (-B + disc) / L2);
+        var px = ax + vx * u1, pz = az + vz * u1, qx = ax + vx * u2, qz = az + vz * u2;
+        var a1 = Math.atan2(pz - cz, px - cx), a2 = Math.atan2(qz - cz, qx - cx);
+        var sec = [];
+        for (s = -1; s <= 1; s += 2) {
+          sec.push({ s: s, from: a1, sweep: sweepOf(s, a1, a2) });
+        }
+        if (sec[1].sweep < sec[0].sweep) sec.reverse();
+        tries = tries.concat(sec);
       }
-      ox.push(bx); oz.push(bz);
+      var skip0 = -1, skip1 = -1, limit = Infinity;
+      if (grid) {
+        var cell = function (x, z) {
+          var gx = Math.floor(x), gz = Math.floor(z);
+          return gx < 0 || gz < 0 || gx >= grid.W || gz >= grid.H ? -1 : gz * grid.W + gx;
+        };
+        skip0 = cell(ax, az); skip1 = cell(bx, bz);
+        limit = Math.max(0, wallDepth(grid, m, [ax, bx], [az, bz], skip0, skip1)) + 1e-9;
+      }
+      var took = null;
+      for (var k = 0; k < tries.length && !took; k++) {
+        var T = tries[k], px2 = [ax], pz2 = [az];
+        arcTo(px2, pz2, cx, cz, rr, T.from, T.s, T.sweep);
+        px2.push(bx); pz2.push(bz);
+        if (!grid || wallDepth(grid, m, px2, pz2, skip0, skip1) <= limit) took = [px2, pz2];
+      }
+      if (!took) { ox.push(bx); oz.push(bz); continue; }
+      for (k = 1; k < took[0].length; k++) { ox.push(took[0][k]); oz.push(took[1][k]); }
       bent = true;
     }
     return bent ? cumulative(ox, oz) : route;
