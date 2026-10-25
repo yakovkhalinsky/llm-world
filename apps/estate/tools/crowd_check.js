@@ -6,7 +6,8 @@
  * shares no code with what it checks: the ground's blocked cells read
  * straight from `rows`/`codes`/`walk`, and every fixture's body at its
  * place in the state, at the size world.js draws it (a table's top, a
- * stall, a lamp's pole, a tree's trunk). Penetration is measured as a
+ * stall, a lamp's pole, a tree's trunk, the bus shelter's pieces read
+ * from world.js itself). Penetration is measured as a
  * disk against a box or a disk — never through clearAt or okAt.
  *
  *   snapshot  everyone where the day leaves them, and after the page's
@@ -39,7 +40,11 @@
  *             tree's places, out and back, from every cell near it, in an
  *             open room, a corner and by a pond (round the pole or the
  *             trunk, never through it, and never deeper into a wall or the
- *             water than the plain leg would go); two
+ *             water than the plain leg would go); a child's follow
+ *             whose end leg grazes a table top or a wall's corner, which
+ *             only the follow's depth guard refuses; walkers past the bus
+ *             stop, its queue round it and people at it, brushed (never
+ *             into a piece of the shelter, the pole included); two
  *             walkers meeting head-on a little to the wrong side (each
  *             must pass on its own right), a crowd in a one-wide corridor,
  *             twenty people at a two-seat bench in a nook (more standing
@@ -68,6 +73,10 @@ const WALK = process.env.PAGE3D_WALK ||
   path.join(HERE, '..', 'shared', 'page3d', 'walk.js');
 const CROWD = process.env.PAGE3D_CROWD ||
   path.join(HERE, 'estate', 'page3d', 'crowd.js');
+/* the page's drawing, read only for the bus shelter's pieces (PAGE3D_WORLD
+ * for another) */
+const WORLD = process.env.PAGE3D_WORLD ||
+  path.join(HERE, 'estate', 'page3d', 'world.js');
 
 /* how far a child walking with a guardian may be from them, centre to
  * centre, in cells: inside the engine's `near` (1, Chebyshev) */
@@ -95,6 +104,38 @@ const BODY = { table: ['box', 0.41], shop: ['box', 0.45],
                lamp: ['disk', 0.045], tree: ['disk', 0.13] };
 const NO_BODY = { bench: 1, playground: 1 };
 const PLINTH = ['box', 0.25];
+
+/* The bus shelter is pieces, not one shape: read from world.js's own
+ * drawing of it — every addBox on the stop's group (posts, roof, glass,
+ * seat) as its footprint, and every mesh on the cylinder (the stop's pole,
+ * a disk; its sign, a disc turned on edge, a thin box) — so the oracle
+ * sees the pole where the page draws it, whichever cell that is in, and
+ * owes nothing to crowd.js's KEEP or BODY. Every piece counts whatever
+ * its height: a figure is as tall as the shelter. Offsets from the cell's
+ * middle: ['rect', x0, z0, x1, z1] or ['disk', x, z, r]. */
+function shelterParts(src) {
+  const a = src.indexOf("f.kind === 'bus_stop') {");
+  const b = src.indexOf('} else if', a);
+  if (a < 0 || b < 0) throw new Error('crowd_check: no bus shelter in ' + WORLD);
+  const blk = src.slice(a, b), n = '(-?[\\d.]+)', parts = [];
+  const box = new RegExp(`addBox\\(g, [\\w.]+, ${n}, ${n}, ${n}, ${n}, ${n}, ${n}\\)`, 'g');
+  for (const m of blk.matchAll(box)) {
+    const [sx, , sz, px, , pz] = m.slice(1).map(Number);
+    parts.push(['rect', px - sx / 2, pz - sz / 2, px + sx / 2, pz + sz / 2]);
+  }
+  for (const m of blk.matchAll(/const (\w+) = new THREE\.Mesh\(cylGeo/g)) {
+    const v = m[1];
+    const sc = blk.match(new RegExp(`${v}\\.scale\\.set\\(${n}, ${n}, ${n}\\)`));
+    const po = blk.match(new RegExp(`${v}\\.position\\.set\\(${n}, ${n}, ${n}\\)`));
+    if (!sc || !po) throw new Error(`crowd_check: cannot read the shelter's ${v}`);
+    const [r, h] = sc.slice(1).map(Number), [x, , z] = po.slice(1).map(Number);
+    parts.push(new RegExp(`${v}\\.rotation\\.x`).test(blk)
+      ? ['rect', x - r, z - h / 2, x + r, z + h / 2] : ['disk', x, z, r]);
+  }
+  if (parts.length < 7) throw new Error('crowd_check: the shelter has only ' + parts.length + ' pieces');
+  return parts;
+}
+BODY.bus_stop = ['parts', shelterParts(fs.readFileSync(WORLD, 'utf8'))];
 
 function oracle(ground, fixtures) {
   const W = ground.width | 0, H = ground.height | 0;
@@ -133,9 +174,18 @@ function oracle(ground, fixtures) {
         const f = fix[xx + ',' + y];
         if (!f) continue;
         const [shape, h] = f.body;
-        const d = shape === 'disk'
-          ? r + h - Math.hypot(x - f.x, z - f.z)
-          : intoBox(x, z, r, f.x - h, f.z - h, f.x + h, f.z + h);
+        let d;
+        if (shape === 'parts') {
+          d = -Infinity;
+          for (const q of h) {
+            d = Math.max(d, q[0] === 'disk'
+              ? r + q[3] - Math.hypot(x - f.x - q[1], z - f.z - q[2])
+              : intoBox(x, z, r, f.x + q[1], f.z + q[2], f.x + q[3], f.z + q[4]));
+          }
+        } else {
+          d = shape === 'disk' ? r + h - Math.hypot(x - f.x, z - f.z)
+            : intoBox(x, z, r, f.x - h, f.z - h, f.x + h, f.z + h);
+        }
         if (d > into) { into = d; what = f.kind + '@' + xx + ',' + y; }
       }
     }
@@ -534,6 +584,13 @@ function scenes(Walk, Crowd, fails) {
       }
     }
     if (!followed) fails.push('follow-walk: no child followed a guardian');
+    /* round every pole and trunk, each of these follows is as shallow as
+     * the child's own walk: one refused means the end legs were not
+     * rounded and the guard sent the child their own way instead */
+    if (followed !== cases) {
+      fails.push(`follow-walk: only ${followed} of ${cases} children followed ` +
+                 `their guardian (the end legs not rounded?)`);
+    }
     if (worst.d > TOL_IN) {
       fails.push(`follow-walk: a child following ${worst.what} runs ` +
                  `${worst.d.toFixed(3)} into the ${worst.into} at ` +
@@ -545,6 +602,161 @@ function scenes(Walk, Crowd, fails) {
                  worse.at.map(v => v.toFixed(3)).join(','));
     }
     ran.push(`follow-walk ${cases} (${followed} followed)`);
+  }
+
+  /* the follow's depth guard, alone (#10 review): Crowd.follow's detour
+   * rounds only disks, so a guardian's route whose end leg, with the
+   * child's own end put on it, grazes a café table's top or a wall's
+   * corner — by 0.02 of a cell, and by 0.1 — and the child's own route
+   * that keeps clear. The guard must refuse each follow (the child walks
+   * their own way): without it, or without its wall half, or with a
+   * tolerance of 0.05, a child walks into the table or the wall. */
+  {
+    const mk = (xs, zs) => {
+      const cum = new Float64Array(xs.length);
+      for (let i = 1; i < xs.length; i++) {
+        cum[i] = cum[i - 1] + Math.hypot(xs[i] - xs[i - 1], zs[i] - zs[i - 1]);
+      }
+      return { xs: new Float64Array(xs), zs: new Float64Array(zs), cum,
+               n: xs.length, total: cum[xs.length - 1] };
+    };
+    const st = { x: 0, z: 0, dx: 0, dz: 0, moving: false };
+    const deepest = (S, r) => {
+      let into = -Infinity, wall = -Infinity;
+      for (let t = 0; t <= r.total + 1e-9; t += 0.005) {
+        Walk.sample(r, Math.min(t, r.total), st);
+        const pe = S.orc.pen(st.x, st.z, R_BODY, Math.floor(st.x), Math.floor(st.z));
+        into = Math.max(into, pe.into); wall = Math.max(wall, pe.wall);
+      }
+      return { into, wall };
+    };
+    const room = ['#######', '#.....#', '#.....#', '#.....#', '#.....#',
+                  '#.....#', '#######'];
+    /* [what, plan, fixtures, the edge the leg runs beside (x), its side] */
+    const cases = [
+      ['table', room, [{ id: 1, kind: 'table', x: 3, y: 3 }], 3.5 + 0.41],
+      ['wall', ['#######', '#.....#', '#.....#', '#.#...#', '#.....#',
+                '#.....#', '#######'], [], 3],
+    ];
+    let n = 0;
+    for (const [what, plan, fixtures, edge] of cases) {
+      const S = setup(plan, fixtures);
+      for (const graze of [0.02, 0.1]) {
+        const x = edge + R_BODY - graze, cx = Math.floor(x);
+        /* the guardian: down beside the edge; the child: out and round */
+        const lead = mk([x - 0.05, x, x - 0.05], [2.5, 4.4, 4.6]);
+        const own = mk([x, x + 0.15, x + 0.15, x], [2.3, 2.55, 3.45, 4.5]);
+        const r = Crowd.follow(lead, [cx, 2], own, [cx, 2], Walk, S.grid, S.fixAt);
+        const got = deepest(S, r), mine = deepest(S, own);
+        const extra = Math.max(got.into - Math.max(mine.into, 0),
+                               got.wall - Math.max(mine.wall, 0));
+        if (r !== own || extra > TOL_IN) {
+          fails.push(`follow-guard: a child following a guardian ${graze} into ` +
+                     `the ${what} was not sent their own way (${extra.toFixed(3)} ` +
+                     `deeper than their own walk)`);
+        }
+        n++;
+      }
+    }
+    ran.push(`follow-guard ${n}`);
+  }
+
+  /* the bus stop (#14 review): a shelter of posts, a roof, glass, a seat
+   * and the stop's pole, in an open square. People walk past it from
+   * every cell two away to the one across from it; one to four wait on
+   * every cell beside it (where daytime.stop_spots queues them) and walk
+   * there and away again from every cell near; one to four stand at the
+   * stop itself (its cell's own places), with a passer-by brushing each
+   * from every side. Nobody's body, placed, walking or pushed, is ever
+   * in a piece of the shelter as world.js draws it — the pole included. */
+  {
+    const room = ['#########', '#.......#', '#.......#', '#.......#',
+                  '#.......#', '#.......#', '#########'];
+    const SX = 4, SY = 3;
+    const S = setup(room, [{ id: 1, kind: 'bus_stop', x: SX, y: SY }]);
+    const st = { x: 0, z: 0, dx: 0, dz: 0, moving: false };
+    let deep = { d: -Infinity }, walks = 0, placed = 0, pushes = 0;
+    const judge = (r, what) => {
+      for (let t = 0; t <= r.total + 1e-9; t += 0.005) {
+        Walk.sample(r, Math.min(t, r.total), st);
+        const pe = S.orc.pen(st.x, st.z, R_BODY, -9, -9);
+        if (pe.into > deep.d) deep = { d: pe.into, at: [st.x, st.z], what };
+      }
+    };
+    const stand = (x, z, what) => {
+      const pe = S.orc.pen(x, z, R_BODY, -9, -9);
+      if (pe.into > deep.d) deep = { d: pe.into, at: [x, z], what };
+      placed++;
+    };
+    /* past it: every cell two away to the one across */
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== 2) continue;
+        const p = { id: 30, x: SX - dx, y: SY - dy, px: SX + dx, py: SY + dy };
+        for (let oz = 0.2; oz <= 0.8001; oz += 0.3) {
+          for (let ox = 0.2; ox <= 0.8001; ox += 0.3) {
+            const prev = { 30: { cell: p.px + ',' + p.py, x: p.px + ox, z: p.py + oz } };
+            const g = Crowd.route(Walk, S.grid, p, p.x + 1 - ox, p.y + 1 - oz, prev, null, S.fixAt);
+            if (!g || g.fallback) { fails.push(`stop-passer: no way past from ${p.px},${p.py}`); continue; }
+            judge(g.route, `past from ${(p.px + ox).toFixed(1)},${(p.py + oz).toFixed(1)}`);
+            walks++;
+          }
+        }
+      }
+    }
+    /* waiting beside it, and at it: placed, and the walks there and away */
+    for (let qy = -1; qy <= 1; qy++) {
+      for (let qx = -1; qx <= 1; qx++) {
+        const cx = SX + qx, cy = SY + qy;
+        for (let N = 1; N <= 4; N++) {
+          const people = [];
+          for (let k = 0; k < N; k++) people.push({ id: 40 + k, x: cx, y: cy, in: false });
+          const s = Crowd.place(Walk, S.grid, people, {}, S.fixAt);
+          for (let k = 0; k < N; k++) stand(s.x[k], s.z[k], `${N} waiting on ${cx},${cy}`);
+          for (let dy = -2; dy <= 2; dy++) {
+            for (let dx = -2; dx <= 2; dx++) {
+              const px = cx + dx, py = cy + dy;
+              if ((!dx && !dy) || S.orc.blocked(px, py) || (px === SX && py === SY)) continue;
+              for (let k = 0; k < N; k++) {
+                const to = { id: 40 + k, x: cx, y: cy, px, py };
+                const a = Crowd.route(Walk, S.grid, to, s.x[k], s.z[k], {}, null, S.fixAt);
+                const fro = { id: 40 + k, x: px, y: py, px: cx, py: cy };
+                const prev = { [fro.id]: { cell: cx + ',' + cy, x: s.x[k], z: s.z[k] } };
+                const b = Crowd.route(Walk, S.grid, fro, px + 0.5, py + 0.5, prev, null, S.fixAt);
+                for (const [r, dir] of [[a, 'to'], [b, 'from']]) {
+                  if (!r) continue;
+                  judge(r.route, `${dir} ${px},${py} (${N} waiting on ${cx},${cy})`);
+                  walks++;
+                }
+              }
+            }
+          }
+          /* a passer-by brushing each of them from every side */
+          const F = Walk.figures(null, 2);
+          const worst = freshWorst();
+          for (let k = 0; k < N; k++) {
+            for (let a = 0; a < 360; a += 6) {
+              for (let off = 0.15; off <= 0.4001; off += 0.05) {
+                const hx = Math.cos(a * Math.PI / 180), hz = Math.sin(a * Math.PI / 180);
+                const wx = s.x[k] - hz * off, wz = s.z[k] + hx * off;
+                if (S.orc.pen(wx, wz, R_BODY, -9, -9).into > 0) continue;
+                fig(F, 0, s.x[k], s.z[k], 0.5, 0, 0, 40 + k);
+                fig(F, 1, wx, wz, 1, hx, hz, 8);
+                Crowd.space(Walk, S.grid, S.fixAt, F, 2);
+                judgeFrame(S.orc, F, 2, worst);
+                pushes++;
+              }
+            }
+          }
+          worstFails(`stop-passer (${N} on ${cx},${cy})`, worst, fails);
+        }
+      }
+    }
+    if (deep.d > TOL_IN) {
+      fails.push(`stop-passer: ${deep.what} runs ${deep.d.toFixed(3)} into the ` +
+                 `shelter at ${deep.at.map(v => v.toFixed(3)).join(',')}`);
+    }
+    ran.push(`stop-passer ${walks} walks, ${placed} placed, ${pushes} pushes`);
   }
 
   /* head-on, each a twentieth of a cell to the wrong side: they must

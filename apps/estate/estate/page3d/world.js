@@ -1548,7 +1548,12 @@ export function createWorld(ground, canvas, opts) {
       addBox(g, leaf.mat, 0.04, 0.8, 0.6, 0.38, 0.5, 0.82);
     } else if (f.kind === 'bus_stop') {
       /* a bus shelter: two posts, a roof, a glass back, a perch seat, and
-       * the stop's own pole with its round sign */
+       * the stop's own pole with its round sign. Every piece stands inside
+       * the 0.86 square about the cell's middle — crowd.js's BODY and KEEP
+       * for the stop, the shelter's solid cell in walk.js — so nobody
+       * walks through the pole (it stood in the next cell, with no
+       * keep-out) or the posts. crowd_check's oracle reads these numbers
+       * from here. */
       const metal = fixtureMaterial(0x4a5158, 0.65);
       const glass = fixtureMaterial(0x9fb7c4, 0.3);
       const sign = fixtureMaterial(0xc8453c, 0.6);
@@ -1556,21 +1561,21 @@ export function createWorld(ground, canvas, opts) {
       mats.push(metal, glass, sign, roofM);
       glass.mat.transparent = true;
       glass.mat.opacity = 0.55;
-      addBox(g, metal.mat, 0.06, 1.3, 0.06, -0.42, 0.65, -0.3);
-      addBox(g, metal.mat, 0.06, 1.3, 0.06, 0.42, 0.65, -0.3);
-      addBox(g, roofM.mat, 1.0, 0.06, 0.55, 0, 1.32, -0.12);
-      addBox(g, glass.mat, 0.86, 1.0, 0.03, 0, 0.75, -0.32)
+      addBox(g, metal.mat, 0.06, 1.3, 0.06, -0.4, 0.65, -0.3);
+      addBox(g, metal.mat, 0.06, 1.3, 0.06, 0.4, 0.65, -0.3);
+      addBox(g, roofM.mat, 0.86, 0.06, 0.55, 0, 1.32, -0.12);
+      addBox(g, glass.mat, 0.8, 1.0, 0.03, 0, 0.75, -0.32)
         .castShadow = false;
       addBox(g, metal.mat, 0.7, 0.05, 0.16, 0, 0.45, -0.22);
       const pole = new THREE.Mesh(cylGeo, metal.mat);
       pole.scale.set(0.035, 1.6, 0.035);
-      pole.position.set(0.62, 0.8, 0.12);
+      pole.position.set(0.25, 0.8, 0.25);
       pole.castShadow = true;
       g.add(pole);
       const disc = new THREE.Mesh(cylGeo, sign.mat);
       disc.scale.set(0.17, 0.03, 0.17);
       disc.rotation.x = Math.PI / 2;
-      disc.position.set(0.62, 1.55, 0.12);
+      disc.position.set(0.25, 1.55, 0.25);
       g.add(disc);
     } else if (f.kind === 'shop') {
       const wood = fixtureMaterial(0xcf9f60, 0.8);

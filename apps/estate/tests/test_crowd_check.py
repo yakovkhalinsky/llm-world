@@ -21,7 +21,12 @@ out of clearAt, or only out of the per-frame push; and a push that
 ignores what the ground allows; a walk round a pole that ignores the walls,
 or goes round only on the way back; a child's follow whose end legs skip
 the detour; a stall with no body; a box's corner measured square; an
-edge guard that says yes to everything.
+edge guard that says yes to everything. And from the #10 and #14 reviews:
+a follow whose end legs are not rounded, or whose depth guard is gone,
+blind to walls, or 0.05 loose; a bus shelter that is not solid in
+walk.js, or has no KEEP or no BODY in crowd.js; its pole drawn back in the
+next cell; a walk away from a place beside a fixture that starts back on
+the fixture's cell, or an end leg that cuts the shelter's corner.
 
 Run from `apps/estate`:
 
@@ -45,6 +50,7 @@ NODE = shutil.which("node")
 CHECK = os.path.join(ROOT, "tools", "crowd_check.js")
 WALK = os.path.join(ROOT, "..", "shared", "page3d", "walk.js")
 CROWD = os.path.join(ROOT, "estate", "page3d", "crowd.js")
+WORLD = os.path.join(ROOT, "estate", "page3d", "world.js")
 
 
 def _no_spacing(src):
@@ -197,6 +203,66 @@ def _follow_plain_ends(src):
                  "    if (false && got.into > Math.max(mine.into, 0) + FOLLOW_TOL ||\n")
 
 
+def _around_off(src):
+    """crowd.js whose follow keeps the depth guard but never rounds a pole
+    or a trunk on its end legs (#10 review's around_off)."""
+    return _swap(src, "    if (Walk && Walk.around && fixAt) {\n      /* every pole",
+                 "    if (false) {\n      /* every pole")
+
+
+_GUARD = ("    if (got.into > Math.max(mine.into, 0) + FOLLOW_TOL ||\n"
+          "        got.wall > Math.max(mine.wall, 0) + FOLLOW_TOL) return own;\n")
+
+
+def _guard_off(src):
+    """crowd.js whose follow rounds poles but never checks the depth."""
+    return _swap(src, _GUARD, "")
+
+
+def _guard_no_wall(src):
+    """crowd.js whose follow's guard looks at fixtures, not walls."""
+    return _swap(src, _GUARD,
+                 "    if (got.into > Math.max(mine.into, 0) + FOLLOW_TOL) return own;\n")
+
+
+def _loose_tol(src):
+    """crowd.js whose follow forgives 0.05 of a cell."""
+    return _swap(src, "var FOLLOW_TOL = 1e-3;", "var FOLLOW_TOL = 0.05;")
+
+
+def _stop_not_solid(src):
+    """walk.js whose bus shelter is not a solid (walk_stop_not_solid)."""
+    return _swap(src, "shop: 1,\n                bus_stop: 1 };", "shop: 1 };")
+
+
+def _stop_no_keep(src):
+    """crowd.js with no KEEP for the shelter (crowd_stop_no_keep)."""
+    return _swap(src, "playground: 0, bus_stop: 0.44 };", "playground: 0 };")
+
+
+def _stop_no_body(src):
+    """crowd.js with no BODY for the shelter (crowd_stop_no_body)."""
+    return _swap(src, "playground: null, bus_stop: [0, 0.43] };", "playground: null };")
+
+
+def _pole_next_cell(src):
+    """world.js drawing the stop's pole where #14 had it: in the next
+    cell, with no keep-out."""
+    return _swap(src, "pole.position.set(0.25, 0.8, 0.25);",
+                 "pole.position.set(0.62, 0.8, 0.12);")
+
+
+def _leave_by_fixture_cell(src):
+    """crowd.js whose walk away from a place beside a fixture sets off
+    from the fixture's cell, across it."""
+    return _swap(src, "          scx = wx; scy = wz;\n", "")
+
+
+def _no_by_middles(src):
+    """crowd.js whose end legs may cut a solid fixture's corner."""
+    return _swap(src, "      if (fixAt) r = byMiddles(r, grid, fixAt, scx, scy, tcx, tcy);\n", "")
+
+
 @unittest.skipUnless(NODE, "node is not installed")
 class CrowdCheckTest(unittest.TestCase):
     @classmethod
@@ -262,7 +328,8 @@ class CrowdCheckTest(unittest.TestCase):
     def test_the_scenes_ran(self):
         out = self._run().stdout
         for tag in ("lamp", "table-passer", "shop-passer", "box-corner",
-                    "wall-edge", "pole-walk", "follow-walk", "head-on", "corridor",
+                    "wall-edge", "pole-walk", "follow-walk", "follow-guard 4",
+                    "stop-passer", "head-on", "corridor",
                     "bench-nook 20", "lamp-dead-end 15", "shop-door 8"):
             self.assertIn(tag, out)
 
@@ -351,6 +418,61 @@ class CrowdCheckTest(unittest.TestCase):
         # wall whatever the layout (the seed-42 live walk may or may not
         # brush the pond or a wall, so it is not what this test rests on)
         self.assertRegex(out, r"FAIL lamp-dead-end: .*into a wall")
+
+
+    # -- #10 review: the follow's detour and its depth guard, each alone
+
+    def test_every_follow_round_a_pole_is_kept(self):
+        out = self._run().stdout
+        self.assertRegex(out, r"follow-walk (\d+) \(\1 followed\)")
+
+    def test_a_follow_not_rounded_fails(self):
+        out = self._mutant(_around_off, CROWD, "PAGE3D_CROWD")
+        self.assertRegex(out, r"FAIL follow-walk: only \d+ of \d+ children followed")
+
+    def test_a_follow_with_no_guard_fails(self):
+        out = self._mutant(_guard_off, CROWD, "PAGE3D_CROWD")
+        self.assertIn("FAIL follow-guard: a child following a guardian 0.1 into the table", out)
+        self.assertIn("FAIL follow-guard: a child following a guardian 0.1 into the wall", out)
+
+    def test_a_follow_guard_blind_to_walls_fails(self):
+        out = self._mutant(_guard_no_wall, CROWD, "PAGE3D_CROWD")
+        self.assertIn("into the wall was not sent their own way", out)
+        self.assertNotIn("into the table was not sent", out)
+
+    def test_a_loose_follow_tolerance_fails(self):
+        # FOLLOW_TOL is rounding (1e-3): at 0.05 a 0.02 graze is followed
+        out = self._mutant(_loose_tol, CROWD, "PAGE3D_CROWD")
+        self.assertIn("a child following a guardian 0.02 into the table was not sent", out)
+        self.assertNotIn("guardian 0.1 into", out)
+
+    # -- #14 review: the bus shelter and its pole
+
+    def test_a_shelter_that_is_not_solid_fails(self):
+        out = self._mutant(_stop_not_solid, WALK, "PAGE3D_WALK")
+        self.assertRegex(out, r"FAIL stop-passer: .* into the shelter")
+
+    def test_a_shelter_with_no_keep_fails(self):
+        out = self._mutant(_stop_no_keep, CROWD, "PAGE3D_CROWD")
+        self.assertRegex(out, r"FAIL stop-passer: .* into the shelter")
+
+    def test_a_shelter_with_no_body_fails(self):
+        out = self._mutant(_stop_no_body, CROWD, "PAGE3D_CROWD")
+        self.assertRegex(out, r"FAIL stop-passer \(\d on \d,\d\): \d+ pushed "
+                         r"0\.\d+ into the bus_stop@4,3")
+
+    def test_a_pole_in_the_next_cell_fails(self):
+        # the #14 review's walk through the pole: 0.167 deep
+        out = self._mutant(_pole_next_cell, WORLD, "PAGE3D_WORLD")
+        self.assertIn("runs 0.167 into the shelter at 5.148,3.613", out)
+
+    def test_leaving_across_the_shelter_fails(self):
+        out = self._mutant(_leave_by_fixture_cell, CROWD, "PAGE3D_CROWD")
+        self.assertRegex(out, r"FAIL stop-passer: from 4,4 .* into the shelter")
+
+    def test_an_end_leg_cutting_the_shelter_fails(self):
+        out = self._mutant(_no_by_middles, CROWD, "PAGE3D_CROWD")
+        self.assertRegex(out, r"FAIL stop-passer: to 4,1 .* into the shelter")
 
 
 if __name__ == "__main__":
