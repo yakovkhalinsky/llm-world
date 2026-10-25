@@ -50,23 +50,110 @@
 
   function setGround(g) { ground = g; }
 
+  /* A count as people read one: 1,234 rather than 1234. Every whole
+   * number the panels write goes through here, so the thousands are
+   * separated the same way everywhere (and a number is always a number). */
+  function num(v) {
+    var n = Math.round(Number(v));
+    if (!isFinite(n)) return '0';
+    var s = String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return (n < 0 ? '-' : '') + s;
+  }
+
+  /* ------------------------------------------------- the day, phase by phase */
+
+  /* The live frame is always the end of a day's night: the estate lives a
+   * whole day per tick, so a school morning has happened and gone by the
+   * time the page hears of it. The server keeps where everybody was at the
+   * end of each of today's phases (`phases`, engine/daytime.py `record`),
+   * and this turns one of them into a frame the scene draws like any other:
+   * each person where that phase left them, walking from where the phase
+   * before it did. `index` is into `st.phases.order`; anything else is the
+   * live frame, unchanged. */
+  var MODE = { i: 'in', a: 'at', s: 'school', w: 'away' };
+
+  function phaseView(st, index) {
+    var ph = st && st.phases;
+    if (!ph || !ph.order || index < 0 || index >= ph.order.length) return st;
+    var name = ph.order[index];
+    var at = (ph.at || {})[name];
+    if (!at) return st;
+    var before = index > 0 ? (ph.at || {})[ph.order[index - 1]] : null;
+    var people = (st.people || []).map(function (p) {
+      var r = at[String(p.id)];
+      if (!r) return p;
+      var q = {};
+      for (var k in p) q[k] = p[k];
+      var mode = MODE[r[2]] || 'at';
+      var b = before ? before[String(p.id)] : null;
+      var pmode = b ? (MODE[b[2]] || 'at') : (p.pin ? 'in' : 'at');
+      q.x = r[0]; q.y = r[1]; q.mode = mode;
+      q.unit = r[3]; q.fixture = r[4]; q['with'] = r[5];
+      if (b) { q.px = b[0]; q.py = b[1]; q.punit = b[3]; }
+      q.pin = pmode === 'in';
+      q.pmode = pmode;
+      /* off the estate at work: hidden, except in the phase they left,
+       * when they are at the stop waiting for the bus */
+      q['in'] = mode === 'in' || (mode === 'away' && pmode === 'away');
+      return q;
+    });
+    var out = {};
+    for (var k2 in st) out[k2] = st[k2];
+    out.people = people;
+    out.viewPhase = name;
+    out.viewKey = Number(st.day) + ':' + name;
+    return out;
+  }
+
+  /* The scrubber: the live frame, then today's five phases. */
+  function scrubber(st, index) {
+    var order = (st && st.phases && st.phases.order) || [];
+    var b = ['<button data-i="-1" class="' + (index < 0 ? 'on' : '') +
+             '">live</button>'];
+    order.forEach(function (name, i) {
+      b.push('<button data-i="' + i + '" class="' +
+             (i === index ? 'on' : '') + '">' + esc(name) + '</button>');
+    });
+    return b.join('');
+  }
+
+  /* who is where right now in this frame, for the school's and the bus
+   * stop's cards and the header */
+  function daytime(st) {
+    var d = (st && st.daytime) || {};
+    var now = { school: 0, away: 0 };
+    (st && st.people || []).forEach(function (p) {
+      if (p.mode === 'school') now.school++;
+      else if (p.mode === 'away') now.away++;
+    });
+    return { enrolled: Number(d.enrolled) || 0,
+             inToday: Number(d.in_today) || 0,
+             workers: Number(d.workers) || 0,
+             school: now.school, away: now.away };
+  }
+
   /* ----------------------------------------------------------- the head */
 
   function head(st) {
     $('when').textContent =
-      'day ' + Number(st.day) + ' · ' + st.season_name + ' · ' + st.weekday;
+      'day ' + num(st.day) + ' · ' + st.season_name + ' · ' + st.weekday +
+      (st.viewPhase ? ' · ' + st.viewPhase : '');
     $('weather').textContent =
       glyphOf('weather', st.weather) + ' ' +
       (WEATHER_WORD[st.weather] || st.weather);
 
     var bits = [];
-    bits.push('<b>' + Number(st.residents) + '</b> people');
-    /* the shop is a building but not a block; the header counts homes */
-    bits.push('<b>' + (st.buildings || [])
-      .filter(function (b) { return b.kind === 'block'; }).length +
+    bits.push('<b>' + num(st.residents) + '</b> people');
+    /* the shop and the school are buildings but not blocks; the header
+     * counts homes */
+    bits.push('<b>' + num((st.buildings || [])
+      .filter(function (b) { return b.kind === 'block'; }).length) +
       '</b> blocks');
-    bits.push('<b>' + Number(st.units) + '</b> flats');
-    if (st.waiting) bits.push('<b>' + Number(st.waiting) + '</b> waiting');
+    bits.push('<b>' + num(st.units) + '</b> flats');
+    if (st.waiting) bits.push('<b>' + num(st.waiting) + '</b> waiting');
+    var dt = daytime(st);
+    if (dt.school) bits.push('<b>' + num(dt.school) + '</b> at school');
+    if (dt.away) bits.push('<b>' + num(dt.away) + '</b> at work');
     $('pops').innerHTML = bits.join(' · ');
 
     /* the watcher, in its own words, and the voice that carried them */
@@ -85,7 +172,7 @@
       .sort(function (a, b) { return counts[b] - counts[a]; })
       .map(function (k) {
         return '<li><span>' + esc(glyphOf('households', k)) + ' ' +
-          esc(k) + '</span><span>' + Number(counts[k]) + '</span></li>';
+          esc(k) + '</span><span>' + num(counts[k]) + '</span></li>';
       });
     var kinds = (st.people || []).reduce(function (m, p) {
       m[p.role] = (m[p.role] || 0) + 1;
@@ -93,8 +180,14 @@
     }, {});
     var byrole = Object.keys(kinds).sort().map(function (k) {
       return '<li><span>' + esc(glyphOf('roles', k)) + ' ' + esc(k) +
-        '</span><span>' + Number(kinds[k]) + '</span></li>';
+        '</span><span>' + num(kinds[k]) + '</span></li>';
     });
+    var dt = daytime(st);
+    byrole.push('<li><span>' + esc(glyphOf('fixtures', 'school')) +
+      ' pupils</span><span>' + num(dt.enrolled) + '</span></li>');
+    byrole.push('<li><span>' + esc(glyphOf('fixtures', 'bus_stop')) +
+      ' work off the estate</span><span>' + num(dt.workers) +
+      '</span></li>');
     return '<ul class="timeline">' + rows.join('') + '</ul>' +
       '<div class="status">by age</div><ul class="timeline">' +
       byrole.join('') + '</ul>';
@@ -114,7 +207,7 @@
       var says = Array.isArray(d.says) ? d.says : [];
       var news = says.length ? says.join(' · ') : '';
       return '<li' + (says.length ? '' : ' class="quiet"') + '>' +
-        '<span class="d">d' + Number(d.day) + '</span>' +
+        '<span class="d">d' + num(d.day) + '</span>' +
         '<span class="shape">' + esc(d.line || '') + '</span>' +
         (news ? '<span class="news">' + esc(news) + '</span>' : '') +
         '</li>';
@@ -126,7 +219,7 @@
   function chronicle(st) {
     var rows = (st.chronicle || []).slice().reverse();
     $('chron').innerHTML = rows.length ? rows.map(function (e) {
-      return '<li><span class="d">d' + Number(e.day) + '</span> ' +
+      return '<li><span class="d">d' + num(e.day) + '</span> ' +
         esc(e.text) + '</li>';
     }).join('') :
       '<li>no watcher has come yet, and the chronicle is empty. ' +
@@ -155,6 +248,14 @@
       '</span> ' + Number(v).toFixed(2);
   }
 
+  function row(label, n) {
+    return '<li><span>' + esc(label) + '</span><span>' + num(n) +
+      '</span></li>';
+  }
+
+  /* what a fixture is called on its card, where its kind is not a word */
+  var FIXTURE_NAME = { school: 'school gate', bus_stop: 'bus stop' };
+
   function needRows(p) {
     var needs = p.needs || {};
     return Object.keys(needs).sort().map(function (n) {
@@ -175,7 +276,7 @@
       if (!m) return '';
       return '<li><span>' + esc(glyphOf('roles', m.role)) + ' ' +
         esc(m.name || 'a resident') + '</span><span>' + esc(m.role) +
-        ' · ' + Number(m.age) + '</span></li>';
+        ' · ' + num(m.age) + '</span></li>';
     }).join('');
     var w = p['with'] !== null && p['with'] !== undefined
       ? byId[p['with']] : null;
@@ -194,10 +295,14 @@
         return x.id === sel.id;
       })[0];
       if (!p) return { name: 'a person', state: 'gone', rows: '' };
-      var where = p.in
+      var where = p.mode === 'school' ? 'at school, inside the fence'
+        : p.mode === 'away' ? 'away at work, off the estate'
+        : p.in
         ? 'inside, flat ' + (p.unit === null || p.unit === undefined
                              ? '' : Number(p.unit))
         : 'out at ' + Number(p.x) + ',' + Number(p.y);
+      var day = p.pupil ? ' · at school on weekdays'
+        : p.job ? ' · works off the estate on weekdays' : '';
       var family = familyRows(st, p);
       var habit = Object.keys(p.habit || {}).map(function (k) {
         return '<li><span>' + esc(k) + '</span><span>' +
@@ -206,7 +311,8 @@
       return {
         name: p.name || 'a resident',
         state: esc(glyphOf('roles', p.role)) + ' ' + esc(p.role) + ' · age ' +
-          Number(p.age) + ' · ' + esc(p.kind || '') + ' household<br>' +
+          num(p.age) + ' · ' + esc(p.kind || '') + ' household' +
+          esc(day) + '<br>' +
           esc(where) +
           (p.stress >= 1 ? ' · frayed ' + Number(p.stress) : ''),
         rows: needRows(p) + family + (habit ?
@@ -219,14 +325,26 @@
       })[0];
       if (!f) return { name: 'a place', state: 'gone', rows: '' };
       /* the name is plain text: the card writes it with textContent */
-      var spec = glyphOf('fixtures', f.kind) + ' ' + f.kind;
+      var spec = glyphOf('fixtures', f.kind) + ' ' +
+        (FIXTURE_NAME[f.kind] || f.kind);
+      var extra = '';
+      if (f.kind === 'school' || f.kind === 'bus_stop') {
+        var dn = daytime(st);
+        extra = f.kind === 'school'
+          ? row('pupils on the roll', dn.enrolled) +
+            row('in today', dn.inToday) + row('in school now', dn.school)
+          : row('work off the estate', dn.workers) +
+            row('at work now', dn.away);
+      }
       return {
         name: spec,
-        state: 'at ' + Number(f.x) + ',' + Number(f.y) + ' · used ' +
-          Number(f.uses) + ' times' +
+        state: 'at ' + Number(f.x) + ',' + Number(f.y) + ' · ' +
+          (f.kind === 'school' ? 'gone through ' :
+           f.kind === 'bus_stop' ? 'boarded ' : 'used ') +
+          num(f.uses) + ' times' +
           (f.stock !== null && f.stock !== undefined
             ? ' · stock ' + Number(f.stock) : ''),
-        rows: '<li><span>condition</span><span>' + bar(f.c, 1) +
+        rows: extra + '<li><span>condition</span><span>' + bar(f.c, 1) +
           '</span></li>',
       };
     }
@@ -238,16 +356,28 @@
         return x.id === sel.id;
       })[0] || {};
       if (!b) return null;
+      /* each kind of building says what it is for: a school's card counts
+       * pupils, not the flats it does not have */
+      var rows;
+      if (b.kind === 'school') {
+        var ds = daytime(st);
+        rows = row('pupils on the roll', ds.enrolled) +
+          row('in today', ds.inToday) + row('in school now', ds.school);
+      } else if (b.kind === 'shop') {
+        rows = '';
+      } else {
+        rows = row('flats', d.units || 0) + row('lived in', d.lived || 0);
+      }
+      var where = b.kind === 'school' && b.gate
+        ? ' · gate at ' + Number(b.gate[0]) + ',' + Number(b.gate[1])
+        : ' · door at ' + Number(b.door[0]) + ',' + Number(b.door[1]);
       return {
         name: b.name,
-        state: esc(b.kind) + ' · ' + Number(b.floors) + ' floors · door at ' +
-          Number(b.door[0]) + ',' + Number(b.door[1]) + '<br>' +
+        state: esc(b.kind) + ' · ' + num(b.floors) + ' floors' + where +
+          '<br>' +
           (d.power ? 'power on' : 'no power') + ' · ' +
           (d.water ? 'water on' : 'no water'),
-        rows: '<li><span>flats</span><span>' + Number(d.units || 0) +
-          '</span></li>' +
-          '<li><span>lived in</span><span>' + Number(d.lived || 0) +
-          '</span></li>',
+        rows: rows,
       };
     }
     if (sel.kind === 'cell') {
@@ -295,6 +425,9 @@
     card: card,
     glyphOf: glyphOf,
     esc: esc,
+    num: num,
+    phaseView: phaseView,
+    scrubber: scrubber,
     view: function () { return view; },
   };
 

@@ -270,7 +270,8 @@ class CrowdCheckTest(unittest.TestCase):
     def test_someone_inside_a_table_fails(self):
         out = self._mutant(_no_table_keep, CROWD, "PAGE3D_CROWD")
         self.assertIn("FAIL table: resident", out)
-        self.assertIn("inside the table@23,15", out)
+        # whichever table the seed put people at, by its cell
+        self.assertRegex(out, r"inside the table@\d+,\d+")
 
     def test_someone_not_facing_the_table_fails(self):
         out = self._mutant(_not_facing, CROWD, "PAGE3D_CROWD")
@@ -327,7 +328,10 @@ class CrowdCheckTest(unittest.TestCase):
     def test_a_push_that_ignores_the_ground_fails(self):
         out = self._mutant(_ignore_ok, WALK, "PAGE3D_WALK")
         self.assertIn("into a wall or the water", out)
-        self.assertIn("FAIL walking", out)
+        # caught by the seed-42 walk when it brushes the pond or a wall,
+        # and always by the dead-end scene, which corners a walker there
+        # (the layout decides whether the live walk comes near either)
+        self.assertRegex(out, r"FAIL (walking|lamp-dead-end).*into a wall")
 
 
 if __name__ == "__main__":

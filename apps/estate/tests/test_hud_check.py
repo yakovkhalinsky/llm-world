@@ -32,8 +32,9 @@ NODE = shutil.which("node")
 CHECK = os.path.join(ROOT, "tools", "hud_check.js")
 
 
-def _state_payload(world, days=6):
-    """`/api/state` after a few real ticks, without a server or a thread."""
+def _state_payload(world, days=7):
+    """`/api/state` after a few real ticks, without a server or a thread.
+    Seven days ends on a Monday, so the frame's phases hold a school day."""
     events = []
     books = {}
     for _ in range(days):

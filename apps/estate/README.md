@@ -129,8 +129,18 @@ a card too. Pause, **+ day**, **⛶ full** and the three paces are in the
 bottom-left panel. The panel above them has three tabs: **the day** (one
 row per ticked day, quiet days included), **who lives here** (households by
 kind and people by role) and **☾ watcher** (the chronicle). The top-right
-panel carries the clock, the weather, the population, the watcher's last
+panel carries the clock, the weather, the population (with how many are
+at school and at work, thousands comma-separated), the watcher's last
 word and the model's voice line.
+
+**Show today at** (bottom-left) is the phase scrubber: *dawn* to *night*
+redraws today as it stood at the end of that phase — the school run at
+dawn, the pupils in the yard, the pickup at the gate, the families out in
+the evening — and *live* goes back to the running frame (`?show=morning`
+opens on one). Every card is the place's own: the school's says how many
+pupils are on the roll, in today and in school now, the bus stop's how
+many work off the estate and are at work now, a fixture's how often it
+was used (and the shop's stall its stock), and a block's its flats.
 
 For screenshots and headless checks:
 
@@ -225,6 +235,25 @@ is present, planting a fresh seed-42 estate for them.
   recipe names the arrangement (`gen.layout:
   "row"`) and sizes the row to keep the old four-block capacity: two
   12-cell blocks of 7–9 floors and 4–5 flats a floor.
+- **The places, and what each is for.** The courtyard holds the **shop**
+  and the **playground** apart, either side of an open middle, each with a
+  ring of open paving round it (no table, bench, lamp or tree in it), and
+  each within `families.older_range` of every door, so the 10-15s can go
+  to both alone (`gen._check_older` fails the plan otherwise). The pond
+  is in the west. South of the courtyard stands **Highfield School**, a
+  two-storey building with a fenced yard and a gate on the courtyard's
+  middle, and on the ring road below the east block is the **bus stop**,
+  which takes the day's workers off the estate and brings them back.
+- **The weekday** (`engine/daytime.py`). On a school day the pupils (5-15)
+  are walked to the gate at dawn: an under-10 always in a guardian's
+  party, a 10-15 alone. They are inside the fence through the morning,
+  which counts as supervised. At home time the 10-15s come out and walk
+  home, and an under-10 waits inside until a guardian on the estate
+  collects them (the household's carer first) and walks home in their
+  party, never on a turn of their own. Adults with a job (a seeded share
+  of working age) take the bus in the morning and are back by evening; a
+  household with young children keeps a carer on the estate. Weekends
+  have none of this.
 - **Being inside is a state, not a coordinate.** A resident is either on the
   plan or in a flat; coming and going costs the stairs.
 - **Five needs** — food, rest, company, play (children only), and quiet —
@@ -416,6 +445,21 @@ seeds × 3 years `tools/family_check.py` counts 0 young out at night, 0
 households out at night and 0 evenings beyond range (2,431, 6,081 and
 1,823 before). Every law holds, with friction between 1.33 and 1.39.
 
+The school run took it `93a0834b294b4e16` → `ff8474c5d01f960d`. Highfield
+School and its yard, the bus stop to work, the weekday (pupils 5–15 at
+school, under-10s walked there and collected by a guardian, adults with
+work off the estate on the bus), the shop and the playground moved apart
+on either side of the walk to the school gate with a clear ring round
+each, and a fix that keeps a child collected at the gate in the
+collector's party for the rest of the phase (an older sibling earlier in
+the order could otherwise leave them a turn of their own to walk home
+alone on). Across 8 seeds × 3 years `tools/family_check.py` counts 0
+young out alone, 0 home alone, 0 left at school, 0 out at night and 0
+older children beyond range, with 7,834–16,754 young phases at school a
+seed. Every law holds, with friction between 1.49 and 1.59 — higher than
+before, because a school day and a work day take hours the needs used to
+have — and distinctness between 8.30 and 8.88.
+
 Nineteen faults are recorded in `docs/BUGS.md` under Grove's sixteen
 classes. Almost none of them crashed anything. They were found by asking
 the estate's own design questions and checking the answers — *do the needs
@@ -423,6 +467,6 @@ get met*, *is the playground heard*, *does anyone live above the third
 floor* — which is the whole of the method this project inherited, and the
 reason the ledger is the most useful file in it.
 
-Still deferred, each deliberately: money, traffic beyond noise, a school
-timetable, illness, interiors as a grid, A*, the steward, embeddings, the
-SVG twin.
+Still deferred, each deliberately: money, traffic beyond noise, lessons and a
+timetable inside the school day, illness, interiors as a grid, A*, the
+steward, embeddings, the SVG twin.

@@ -81,10 +81,22 @@ def has_young(w, r):
     return hh is not None and bool(young_in(w, hh))
 
 
+# Where someone is when they are neither home nor out on the plan: at
+# school inside the fence with the teachers, or off the estate at work
+# (engine/daytime.py). Nobody is "with" anybody in either, for minding.
+OFF_PLAN = ("school", "away")
+
+
+def at_school(r):
+    return r["where"]["mode"] == "school"
+
+
 def together(a, b):
     """Is `a` with `b`: both in the same flat, or both out and beside each
-    other."""
+    other. Somebody at school or away at work is with nobody here."""
     wa, wb = a["where"], b["where"]
+    if wa["mode"] in OFF_PLAN or wb["mode"] in OFF_PLAN:
+        return False
     if wa["mode"] == "in" or wb["mode"] == "in":
         return (wa["mode"] == wb["mode"] == "in"
                 and wa.get("unit") == wb.get("unit"))
@@ -101,20 +113,25 @@ def follow(child, minder):
 
 
 def unattended(w):
-    """Every young child not with a guardian, as (child, household)."""
+    """Every young child not with a guardian, as (child, household). A
+    child at school is with their teachers, and is not unattended."""
     out = []
     for hh in w["households"].values():
         for k in young_in(w, hh):
+            if at_school(k):
+                continue
             if not any(together(k, g) for g in guardians_of(w, k)):
                 out.append((k, hh))
     return out
 
 
-def plan(w, press):
+def plan(w, press, busy=None):
     """Who minds whom this phase: {minder id: [children]}.
 
     `press(r)` is how hard a guardian's own most pressing need is pushing;
-    the least pressed guardian with a group takes it. Children are grouped
+    the least pressed guardian with a group takes it — after any guardian
+    `busy(r)` says has somewhere to be (the bus to work), so the parent
+    who stays home takes the children and the one with a job can go. Children are grouped
     by where they are, so a parent at home with the baby and another out
     with the eight-year-old are two minders, and two groups a single
     guardian is with merge into one party.
@@ -133,9 +150,26 @@ def plan(w, press):
             near = [g for g in guards if together(k, g)]
             if not near:
                 continue    # `settle` mends this before a phase is lived
-            m = min(near, key=lambda g: (press(g), g["id"]))
+            m = min(near, key=lambda g: (bool(busy and busy(g)),
+                                         press(g), g["id"]))
             leads.setdefault(m["id"], []).append(k)
     return leads
+
+
+def walking_with(w, r):
+    """The guardian a young child out on the plan is beside: on their own
+    cell first, then the nearest, then the lowest id. None indoors, at
+    school, for anyone who is not a young child, and for a child with
+    nobody beside them (which the family rules mean never happens)."""
+    if r["where"]["mode"] != "at" or not is_young(r):
+        return None
+    near = [g for g in guardians_of(w, r) if together(r, g)]
+    if not near:
+        return None
+    wx, wy = r["where"]["x"], r["where"]["y"]
+    g = min(near, key=lambda g: (max(abs(g["where"]["x"] - wx),
+                                     abs(g["where"]["y"] - wy)), g["id"]))
+    return g["id"]
 
 
 def settle(w, evs=None):

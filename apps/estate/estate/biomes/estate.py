@@ -33,6 +33,9 @@ SPEC = {
         "lawn":     {"walk": 2.0, "noise": 0.00, "glyph": "🟩"},
         "play":     {"walk": 1.6, "noise": 0.30, "glyph": "🟨"},
         "water":    {"walk": None, "noise": 0.00, "glyph": "🌊"},
+        # the school's playground, fenced: pupils are in it, nobody walks
+        # across it (the gate is how you go in and out)
+        "yard":     {"walk": None, "noise": 0.12, "glyph": "🏫"},
         "building": {"walk": None, "noise": 0.00, "glyph": "🏢"},
     },
 
@@ -157,6 +160,15 @@ SPEC = {
         # lights and a tree shades, and neither is somewhere you go.
         "tree":       {"affords": {}, "decay": 0.00006, "storm_fall": 0.02,
                        "glyph": "🌳", "living": True},
+        # The school's gate and the bus stop are not places anybody chooses
+        # for a need — they afford nothing to the chooser. They are where
+        # the day's obligations go (engine/daytime.py): the run to school
+        # and the pickup at the gate, the walk to the bus and the ride
+        # home. They wear and are mended like everything else.
+        "school":     {"affords": {}, "capacity": 0, "decay": 0.00010,
+                       "upkeep": 2.0, "break_prob": 0.0, "glyph": "🏫"},
+        "bus_stop":   {"affords": {}, "capacity": 0, "decay": 0.00015,
+                       "upkeep": 1.0, "break_prob": 0.0012, "glyph": "🚏"},
     },
 
     # ------------------------------------------------------ the households
@@ -221,6 +233,11 @@ SPEC = {
         "lamps": 9,
         "shop": True,
         "pond": True,
+        # a primary-and-secondary school on the open ground south of the
+        # courtyard, with its fenced yard; and a bus stop on the ring road
+        # for the people who work off the estate
+        "school": True,
+        "bus_stop": True,
         "founding": {"family": 4, "couple": 3, "single": 4,
                      "elder": 3, "flat_share": 2},
         "waiting": 6,
