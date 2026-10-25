@@ -42,10 +42,12 @@ const Panels = (() => {
     $('voice').textContent = st.llm || '';
 
     const bits = [];
-    bits.push('<b>' + st.residents + '</b> people');
-    bits.push('<b>' + (st.buildings || []).length + '</b> blocks');
-    bits.push('<b>' + st.units + '</b> flats');
-    if (st.waiting) bits.push('<b>' + st.waiting + '</b> waiting');
+    bits.push('<b>' + Number(st.residents) + '</b> people');
+    // the shop is a building but not a block; the header counts homes
+    bits.push('<b>' + (st.buildings || [])
+      .filter(b => b.kind === 'block').length + '</b> blocks');
+    bits.push('<b>' + Number(st.units) + '</b> flats');
+    if (st.waiting) bits.push('<b>' + Number(st.waiting) + '</b> waiting');
     $('pops').innerHTML = bits.join(' · ');
   }
 
@@ -54,14 +56,15 @@ const Panels = (() => {
   function census(st) {
     const rows = Object.keys(st.census || {})
       .sort((a, b) => st.census[b] - st.census[a])
-      .map(k => '<li><span>' + glyphOf('households', k) + ' ' + esc(k) +
-                '</span><span>' + st.census[k] + '</span></li>');
+      .map(k => '<li><span>' + esc(glyphOf('households', k)) + ' ' +
+                esc(k) + '</span><span>' + Number(st.census[k]) +
+                '</span></li>');
     const kinds = st.people.reduce((m, p) => {
       m[p.role] = (m[p.role] || 0) + 1; return m;
     }, {});
     const byrole = Object.keys(kinds).sort().map(k =>
-      '<li><span>' + glyphOf('roles', k) + ' ' + esc(k) + '</span><span>' +
-      kinds[k] + '</span></li>');
+      '<li><span>' + esc(glyphOf('roles', k)) + ' ' + esc(k) +
+      '</span><span>' + Number(kinds[k]) + '</span></li>');
     return '<ul class="timeline">' + rows.join('') + '</ul>' +
       '<div class="status">by age</div><ul class="timeline">' +
       byrole.join('') + '</ul>';
@@ -81,7 +84,7 @@ const Panels = (() => {
       const shape = d.line || '';
       const news = d.says.length ? d.says.join(' · ') : '';
       return '<li' + (d.says.length ? '' : ' class="quiet"') + '>' +
-        '<span class="d">d' + d.day + '</span>' +
+        '<span class="d">d' + Number(d.day) + '</span>' +
         '<span class="shape">' + esc(shape) + '</span>' +
         (news ? '<span class="news">' + esc(news) + '</span>' : '') +
         '</li>';
@@ -101,7 +104,7 @@ const Panels = (() => {
     } else if (name === 'watch') {
       const c = (st.chronicle || []).slice().reverse();
       $('chron').innerHTML = c.length
-        ? c.map(e => '<li><span class="d">d' + e.day + '</span> ' +
+        ? c.map(e => '<li><span class="d">d' + Number(e.day) + '</span> ' +
                      esc(e.text) + '</li>').join('')
         : '<li>no watcher has come yet, and the chronicle is empty. ' +
           'the estate keeps its own lines either way.</li>';
@@ -115,14 +118,14 @@ const Panels = (() => {
   /* ----------------------------------------------------------- the card */
 
   function bar(v, max) {
-    const pc = Math.max(0, Math.min(100, (v / max) * 100));
+    const pc = Math.max(0, Math.min(100, (Number(v) / Number(max)) * 100));
     return '<span class="bar"><i style="width:' + pc.toFixed(0) + '%"></i>' +
-      '</span> ' + v.toFixed(2);
+      '</span> ' + Number(v).toFixed(2);
   }
 
   function needRows(p) {
     return Object.keys(p.needs).sort().map(n =>
-      '<li><span>' + glyphOf('needs', n) + ' ' + esc(n) + '</span>' +
+      '<li><span>' + esc(glyphOf('needs', n)) + ' ' + esc(n) + '</span>' +
       '<span>' + bar(p.needs[n], 4) + '</span></li>').join('');
   }
 
@@ -132,15 +135,18 @@ const Panels = (() => {
     if (sel.kind === 'resident') {
       const p = st.people.filter(p => p.id === sel.id)[0];
       if (!p) return { name: 'a person', state: 'gone', rows: '' };
-      const where = p.in ? 'inside, flat ' + p.unit : 'out at ' + p.x + ',' + p.y;
+      const where = p.in
+        ? 'inside, flat ' + (p.unit == null ? '' : Number(p.unit))
+        : 'out at ' + Number(p.x) + ',' + Number(p.y);
       const habit = Object.keys(p.habit || {}).map(k =>
-        '<li><span>' + k + '</span><span>' + esc(p.habit[k]) + '</span></li>')
-        .join('');
+        '<li><span>' + esc(k) + '</span><span>' + esc(p.habit[k]) +
+        '</span></li>').join('');
       return {
         name: (p.name || 'a resident'),
-        state: glyphOf('roles', p.role) + ' ' + esc(p.role) + ' · age ' +
-          p.age + ' · ' + esc(p.kind || '') + ' household<br>' + esc(where) +
-          (p.stress >= 1 ? ' · frayed ' + p.stress : ''),
+        state: esc(glyphOf('roles', p.role)) + ' ' + esc(p.role) + ' · age ' +
+          Number(p.age) + ' · ' + esc(p.kind || '') + ' household<br>' +
+          esc(where) +
+          (p.stress >= 1 ? ' · frayed ' + Number(p.stress) : ''),
         rows: needRows(p) + (habit ?
           '<li><span>— today —</span><span></span></li>' + habit : ''),
       };
@@ -148,11 +154,14 @@ const Panels = (() => {
     if (sel.kind === 'fixture') {
       const f = st.fixtures.filter(f => f.id === sel.id)[0];
       if (!f) return { name: 'a place', state: 'gone', rows: '' };
-      const spec = (S.ground.glyphs.fixtures[f.kind] || '') + ' ' + f.kind;
+      const spec = esc(S.ground.glyphs.fixtures[f.kind] || '') + ' ' +
+        esc(f.kind);
       return {
         name: spec,
-        state: 'at ' + f.x + ',' + f.y + ' · used ' + f.uses + ' times' +
-          (f.stock !== null && f.stock !== undefined ? ' · stock ' + f.stock : ''),
+        state: 'at ' + Number(f.x) + ',' + Number(f.y) + ' · used ' +
+          Number(f.uses) + ' times' +
+          (f.stock !== null && f.stock !== undefined
+            ? ' · stock ' + Number(f.stock) : ''),
         rows: '<li><span>condition</span><span>' + bar(f.c, 1) + '</span></li>',
       };
     }
@@ -162,23 +171,24 @@ const Panels = (() => {
       if (!b) return null;
       return {
         name: b.name,
-        state: b.kind + ' · ' + b.floors + ' floors · door at ' +
-          b.door[0] + ',' + b.door[1],
-        rows: '<li><span>flats</span><span>' + (d.units || b.units || 0) +
-          '</span></li>' +
-          '<li><span>lived in</span><span>' + (d.lived || 0) + '</span></li>',
+        state: esc(b.kind) + ' · ' + Number(b.floors) + ' floors · door at ' +
+          Number(b.door[0]) + ',' + Number(b.door[1]),
+        rows: '<li><span>flats</span><span>' +
+          Number(d.units || b.units || 0) + '</span></li>' +
+          '<li><span>lived in</span><span>' + Number(d.lived || 0) +
+          '</span></li>',
       };
     }
     if (sel.kind === 'cell') {
       const i = sel.y * S.ground.width + sel.x;
       const site = S.ground.codes[S.ground.rows[sel.y][sel.x]];
       return {
-        name: glyphOf('sites', site) + ' ' + site,
-        state: 'at ' + sel.x + ',' + sel.y,
-        rows: '<li><span>shade</span><span>' + (st.shade[i] / 9).toFixed(2) +
-          '</span></li>' +
-          '<li><span>lamp</span><span>' + (st.light[i] / 9).toFixed(2) +
-          '</span></li>',
+        name: esc(glyphOf('sites', site)) + ' ' + esc(site),
+        state: 'at ' + Number(sel.x) + ',' + Number(sel.y),
+        rows: '<li><span>shade</span><span>' +
+          (Number(st.shade[i]) / 9).toFixed(2) + '</span></li>' +
+          '<li><span>lamp</span><span>' +
+          (Number(st.light[i]) / 9).toFixed(2) + '</span></li>',
       };
     }
     return null;
@@ -205,7 +215,8 @@ const Panels = (() => {
     const box = $('speeds');
     if (!box) return;
     box.innerHTML = speeds.map(s =>
-      '<button data-s="' + s + '">' + SPEED_WORD(s) + '</button>').join('');
+      '<button data-s="' + Number(s) + '">' + esc(SPEED_WORD(s)) +
+      '</button>').join('');
     Array.prototype.forEach.call(box.querySelectorAll('button'), b => {
       b.onclick = () => onPick(parseFloat(b.dataset.s));
     });

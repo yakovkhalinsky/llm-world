@@ -64,8 +64,11 @@ def cmd_new(args):
     db.save_world(world)
     db.close()
     census = _census(world)
+    # the shop is a building but not a block; the row is the homes
+    blocks = sum(1 for b in world["buildings"].values()
+                 if b.get("kind") == "block")
     print(f"new estate: seed {world['seed']}, {world['width']}×"
-          f"{world['height']}, {len(world['buildings'])} blocks, "
+          f"{world['height']}, {blocks} blocks, "
           f"{len(world['units'])} flats, {len(world['households'])} "
           f"households, {len(world['residents'])} people")
     print("  " + " ".join(f"{k} {v}" for k, v in sorted(census.items())))

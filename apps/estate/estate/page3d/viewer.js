@@ -136,9 +136,11 @@ function head(st) {
   $('weather').textContent =
     glyphOf('weather', st.weather) + ' ' +
     (WEATHER_WORD[st.weather] || st.weather);
-  $('pops').innerHTML = '<b>' + st.residents + '</b> people · <b>' +
-    (st.buildings || []).length + '</b> blocks · <b>' + st.units +
-    '</b> flats' + (st.waiting ? ' · <b>' + st.waiting + '</b> waiting' : '');
+  const blocks = (st.buildings || []).filter(b => b.kind === 'block').length;
+  $('pops').innerHTML = '<b>' + Number(st.residents) + '</b> people · <b>' +
+    Number(blocks) + '</b> blocks · <b>' +
+    Number(st.units) + '</b> flats' +
+    (st.waiting ? ' · <b>' + Number(st.waiting) + '</b> waiting' : '');
   markPace(st.tick_seconds);
   const b = $('pauseBtn');
   b.textContent = st.paused ? '▶ play' : '⏸ pause';
@@ -171,15 +173,16 @@ function cardFor(sel) {
     if (!p) return null;
     const needs = Object.keys(p.needs || {}).sort()
       .map(n => '<li><span>' + esc(glyphOf('needs', n)) + ' ' + esc(n) +
-                '</span><span>' + p.needs[n].toFixed(2) + '</span></li>')
+                '</span><span>' + Number(p.needs[n]).toFixed(2) +
+                '</span></li>')
       .join('');
     return {
       name: p.name || 'a resident',
       state: esc(glyphOf('roles', p.role)) + ' ' + esc(p.role) + ' · age ' +
-        p.age + ' · ' + esc(p.kind || '') + ' household<br>' +
+        Number(p.age) + ' · ' + esc(p.kind || '') + ' household<br>' +
         (p.in ? 'inside, flat ' + esc(p.unit)
-              : 'out at ' + p.x + ',' + p.y) +
-        (p.stress >= 1 ? ' · frayed ' + p.stress : ''),
+              : 'out at ' + Number(p.x) + ',' + Number(p.y)) +
+        (p.stress >= 1 ? ' · frayed ' + Number(p.stress) : ''),
       rows: needs,
     };
   }
@@ -189,12 +192,14 @@ function cardFor(sel) {
     if (!b) return null;
     return {
       name: b.name,
-      state: esc(b.kind) + ' · ' + b.floors + ' floors · door at ' +
-        b.door[0] + ',' + b.door[1] + '<br>' +
+      state: esc(b.kind) + ' · ' + Number(b.floors) + ' floors · door at ' +
+        Number(b.door[0]) + ',' + Number(b.door[1]) + '<br>' +
         (d.power ? 'power on' : 'no power') + ' · ' +
         (d.water ? 'water on' : 'no water'),
-      rows: '<li><span>flats</span><span>' + (d.units || 0) + '</span></li>' +
-        '<li><span>lived in</span><span>' + (d.lived || 0) + '</span></li>',
+      rows: '<li><span>flats</span><span>' + Number(d.units || 0) +
+        '</span></li>' +
+        '<li><span>lived in</span><span>' + Number(d.lived || 0) +
+        '</span></li>',
     };
   }
   return null;
@@ -346,8 +351,9 @@ function speeds(list) {
   const box = $('speeds');
   const speedsList = list && list.length ? list : [60, 20, 5];
   box.innerHTML = speedsList.map(s => {
-    const word = s >= 60 && s % 60 === 0 ? (s / 60) + ' min' : s + 's';
-    return '<button data-s="' + s + '">' + word + '</button>';
+    const n = Number(s);
+    const word = n >= 60 && n % 60 === 0 ? (n / 60) + ' min' : n + 's';
+    return '<button data-s="' + n + '">' + esc(word) + '</button>';
   }).join('');
   Array.prototype.forEach.call(box.querySelectorAll('button'), b => {
     b.onclick = () => post({ tick_seconds: parseFloat(b.dataset.s) });
