@@ -71,6 +71,13 @@
   </div>
 </div>
 
+<!-- the walk router, shared with the plan page. Classic script before the
+     module: modules are deferred, so `EstateWalk` exists by the time the
+     viewer runs. -->
+<script src="/walk.js"></script>
+<!-- the day clock and light table, pure and testable: classic script before
+     the module, like the router -->
+<script src="/3d/clock.js"></script>
 <script type="module" src="/3d/viewer.js"></script>
 </body>
 </html>

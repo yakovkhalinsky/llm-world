@@ -5,18 +5,39 @@
  * the frame to the world. The HUD reads the same frame, so a number in a
  * panel and a shape in the scene can never disagree.
  *
- * Two query parameters exist for the headless checks that look at this page:
+ * These query parameters exist for the headless checks that look at this
+ * page:
  *
- *   ?phase=night    freeze the light at one of the five phases
- *                   (dawn, morning, afternoon, evening, night; `day`,
- *                   `dusk` and `sunrise` are accepted as aliases)
+ *   ?phase=night    freeze the light at the middle of one of the five
+ *                   phases (dawn, morning, afternoon, evening, night;
+ *                   `day`, `dusk` and `sunrise` are accepted as aliases)
+ *   ?clock=0.2      pin the day's fraction, 0..1 from midnight to
+ *                   midnight, for a screenshot of mid-dawn (0.2),
+ *                   mid-dusk (0.8) or any hour between; it wins over
+ *                   `?phase=` if both are given.
  *   ?static=1       draw the first state and stop. With no `phase` the
  *                   frozen light is afternoon, so a screenshot is legible
  *                   rather than a dawn taken from a standing start.
  *   ?view=top       start overhead, for looking at the whole plan at once.
+ *   ?focus=bench    frame the camera close on the busiest occupied bench
+ *                   (any bench if nobody is out).
+ *   ?focus=perimeter
+ *                   frame a stretch of the outer footpath, wide enough to
+ *                   hold its benches and the people on them.
+ *   ?focus=x,y     frames a named cell instead, for a close-up of a
+ *                   particular place.
+ *   ?trace=1       draw every current walking route as a line on the ground;
+ *                   ?trace=<id> draws one resident's route only. The lines
+ *                   are rebuilt when the day arrives, never inside a frame.
  *
  * When the first state has been drawn it publishes
- * `window.__estate3d = {ready, residents, buildings, phase}`.
+ * `window.__estate3d = {ready, residents, buildings, benches, seated,
+ * outside, walking, perimeter, phase, dayFrac, routes}` — `phase` and
+ * `dayFrac` are the HUD's own clock and keep moving with the light;
+ * `seated` is how many residents are on a bench now, `outside` how many
+ * are not in a flat, `walking` how many the page is walking between
+ * cells, `perimeter` how many are out on the estate's edge, and `routes`
+ * is `{active, maxWaypoints, fallbacks}` from the router.
  */
 
 import { createWorld } from './world.js';
@@ -41,11 +62,20 @@ const phaseArg = (params.get('phase') || '').toLowerCase();
 const STATIC = params.get('static') === '1';
 /* a plan-like overhead camera, for looking at the whole estate at once */
 const TOP = params.get('view') === 'top';
+/* a close camera on the busiest bench, or on a named cell */
+const FOCUS = (params.get('focus') || '').toLowerCase();
+/* debug lines: every walking route, or one resident's */
+const TRACE = params.get('trace') || '';
 const parsedPhase = Object.prototype.hasOwnProperty.call(PHASE_ALIAS, phaseArg)
   ? PHASE_ALIAS[phaseArg] : -1;
 /* static with no named phase freezes at afternoon for a legible shot */
 const forcedPhase = parsedPhase >= 0 ? parsedPhase
                    : (STATIC ? 2 : -1);
+/* a pinned fraction of the day, for a screenshot of any hour; -1 is unset */
+const clockArg = params.get('clock');
+const clockNum = clockArg == null || clockArg === '' ? NaN : Number(clockArg);
+const clockFrac = Number.isFinite(clockNum) &&
+                  clockNum >= 0 && clockNum <= 1 ? clockNum : -1;
 
 const S = {
   ground: null,
@@ -106,9 +136,11 @@ function head(st) {
   $('weather').textContent =
     glyphOf('weather', st.weather) + ' ' +
     (WEATHER_WORD[st.weather] || st.weather);
-  $('pops').innerHTML = '<b>' + st.residents + '</b> people · <b>' +
-    (st.buildings || []).length + '</b> blocks · <b>' + st.units +
-    '</b> flats' + (st.waiting ? ' · <b>' + st.waiting + '</b> waiting' : '');
+  const blocks = (st.buildings || []).filter(b => b.kind === 'block').length;
+  $('pops').innerHTML = '<b>' + Number(st.residents) + '</b> people · <b>' +
+    Number(blocks) + '</b> blocks · <b>' +
+    Number(st.units) + '</b> flats' +
+    (st.waiting ? ' · <b>' + Number(st.waiting) + '</b> waiting' : '');
   markPace(st.tick_seconds);
   const b = $('pauseBtn');
   b.textContent = st.paused ? '▶ play' : '⏸ pause';
@@ -140,16 +172,17 @@ function cardFor(sel) {
     const p = st.people.filter(x => x.id === sel.id)[0];
     if (!p) return null;
     const needs = Object.keys(p.needs || {}).sort()
-      .map(n => '<li><span>' + glyphOf('needs', n) + ' ' + esc(n) +
-                '</span><span>' + p.needs[n].toFixed(2) + '</span></li>')
+      .map(n => '<li><span>' + esc(glyphOf('needs', n)) + ' ' + esc(n) +
+                '</span><span>' + Number(p.needs[n]).toFixed(2) +
+                '</span></li>')
       .join('');
     return {
       name: p.name || 'a resident',
-      state: glyphOf('roles', p.role) + ' ' + esc(p.role) + ' · age ' +
-        p.age + ' · ' + esc(p.kind || '') + ' household<br>' +
-        (p.in ? 'inside, flat ' + p.unit
-              : 'out at ' + p.x + ',' + p.y) +
-        (p.stress >= 1 ? ' · frayed ' + p.stress : ''),
+      state: esc(glyphOf('roles', p.role)) + ' ' + esc(p.role) + ' · age ' +
+        Number(p.age) + ' · ' + esc(p.kind || '') + ' household<br>' +
+        (p.in ? 'inside, flat ' + esc(p.unit)
+              : 'out at ' + Number(p.x) + ',' + Number(p.y)) +
+        (p.stress >= 1 ? ' · frayed ' + Number(p.stress) : ''),
       rows: needs,
     };
   }
@@ -159,12 +192,14 @@ function cardFor(sel) {
     if (!b) return null;
     return {
       name: b.name,
-      state: b.kind + ' · ' + b.floors + ' floors · door at ' +
-        b.door[0] + ',' + b.door[1] + '<br>' +
+      state: esc(b.kind) + ' · ' + Number(b.floors) + ' floors · door at ' +
+        Number(b.door[0]) + ',' + Number(b.door[1]) + '<br>' +
         (d.power ? 'power on' : 'no power') + ' · ' +
         (d.water ? 'water on' : 'no water'),
-      rows: '<li><span>flats</span><span>' + (d.units || 0) + '</span></li>' +
-        '<li><span>lived in</span><span>' + (d.lived || 0) + '</span></li>',
+      rows: '<li><span>flats</span><span>' + Number(d.units || 0) +
+        '</span></li>' +
+        '<li><span>lived in</span><span>' + Number(d.lived || 0) +
+        '</span></li>',
     };
   }
   return null;
@@ -198,6 +233,7 @@ function showHover(hit) {
 
 let rafId = 0;
 let ready = false;
+let focusApplied = false;
 
 function publishReady() {
   if (ready) return;
@@ -207,18 +243,53 @@ function publishReady() {
     ready: true,
     residents: summary.residents,
     buildings: summary.buildings,
+    benches: summary.benches,
+    seated: summary.seated,
+    outside: summary.outside,
+    walking: summary.walking,
+    perimeter: summary.perimeter,
     phase: S.world.phaseName(),
+    dayFrac: S.world.dayFraction(),
     static: STATIC,
+    routes: S.world.routeStats(),
   };
   /* the same signal in the DOM, so a headless check that only dumps the
    * page can tell a drawn estate from a module that never ran */
   document.body.dataset.estate3d = 'ready';
 }
 
+/* Once, when the first state (and so the people) has arrived: a screenshot
+ * taken after a poll should already be framed. */
+function applyFocus() {
+  if (focusApplied || !FOCUS || !S.world) return;
+  focusApplied = true;
+  if (FOCUS === 'bench') {
+    S.world.focusBench();
+  } else if (FOCUS === 'perimeter') {
+    S.world.focusPerimeter();
+  } else {
+    const m = /^(-?\d+),(-?\d+)$/.exec(FOCUS);
+    if (m) S.world.focusCell(Number(m[1]), Number(m[2]));
+  }
+  /* static mode has no animation loop, and the first render happened before
+   * the camera moved — draw the focused frame now */
+  if (STATIC) S.world.frame(performance.now());
+}
+
+/* The debug hook carries the same clock the HUD and the light read, so a
+ * headless check can ask what hour the picture is at instead of guessing
+ * from the pixels. Two assignments, no object, no allocation per frame. */
+function publishClock(info) {
+  if (!ready) return;
+  window.__estate3d.phase = info.name;
+  window.__estate3d.dayFrac = info.dayFrac;
+}
+
 function tick(now) {
   if (!S.world) return;
   const info = S.world.frame(now);
   phaseLabel(info);
+  publishClock(info);
   if (!ready && S.world.hasState()) publishReady();
   if (S.hoverDirty && S.world) {
     S.hoverDirty = false;
@@ -248,6 +319,16 @@ function poll() {
         phaseLabel(info);
         publishReady();
       }
+      /* the counts move with the estate, and a headless check is entitled
+       * to ask for them on any poll, not only the first */
+      const summary = S.world.stateSummary();
+      window.__estate3d.seated = summary.seated;
+      window.__estate3d.benches = summary.benches;
+      window.__estate3d.outside = summary.outside;
+      window.__estate3d.walking = summary.walking;
+      window.__estate3d.perimeter = summary.perimeter;
+      window.__estate3d.routes = S.world.routeStats();
+      applyFocus();
     }
     if (STATIC) return;
     pollTimer = window.setTimeout(poll, 700);
@@ -270,8 +351,9 @@ function speeds(list) {
   const box = $('speeds');
   const speedsList = list && list.length ? list : [60, 20, 5];
   box.innerHTML = speedsList.map(s => {
-    const word = s >= 60 && s % 60 === 0 ? (s / 60) + ' min' : s + 's';
-    return '<button data-s="' + s + '">' + word + '</button>';
+    const n = Number(s);
+    const word = n >= 60 && n % 60 === 0 ? (n / 60) + ' min' : n + 's';
+    return '<button data-s="' + n + '">' + esc(word) + '</button>';
   }).join('');
   Array.prototype.forEach.call(box.querySelectorAll('button'), b => {
     b.onclick = () => post({ tick_seconds: parseFloat(b.dataset.s) });
@@ -331,7 +413,8 @@ function start() {
     S.ground = g;
     try {
       S.world = createWorld(g, $('view'), {
-        forcedPhase, staticMode: STATIC, topView: TOP,
+        forcedPhase, clockFrac, staticMode: STATIC, topView: TOP,
+        trace: TRACE,
       });
     } catch (e) {
       fallback('WebGL could not start: ' + e.message);

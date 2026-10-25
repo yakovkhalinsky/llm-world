@@ -12,17 +12,32 @@
  * because a guess in a renderer is a second copy of a fact the engine owns.
  *
  * The five phases of the day are the same five the PixiJS scene uses —
- * dawn, morning, afternoon, evening, night — and the same interpolation:
- * `phaseNow` turns the wall time since the last poll into a fractional
- * phase, and the light table is read at that fraction. `darkness` is the
- * same curve too, so window-light and lamp-glow arrive at the same moment
- * on both pages.
+ * dawn, morning, afternoon, evening, night — and they are equal fifths of
+ * one continuous clock. `dayFraction` turns the wall time since the day's
+ * turn into a fraction of the day; the light table is keyed by that
+ * fraction and eased between its keys, so the sun crosses the sky and the
+ * lamps, windows and fog arrive and leave over a long dawn and dusk rather
+ * than stepping when the server's `day` changes. The clock's wrap from 1
+ * to 0 lands on the same night at both ends.
  */
 
 import * as THREE from 'three';
 import { OrbitControls } from '/3d/vendor/OrbitControls.js';
 
-const PHASE_NAMES = ['dawn', 'morning', 'afternoon', 'evening', 'night'];
+/* The router is a classic script (`/walk.js`) so the plan page can inline the
+ * same file; see page/walk.js. If it ever fails to load, the page still draws
+ * everyone — as a straight line, which is what it used to do always. */
+const Walk = (typeof globalThis !== 'undefined' && globalThis.EstateWalk) ||
+             null;
+
+/* The day's clock and the light table are `clock.js`, loaded as a classic
+ * script before this module: pure functions with no THREE, so the property
+ * that matters — the light never jumps at the turn — is testable in Node
+ * (`tools/clock_check.js`) rather than only by a replica that ships
+ * nowhere. */
+const Clock = (typeof globalThis !== 'undefined' && globalThis.EstateClock) ||
+              null;
+
 const FLOOR_H = 1.35;          // world units per storey
 const TILE_TOP = 0.12;         // the walking surface: top of a ground tile
 const WALK_Y = TILE_TOP + 0.005;
@@ -59,31 +74,6 @@ const BUILDING_STYLE = {
 const ROLE_COLOUR = { child: 0xf2c14e, adult: 0x9ecbf0, elder: 0xd9b8e8 };
 const SKIN = [0xf1d5b5, 0xe8c39a, 0xc68863, 0x8d5524];
 
-/* The sun's five anchors. `offset` is from the estate's centre, so the same
- * table works on a plan of any size. Colours are sRGB hex and become linear
- * when three reads them. */
-const SKY = [
-  /* Dawn and evening keep the warm light but not a grazing sun: below about
-   * 25° the shadow camera sees the estate edge-on and a low sun throws long
-   * rectangles across everything beyond it. The colour says the hour; the
-   * elevation stays high enough for the light to fall like light. */
-  { sun: 0xffb27a, sunI: 1.15, offset: [28, 20, 20], sky: 0xe6b28c,
-    hemiSky: 0xffd6ae, hemiGround: 0x4a4034, hemiI: 0.55 },
-  { sun: 0xfff2dc, sunI: 2.35, offset: [24, 40, 26], sky: 0x9fcdf2,
-    hemiSky: 0xdcecff, hemiGround: 0x4e5648, hemiI: 0.82 },
-  { sun: 0xffe0b0, sunI: 2.15, offset: [-24, 36, 18], sky: 0xa9d6f5,
-    hemiSky: 0xe4f0ff, hemiGround: 0x55584a, hemiI: 0.78 },
-  { sun: 0xff8a4c, sunI: 1.35, offset: [-30, 20, -14], sky: 0xd98a62,
-    hemiSky: 0xffc9a8, hemiGround: 0x40372e, hemiI: 0.48 },
-  /* Night is dark, not black: the plan page lays a 52%-alpha navy over a
-   * drawing that is still there, and the 3D page keeps the same bargain —
-   * enough blue light to read the blocks, with the lamps and the lived-in
-   * windows doing the rest. A literally unlit estate is not night, it is a
-   * rendering failure. */
-  { sun: 0x9fb4e6, sunI: 0.55, offset: [-20, 28, -28], sky: 0x17243f,
-    hemiSky: 0x6e86b8, hemiGround: 0x2a3038, hemiI: 1.05 },
-];
-
 /* A weather is a fact about the sky, so it tints the sky (and the fog that
  * matches it) rather than only the ground. Clear days keep the phase's own
  * blue; rain and storm pull it to grey, frost to a cold haze, heat to a
@@ -109,20 +99,16 @@ function hash01(n, salt) {
   return (x >>> 0) / 4294967295;
 }
 
-const clamp01 = v => Math.max(0, Math.min(1, v));
-const mixNum = (x, y, f) => x + (y - x) * f;
+/* the clock's own helper; the fallback only keeps unrelated geometry code
+ * running if clock.js failed to load, and `createWorld` refuses to start
+ * without the light table anyway */
+const clamp01 = (Clock && Clock.clamp01) ||
+                (v => Math.max(0, Math.min(1, v)));
 
 function stringHash(s) {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
   return h >>> 0;
-}
-
-/* The plan page's `darkness`: nothing until the afternoon is well gone,
- * then a squared climb to full night. */
-function darkness(ph) {
-  const t = clamp01((ph - 2.6) / 2.0);
-  return t * t;
 }
 
 function doorFace(b) {
@@ -135,11 +121,57 @@ function doorFace(b) {
 
 export function createWorld(ground, canvas, opts) {
   opts = opts || {};
+  if (!Clock) throw new Error('the day clock (clock.js) did not load');
   const forcedPhase = Number.isFinite(opts.forcedPhase) ? opts.forcedPhase
                                                           : -1;
+  /* `?clock=0.15` pins the day's fraction for screenshots of mid-dawn or
+   * mid-dusk; it is finer than a phase and wins if both are given. The
+   * clock owns both pins and the day's own anchoring. */
+  const clock = Clock.makeClock({ clockPin: opts.clockFrac,
+                                  forcedPhase: forcedPhase });
   const staticMode = !!opts.staticMode;
   const W = ground.width, H = ground.height;
   const centre = new THREE.Vector3(W / 2, 1.4, H / 2);
+  /* the plan's walkable ground, searched once and never rebuilt unless the
+   * fixture list changes */
+  const grid = Walk ? Walk.buildGrid(ground) : null;
+
+  /* The outer band of the estate: walkable ground inside the ring road
+   * within three cells of it. The plan is the source — the road's own
+   * cells say where the ring is, so a wider plan or a different road
+   * width moves the band with it. The `perimeter` count uses this, and
+   * `?focus=perimeter` uses the bench marks the server sends; neither
+   * invents a second copy of the geometry. */
+  const perimeterCells = (() => {
+    const roads = [];
+    let x0 = W, x1 = -1, y0 = H, y1 = -1;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (ground.codes[ground.rows[y][x]] === 'road') {
+          roads.push([x, y]);
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+      }
+    }
+    const cells = new Set();
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const code = ground.codes[ground.rows[y][x]];
+        if (code === 'road' || code === 'building' || code === 'water') {
+          continue;
+        }
+        let near = false;
+        for (let i = 0; i < roads.length && !near; i++) {
+          near = Math.abs(x - roads[i][0]) + Math.abs(y - roads[i][1]) <= 3;
+        }
+        if (near) cells.add(x + ',' + y);
+      }
+    }
+    return cells;
+  })();
 
   /* ------------------------------------------------------------ renderer */
 
@@ -155,14 +187,15 @@ export function createWorld(ground, canvas, opts) {
 
   const maxDim = Math.max(W, H);
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(SKY[2].sky);
+  scene.background = new THREE.Color(Clock.LIGHT[3].sky);
   /* Fog turns the ground past the estate into sky. It starts beyond the
    * estate's own footprint so the blocks stay crisp, and its colour is the
    * sky's every frame. */
-  scene.fog = new THREE.Fog(SKY[2].sky, maxDim * 1.3, maxDim * 2.8);
+  scene.fog = new THREE.Fog(Clock.LIGHT[3].sky, maxDim * 1.3, maxDim * 2.8);
 
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
-  /* high enough to see over the front blocks into the courtyard, still
+  /* from the south-east, where both views look in, and high enough to
+   * hold the north block row and the open courtyard in front of it, still
    * oblique enough that a block reads as a block and not as a plan */
   camera.position.set(centre.x + 20, centre.y + 38, centre.z + 24);
 
@@ -627,22 +660,33 @@ export function createWorld(ground, canvas, opts) {
   /* --------------------------------------------------------- windows lit */
 
   const occupied = new Set();
-  let nightOn = false;
   let occupancyDirty = true;
+  /* A window's colour is the whole state of it: cold glass by day, warm
+   * lamplight in a lived-in flat at night. It is mixed by `dark` rather
+   * than switched at a threshold, so the estate lights up room by room
+   * through the dusk and goes out the same way through the dawn. The
+   * instance colours are rewritten in `WINDOW_STEPS` small steps: that is
+   * finer than the eye reads as a step and, unlike a per-frame rewrite,
+   * uploads the buffer only while the light is actually moving. */
+  const WINDOW_STEPS = 24;
+  const WIN_DAY = {
+    lived: new THREE.Color(0x51616f), shop: new THREE.Color(0x6b5a44),
+    pane: new THREE.Color(0x263039),
+  };
+  const WIN_NIGHT = {
+    lived: new THREE.Color(0xffca7a), shop: new THREE.Color(0xffb45c),
+    pane: new THREE.Color(0x0f1419),
+  };
+  let windowDark = 0;
 
-  function paintWindows() {
+  function paintWindows(dark) {
     if (!windowSlots.length) return;
+    windowDark = clamp01(dark);
     for (let i = 0; i < windowSlots.length; i++) {
       const s = windowSlots[i];
-      let hex;
-      if (s.unit != null && occupied.has(s.unit)) {
-        hex = nightOn ? 0xffca7a : 0x51616f;
-      } else if (s.shop) {
-        hex = nightOn ? 0xffb45c : 0x6b5a44;
-      } else {
-        hex = nightOn ? 0x0f1419 : 0x263039;
-      }
-      _c1.setHex(hex);
+      const key = s.unit != null && occupied.has(s.unit) ? 'lived'
+                : s.shop ? 'shop' : 'pane';
+      _c1.lerpColors(WIN_DAY[key], WIN_NIGHT[key], windowDark);
       windowMesh.setColorAt(i, _c1);
     }
     if (windowMesh.instanceColor) windowMesh.instanceColor.needsUpdate = true;
@@ -655,25 +699,23 @@ export function createWorld(ground, canvas, opts) {
   const hemiSky = new THREE.Color();
   const hemiGround = new THREE.Color();
   let weather = 'clear';
-  const skyA = SKY.map(p => ({
-    sun: new THREE.Color(p.sun), sky: new THREE.Color(p.sky),
-    hemiSky: new THREE.Color(p.hemiSky),
-    hemiGround: new THREE.Color(p.hemiGround),
-  }));
+  let darkNow = 0;
 
-  function updateSky(ph) {
-    const i = Math.min(4, Math.floor(ph));
-    const f = Math.min(1, Math.max(0, ph - i));
-    const a = SKY[i], b = SKY[Math.min(4, i + 1)];
-    const ca = skyA[i], cb = skyA[Math.min(4, i + 1)];
+  /* The whole sky from one number: the day's fraction. The keyframes and
+   * the easing are `clock.js`; this only writes the result into the light
+   * objects and the sky. Nothing here allocates: the colours and the light
+   * objects are the ones made above. */
+  function updateSky(dayFrac) {
+    const l = Clock.lightAt(dayFrac);
 
-    sun.intensity = mixNum(a.sunI, b.sunI, f);
-    hemi.intensity = mixNum(a.hemiI, b.hemiI, f);
-    sunColour.lerpColors(ca.sun, cb.sun, f);
+    sun.intensity = l.sunI;
+    hemi.intensity = l.hemiI;
+    sunColour.setRGB(l.sun[0], l.sun[1], l.sun[2]);
     sun.color.copy(sunColour);
-    skyColour.lerpColors(ca.sky, cb.sky, f);
-    hemiSky.lerpColors(ca.hemiSky, cb.hemiSky, f);
-    hemiGround.lerpColors(ca.hemiGround, cb.hemiGround, f);
+    skyColour.setRGB(l.sky[0], l.sky[1], l.sky[2]);
+    hemiSky.setRGB(l.hemiSky[0], l.hemiSky[1], l.hemiSky[2]);
+    hemiGround.setRGB(l.hemiGround[0], l.hemiGround[1], l.hemiGround[2]);
+    darkNow = l.dark;
 
     /* the weather is a property of the sky, so it greys the sky itself
      * (and the fog, which is the same colour) rather than only dimming
@@ -681,7 +723,7 @@ export function createWorld(ground, canvas, opts) {
     const wt = WEATHER_SKY[weather];
     if (wt) {
       _c1.setHex(wt.hex);
-      skyColour.lerp(_c1, wt.mix * (1 - darkness(ph)));
+      skyColour.lerp(_c1, wt.mix * (1 - darkNow));
       sun.intensity *= wt.sun;
     }
 
@@ -690,10 +732,13 @@ export function createWorld(ground, canvas, opts) {
     scene.background.copy(skyColour);
     scene.fog.color.copy(skyColour);
 
+    /* the sun's arc: east and high at dawn, overhead by morning, west and
+     * low by evening, then the moon's blue from the north. The floor on
+     * the elevation is the shadow camera's, not the sky's — see SUN_MIN_Y */
     sun.position.set(
-      centre.x + mixNum(a.offset[0], b.offset[0], f),
-      Math.max(SUN_MIN_Y, mixNum(a.offset[1], b.offset[1], f)),
-      centre.z + mixNum(a.offset[2], b.offset[2], f));
+      centre.x + l.offset[0],
+      Math.max(SUN_MIN_Y, l.offset[1]),
+      centre.z + l.offset[2]);
   }
 
   /* ----------------------------------------------------------- residents */
@@ -714,18 +759,74 @@ export function createWorld(ground, canvas, opts) {
   let bodyMesh = null, headMesh = null, capacity = 0;
   let people = [];
   let personAt = [];
-  const fromX = [], fromZ = [], toX = [], toZ = [];
+  const toX = [], toZ = [];
   const offX = [], offZ = [], roleScale = [];
-  /* The day is the clock, not the poll. The page is polled several times
-   * per day, and resetting these on every state made the light restart
-   * toward dawn and the glide restart toward the old position before
-   * either had got anywhere. */
-  let tickMs = 6000;
-  let moveT0 = 0;             // when the current day's positions arrived
-  let phaseStart = 0;         // when the current day's phase run began
-  let daySeen = -1;
-  let paused = false;
-  let pausedPhase = 0;
+  /* 0 stands, 1 sits on the bench, 2 stands beside it because it is full */
+  const sitMode = [], seatFx = [], seatFz = [];
+  /* Each walker's route (from page/walk.js) and when its walk began. A route
+   * is built when a person's cell changes, not once a frame and not once a
+   * poll: the state repeats between days, and rebuilding on every poll
+   * restarted the walk before it had got anywhere. */
+  const routes = [], routeT0 = [], routeDur = [];
+  const facing = [];
+  let routesBuilt = false;
+  let routeFallbacks = 0;     // straight lines used because no path was found
+  let routeMaxPoints = 0;
+  const routeSample = { x: 0, z: 0, dx: 0, dz: 0, moving: false };
+
+  /* ----------------------------------------------------------- trace */
+  /* `?trace=1` draws every current route; `?trace=<id>` draws one. It is a
+   * debugging view, rebuilt when the day arrives and never inside a frame —
+   * the lines are the route the person is actually walking, not a second
+   * guess at it. */
+  const TRACE_MAX = 8192;           // vertices
+  let traceMesh = null, traceGeo = null;
+  if (opts.trace) {
+    traceGeo = new THREE.BufferGeometry();
+    traceGeo.setAttribute('position',
+      new THREE.BufferAttribute(new Float32Array(TRACE_MAX * 3), 3)
+        .setUsage(THREE.DynamicDrawUsage));
+    traceGeo.setDrawRange(0, 0);
+    traceMesh = new THREE.LineSegments(traceGeo, new THREE.LineBasicMaterial({
+      color: 0xffd166, transparent: true, opacity: 0.9,
+      depthWrite: false }));
+    traceMesh.frustumCulled = false;
+    traceMesh.renderOrder = 4;
+    traceMesh.visible = false;
+    scene.add(traceMesh);
+  }
+
+  function rebuildTrace() {
+    if (!traceMesh) return;
+    const pos = traceGeo.attributes.position.array;
+    const want = String(opts.trace);
+    const one = want === '1' ? null : Number(want);
+    let n = 0;
+    for (let i = 0; i < people.length && n + 6 <= TRACE_MAX * 3; i++) {
+      if (one !== null && people[i].id !== one) continue;
+      const r = routes[i];
+      if (!r || r.n < 2) continue;
+      for (let k = 0; k + 1 < r.n && n + 6 <= TRACE_MAX * 3; k++) {
+        pos[n++] = r.xs[k]; pos[n++] = WALK_Y + 0.04; pos[n++] = r.zs[k];
+        pos[n++] = r.xs[k + 1]; pos[n++] = WALK_Y + 0.04; pos[n++] = r.zs[k + 1];
+      }
+    }
+    traceGeo.setDrawRange(0, n / 3);
+    traceGeo.attributes.position.needsUpdate = true;
+    traceMesh.visible = n > 0;
+  }
+
+  /* last state's seat positions: somebody already on a bench starts their
+   * next walk from the seat rather than the cell's centre, and somebody who
+   * stays on the same bench is not sent walking at all */
+  let prevSeat = {};
+  /* The day is the clock, not the poll: `clock` (clock.js) owns the anchor
+   * and the pins. The page is polled several times per day, and resetting
+   * on every state made the light restart toward dawn and the walk restart
+   * toward the old position before either had got anywhere. The next state
+   * with a new `day` re-anchors at the fraction already reached; the light
+   * is a periodic function of that fraction, so the wrap back to 0 at the
+   * day's turn is the same night it wraps from. */
 
   function ensureResidents(n) {
     if (bodyMesh && n <= capacity) return;
@@ -748,21 +849,13 @@ export function createWorld(ground, canvas, opts) {
     scene.add(headMesh);
   }
 
-  /* where a person appears when they step out: the face of their block,
-   * under the window of their own flat */
-  function homeSpot(unit) {
+  /* Where a walk begins or ends when a block is involved: the door cell the
+   * engine itself walks to, never a point on the wall. Being inside is a
+   * state, not a coordinate (`_pos` in the engine makes the same turn). */
+  function doorSpot(unit) {
     const u = ground.units[String(unit)];
-    if (!u) return { x: centre.x, z: centre.z };
-    const b = buildingById[u.b];
-    if (!b) return { x: centre.x, z: centre.z };
-    const longX = b.w >= b.h;
-    const t = (u.i + 0.5) / Math.max(1, u.n);
-    if (longX) {
-      return { x: b.x + 0.72 + t * Math.max(0.1, b.w - 1.44),
-               z: b.y + b.h + 0.38 };
-    }
-    return { x: b.x + b.w + 0.38,
-             z: b.y + 0.72 + t * Math.max(0.1, b.h - 1.44) };
+    const b = u ? buildingById[u.b] : null;
+    return b ? { x: b.door[0], y: b.door[1] } : null;
   }
 
   function syncResidents(st) {
@@ -773,25 +866,34 @@ export function createWorld(ground, canvas, opts) {
     if (personAt.length < capacity) {
       for (let i = personAt.length; i < capacity; i++) {
         personAt[i] = null;
-        fromX[i] = fromZ[i] = toX[i] = toZ[i] = 0;
+        toX[i] = toZ[i] = 0;
         offX[i] = offZ[i] = 0;
         roleScale[i] = 1;
+        sitMode[i] = 0;
+        seatFx[i] = 0;
+        seatFz[i] = 1;
+        routes[i] = null;
+        routeT0[i] = routeDur[i] = 0;
+        facing[i] = 0;
       }
     }
+
+    /* A position only changes when a day does. The page is polled several
+     * times per day, so a route is rebuilt on the day's arrival and left
+     * alone in between: rebuilding it on every poll restarted the walk from
+     * its beginning before it had arrived. */
+    const fresh = !routesBuilt || st.day !== clock.daySeen;
+    const seatWas = prevSeat;
 
     for (let i = 0; i < people.length; i++) {
       const p = people[i];
       personAt[i] = p;
-      const from = p.pin ? homeSpot(p.punit)
-                         : { x: (p.px == null ? p.x : p.px) + 0.5,
-                             z: (p.py == null ? p.y : p.py) + 0.5 };
-      fromX[i] = from.x;
-      fromZ[i] = from.z;
       toX[i] = p.x + 0.5;
       toZ[i] = p.y + 0.5;
       offX[i] = (hash01(p.id, 11) * 2 - 1) * 0.17;
       offZ[i] = (hash01(p.id, 12) * 2 - 1) * 0.17;
       roleScale[i] = p.role === 'child' ? 0.78 : p.role === 'elder' ? 0.92 : 1;
+      sitMode[i] = 0;
 
       _c1.setHex(ROLE_COLOUR[p.role] === undefined ? 0xcccccc
                                                    : ROLE_COLOUR[p.role]);
@@ -799,6 +901,64 @@ export function createWorld(ground, canvas, opts) {
       _c1.setHex(SKIN[Math.floor(hash01(p.id, 13) * SKIN.length) % SKIN.length]);
       headMesh.setColorAt(i, _c1);
     }
+
+    /* Who is on a bench. A resident is seated only when the bench is the
+     * fixture they chose last phase; someone whose walk merely ended on
+     * that cell is standing there, not sitting. Seats go to those users
+     * first, side by side (lowest ids first, so the picture does not
+     * shuffle between polls); anyone else stands clearly beside the bench. */
+    seatedCount = 0;
+    const onBench = {};
+    for (let i = 0; i < people.length; i++) {
+      const p = people[i];
+      if (p.in) continue;
+      const key = p.x + ',' + p.y;
+      if (!benchByCell[key]) continue;
+      (onBench[key] = onBench[key] || []).push(i);
+    }
+    const seatNow = {};
+    for (const key in onBench) {
+      const b = benchByCell[key];
+      const idx = onBench[key].sort((a, c) => {
+        const ua = people[a].fixture != null &&
+                   Number(people[a].fixture) === b.id ? 0 : 1;
+        const uc = people[c].fixture != null &&
+                   Number(people[c].fixture) === b.id ? 0 : 1;
+        return ua - uc || people[a].id - people[c].id;
+      });
+      /* local +x, which runs along the seat, in world coordinates */
+      const ax = Math.cos(b.yaw), az = -Math.sin(b.yaw);
+      for (let rank = 0; rank < idx.length; rank++) {
+        const i = idx[rank];
+        const p = people[i];
+        if (rank < b.cap) {
+          const off = b.cap > 1 ? (rank - (b.cap - 1) / 2) * 0.42 : 0;
+          toX[i] = b.x + ax * off;
+          toZ[i] = b.z + az * off;
+          offX[i] = offZ[i] = 0;
+          sitMode[i] = 1;
+          seatFx[i] = b.fx;
+          seatFz[i] = b.fz;
+          seatNow[p.id] = { cell: key, x: toX[i], z: toZ[i] };
+          seatedCount++;
+        } else {
+          /* No room on the seat: stand clearly past the end of it, not on
+           * top. The seat is 0.9 long (±0.45) and a body is 0.32 wide, so
+           * a centre nearer than 0.61 overlaps the slats and reads as a
+           * third sitter — which is exactly how a two-seat bench came to
+           * be reported as seating three. */
+          const side = (p.id & 1) ? 1 : -1;
+          const off = side * (0.74 + hash01(p.id, 41) * 0.10);
+          toX[i] = b.x + ax * off;
+          toZ[i] = b.z + az * off;
+          offX[i] = offZ[i] = 0;
+          sitMode[i] = 2;
+          seatFx[i] = b.fx;
+          seatFz[i] = b.fz;
+        }
+      }
+    }
+    prevSeat = seatNow;
     if (bodyMesh.instanceColor) bodyMesh.instanceColor.needsUpdate = true;
     if (headMesh.instanceColor) headMesh.instanceColor.needsUpdate = true;
 
@@ -808,32 +968,81 @@ export function createWorld(ground, canvas, opts) {
     }
     occupancyDirty = true;
 
-    tickMs = Math.max(300, (st.tick_seconds || 6) * 1000);
     const now = performance.now();
-    if (!!st.paused !== paused) {
-      if (st.paused) pausedPhase = rawPhase(now);
-      else phaseStart = now - (pausedPhase / 5) * tickMs;
-      paused = !!st.paused;
-    }
-    if (st.day !== daySeen) {
-      daySeen = st.day;
-      moveT0 = now;
-      if (paused) pausedPhase = 0;
-      else phaseStart = now;
-    }
-  }
+    /* a pace change alters the rate, not the hour: the clock keeps the
+     * fraction already reached, so switching from a minute a day to five
+     * seconds makes the rest of the day shorter rather than jumping the
+     * light (see Clock.setPace) */
+    Clock.setPace(clock, now, st.tick_seconds);
 
-  function glided(now) {
-    /* a frozen frame shows where the estate actually is, not where its
-     * people were before the day that the frame is showing */
-    if (staticMode) return 1;
-    const raw = Math.min(1, Math.max(0, (now - moveT0) / tickMs));
-    return raw < 0.5 ? 2 * raw * raw : 1 - Math.pow(-2 * raw + 2, 2) / 2;
+    /* Each changed position becomes a walk over the plan's own ground. A
+     * resident leaving a block starts at its door; a resident already on a
+     * bench starts at the seat. Anyone whose cell did not change keeps the
+     * route they had — which is what lets a walk finish. */
+    if (fresh) {
+      if (grid) Walk.setFixtures(grid, st.fixtures || []);
+      routeMaxPoints = 0;
+      for (let i = 0; i < people.length; i++) {
+        const p = people[i];
+        routes[i] = null;
+        if (p.in) continue;                // indoors is not drawn walking
+        const gx = p.x, gy = p.y;
+        const tx = toX[i], tz = toZ[i];
+
+        let scx, scy, sx, sz;
+        const door = p.pin ? doorSpot(p.punit) : null;
+        if (door) {
+          scx = door.x; scy = door.y;
+          sx = scx + 0.5; sz = scy + 0.5;
+        } else {
+          scx = p.px == null ? gx : p.px;
+          scy = p.py == null ? gy : p.py;
+          sx = scx + 0.5; sz = scy + 0.5;
+          const was = seatWas[p.id];
+          if (was && was.cell === scx + ',' + scy) {
+            sx = was.x; sz = was.z;        // get up from where you sat
+          }
+        }
+        if (scx === gx && scy === gy) continue;   // same cell: no walk
+
+        let route = null;
+        if (grid) {
+          const cells = Walk.findPath(grid, scx, scy, gx, gy);
+          if (cells) route = Walk.routePoints(cells, sx, sz, tx, tz);
+        }
+        if (!route) {
+          /* no path (or no router): the straight line the page used to
+           * draw, counted so a broken grid is visible rather than silent */
+          routeFallbacks++;
+          route = Walk ? Walk.straight(sx, sz, tx, tz)
+                       : { xs: [sx, tx], zs: [sz, tz],
+                           cum: [0, 1], n: 2,
+                           total: Math.hypot(tx - sx, tz - sz) };
+        }
+        routes[i] = route;
+        routeT0[i] = now;
+        routeDur[i] = Walk ? Walk.duration(route.total, clock.dayMs)
+                           : Math.max(120, clock.dayMs * 0.9);
+        if (route.total > 1e-4 && route.n > routeMaxPoints) {
+          routeMaxPoints = route.n;
+        }
+        if (route.n > 1) {
+          const dx = route.xs[1] - route.xs[0];
+          const dz = route.zs[1] - route.zs[0];
+          if (dx || dz) facing[i] = Math.atan2(dx, dz);
+        }
+      }
+      routesBuilt = true;
+      if (traceMesh) rebuildTrace();
+    }
+
+    /* freeze at the hour the page is showing; re-anchor at the fraction
+     * already reached when the day turns (Clock.onState). */
+    Clock.onState(clock, now, st);
   }
 
   function updateResidents(now) {
     if (!bodyMesh) return;
-    const e = glided(now);
     for (let i = 0; i < people.length; i++) {
       const p = people[i];
       if (p.in) {
@@ -846,10 +1055,50 @@ export function createWorld(ground, canvas, opts) {
         continue;
       }
       const s = roleScale[i];
-      const x = fromX[i] + (toX[i] - fromX[i]) * e + offX[i];
-      const z = fromZ[i] + (toZ[i] - fromZ[i]) * e + offZ[i];
-      const bob = Math.sin(now * 0.003 + i * 1.7) * 0.014;
-      dummy.rotation.set(0, 0, 0);
+      const r = routes[i];
+      let x = toX[i], z = toZ[i];
+      let moving = false;
+      if (Walk && r && r.total > 1e-6) {
+        const t = staticMode ? r.total
+                             : (now - routeT0[i]) / (routeDur[i] || 1) * r.total;
+        Walk.sample(r, t, routeSample);
+        x = routeSample.x;
+        z = routeSample.z;
+        moving = routeSample.moving;
+        if (routeSample.dx || routeSample.dz) {
+          facing[i] = Math.atan2(routeSample.dx, routeSample.dz);
+        }
+      }
+      x += offX[i];
+      z += offZ[i];
+
+      /* somebody who has arrived at their bench sits; somebody still
+       * walking there is still walking */
+      if (sitMode[i] === 1 && !moving) {
+        /* sitting: the body is shorter and its foot is the seat's top, and
+         * a small lean toward the path is what makes it read as sitting
+         * rather than as a figure sunk into the ground */
+        const fx = seatFx[i], fz = seatFz[i];
+        const seatY = TILE_TOP + 0.46;
+        dummy.rotation.set(0.16 * fz, 0, -0.16 * fx);
+        dummy.scale.set(s, s * 0.72, s);
+        dummy.position.set(x, seatY + 0.26 * s, z);
+        dummy.updateMatrix();
+        bodyMesh.setMatrixAt(i, dummy.matrix);
+        dummy.rotation.set(0, 0, 0);
+        dummy.scale.set(s, s, s);
+        dummy.position.set(x + fx * 0.09 * s, seatY + 0.60 * s,
+                          z + fz * 0.09 * s);
+        dummy.updateMatrix();
+        headMesh.setMatrixAt(i, dummy.matrix);
+        continue;
+      }
+      /* a small gait while walking, still otherwise; and a body turned the
+       * way it is going */
+      const bob = moving
+        ? Math.sin(now * 0.009 + i * 1.7) * 0.02 * s
+        : 0;
+      dummy.rotation.set(0, facing[i], 0);
       dummy.scale.set(s, s, s);
       dummy.position.set(x, WALK_Y + 0.36 * s + bob, z);
       dummy.updateMatrix();
@@ -870,6 +1119,13 @@ export function createWorld(ground, canvas, opts) {
   let fixturesBuilt = false;
   let fixtureEntries = [];
   let treeEntries = [];
+  /* The benches, by cell, with the way each one faces. A resident on a
+   * bench's cell is seated on it (up to its capacity), and `focus=bench`
+   * needs to know where the benches are without inventing a second copy of
+   * the fixture list. Both are derived from the state the server sends. */
+  let benchByCell = {};
+  let benchCount = 0;
+  let seatedCount = 0;
 
   function clearFixtures() {
     fixtureEntries.forEach(fx => {
@@ -912,15 +1168,35 @@ export function createWorld(ground, canvas, opts) {
     treeEntries.push({ id, canopy, trunk });
   }
 
+  /* Which way a bench faces. A bench beside a path turns its back to the
+   * walkway's far side and looks at the path, its seat running along it, so
+   * whoever sits watches the estate go past. The path is a fact already in
+   * the ground (`codes` and `rows`), never a second map in the page. A bench
+   * with no path beside it — the courtyard's own — keeps the default pose,
+   * which is the one both views have always drawn. */
+  function benchFacing(f) {
+    for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+      const x = f.x + dx, y = f.y + dy;
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      if (ground.codes[ground.rows[y][x]] === 'path') {
+        return { fx: dx, fz: dy, yaw: Math.atan2(dx, dy) };
+      }
+    }
+    return { fx: 0, fz: 1, yaw: 0 };
+  }
+
   function buildFixture(f, season) {
     const g = new THREE.Group();
     g.position.set(f.x + 0.5, TILE_TOP, f.y + 0.5);
     g.userData.pick = { kind: 'fixture', id: f.id };
     const mats = [];
 
+    let bench = null;
     if (f.kind === 'tree') {
       treeMesh(g, mats, season, f.id);
     } else if (f.kind === 'bench') {
+      const face = benchFacing(f);
+      g.rotation.y = face.yaw;
       const wood = fixtureMaterial(0x8a6a3f, 0.9);
       const metal = fixtureMaterial(0x454c54, 0.7);
       mats.push(wood, metal);
@@ -928,6 +1204,13 @@ export function createWorld(ground, canvas, opts) {
       addBox(g, wood.mat, 0.9, 0.3, 0.07, 0, 0.58, -0.16);
       addBox(g, metal.mat, 0.07, 0.42, 0.3, -0.34, 0.21, 0);
       addBox(g, metal.mat, 0.07, 0.42, 0.3, 0.34, 0.21, 0);
+      /* local +z is the way it faces; local +x runs along the seat */
+      bench = { key: f.x + ',' + f.y, id: Number(f.id),
+                cx: f.x, cy: f.y,
+                x: f.x + 0.5, z: f.y + 0.5,
+                fx: face.fx, fz: face.fz, yaw: face.yaw,
+                perimeter: !!f.perimeter,
+                cap: Math.max(0, Number(f.cap) || 0) };
     } else if (f.kind === 'table') {
       const wood = fixtureMaterial(0x9c7f52, 0.9);
       const metal = fixtureMaterial(0x454c54, 0.7);
@@ -979,14 +1262,21 @@ export function createWorld(ground, canvas, opts) {
     }
 
     fixtureGroup.add(g);
-    return { id: f.id, kind: f.kind, group: g, mats };
+    return { id: f.id, kind: f.kind, group: g, mats, bench };
   }
 
   function buildFixtures(st) {
     clearFixtures();
     const season = Math.max(0, Math.min(3, st.season || 0));
+    benchByCell = {};
+    benchCount = 0;
     (st.fixtures || []).forEach(f => {
-      fixtureEntries.push(buildFixture(f, season));
+      const entry = buildFixture(f, season);
+      fixtureEntries.push(entry);
+      if (entry.bench) {
+        benchByCell[entry.bench.key] = entry.bench;
+        benchCount++;
+      }
     });
     fixtureKey = (st.fixtures || []).map(f => f.id + ':' + f.kind).join(',');
     fixturesBuilt = true;
@@ -1115,11 +1405,10 @@ export function createWorld(ground, canvas, opts) {
   /* --------------------------------------------------------------- state */
 
   let groundKey = '';
-  let haveState = false;
   let lastNow = 0;
 
   function setState(st) {
-    haveState = true;
+    clock.haveState = true;
     weather = st.weather || 'clear';
     const key = st.day + ':' + st.season;
     if (key !== groundKey) {
@@ -1131,37 +1420,42 @@ export function createWorld(ground, canvas, opts) {
     syncFixtures(st);
     syncResidents(st);
     syncWeather(st);
-    paintWindows();
+    /* who is at home may have changed; the windows are painted here at
+     * the hour the last frame drew, and the next frame moves them on if
+     * the light has moved a step */
+    paintWindows(windowDark);
+    occupancyDirty = false;
     lastNow = performance.now();
   }
 
   /* -------------------------------------------------------------- frame */
 
-  const phaseInfo = { phase: 2, index: 2, name: 'afternoon', darkness: 0 };
+  const phaseInfo = { phase: 2, index: 2, name: 'afternoon', darkness: 0,
+                      dayFrac: 0.5 };
+  let windowStep = -1;
 
-  function rawPhase(now) {
-    return Math.max(0, Math.min(4.999, (now - phaseStart) / tickMs * 5));
-  }
-
-  function phaseNow(now) {
-    if (forcedPhase >= 0) return forcedPhase;
-    if (!haveState) return 2;
-    /* a paused day does not keep turning its light */
-    return paused ? pausedPhase : rawPhase(now);
+  /* Where the day is, 0..1 (clock.js): a frozen phase is shown at its
+   * midpoint, which is also its key in the light table (dawn 0.2, morning
+   * 0.4, afternoon 0.6, evening 0.8, night 0.0); `?clock=` pins the clock
+   * outright; a paused day does not keep turning its light. */
+  function dayFraction(now) {
+    return Clock.fraction(clock, now);
   }
 
   function frame(now) {
     const dt = Math.min(0.05, lastNow ? Math.max(0, (now - lastNow) / 1000)
                                       : 0.016);
     lastNow = now;
-    const ph = phaseNow(now);
-    updateSky(ph);
-    const dark = darkness(ph);
-    const night = dark > 0.2;
-    if (night !== nightOn || occupancyDirty) {
-      nightOn = night;
+    const f = dayFraction(now);
+    updateSky(f);
+    const dark = darkNow;
+    /* repaint the windows when the darkness has moved a step, or when who
+     * is at home has changed; not once a frame */
+    const step = Math.round(dark * WINDOW_STEPS);
+    if (step !== windowStep || occupancyDirty) {
+      windowStep = step;
       occupancyDirty = false;
-      paintWindows();
+      paintWindows(step / WINDOW_STEPS);
     }
     /* people do not become part of the scenery after dark: the same small
      * warm emissive keeps an outside figure legible at night */
@@ -1177,18 +1471,21 @@ export function createWorld(ground, canvas, opts) {
     controls.update();
     renderer.render(scene, camera);
 
-    const idx = Math.min(4, Math.floor(ph));
-    phaseInfo.phase = ph;
-    phaseInfo.index = idx;
-    phaseInfo.name = PHASE_NAMES[idx];
+    /* the five names are equal fifths of the same clock the light reads;
+     * Clock.phaseAt is where that fact lives. */
+    const info = Clock.phaseAt(f);
+    phaseInfo.phase = info.phase;
+    phaseInfo.index = info.index;
+    phaseInfo.name = info.name;
     phaseInfo.darkness = dark;
+    phaseInfo.dayFrac = f;
     return phaseInfo;
   }
 
   /* -------------------------------------------------------------- pick */
 
   function pick(clientX, clientY, rect) {
-    if (!haveState) return null;
+    if (!clock.haveState) return null;
     ndc.set(((clientX - rect.left) / rect.width) * 2 - 1,
             -((clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
@@ -1221,16 +1518,149 @@ export function createWorld(ground, canvas, opts) {
   }
 
   function stateSummary() {
+    /* Who is outdoors, who is between cells (the page glides them, so a
+     * changed cell is a person visibly walking this tick), and who is out
+     * on the estate's edge. `outside` is everyone not in a flat; the two
+     * narrower counts are the ones a screenshot of the perimeter is about. */
+    let outside = 0, walking = 0, onPerimeter = 0;
+    for (let i = 0; i < people.length; i++) {
+      const p = people[i];
+      if (p.in) continue;
+      outside++;
+      if ((p.px != null && p.x !== p.px) ||
+          (p.py != null && p.y !== p.py)) walking++;
+      if (perimeterCells.has(p.x + ',' + p.y)) onPerimeter++;
+    }
     return { residents: people.length,
-             buildings: (ground.buildings || []).length };
+             buildings: (ground.buildings || []).length,
+             benches: benchCount, seated: seatedCount,
+             outside, walking, perimeter: onPerimeter };
+  }
+
+  /* --------------------------------------------------------------- focus */
+
+  /* A close camera on one spot, for a screenshot that can be read. The
+   * offset is longer than `controls.minDistance`, so the controls do not
+   * pull the camera back out again the moment it is placed. */
+  function focusAt(x, y, z) {
+    controls.target.set(x, y, z);
+    camera.position.set(x + 5.2, y + 5.4, z + 5.4);
+    controls.update();
+  }
+
+  /* Is the ground clear for six cells in this direction? A camera put too
+   * close behind a bench stands inside the block the bench is against. */
+  function clearAhead(b, fx, fz) {
+    for (let d = 1; d <= 6; d++) {
+      const x = b.cx + fx * d, y = b.cy + fz * d;
+      if (x < 0 || y < 0 || x >= W || y >= H) return false;
+      if (ground.codes[ground.rows[y][x]] === 'building') return false;
+    }
+    return true;
+  }
+
+  /* A bench is framed from the side it faces. That side is the path, which
+   * is open ground by definition; the courtyard's own benches have no path,
+   * so they take the first open side instead. */
+  function focusBenchAt(b) {
+    let { fx, fz } = b;
+    if (!clearAhead(b, fx, fz)) {
+      [fx, fz] = [[0, 1], [0, -1], [1, 0], [-1, 0]]
+        .filter(d => d[0] !== b.fx || d[1] !== b.fz)
+        .find(d => clearAhead(b, d[0], d[1])) || [fx, fz];
+    }
+    const y = TILE_TOP + 0.9;
+    controls.target.set(b.x, y, b.z);
+    camera.position.set(b.x + fx * 5.7, y + 5.7, b.z + fz * 5.7);
+    controls.update();
+  }
+
+  /* The busiest occupied bench, so `?focus=bench` lands on people rather
+   * than on an empty seat; any bench if the estate is indoors. */
+  function focusBench() {
+    const keys = Object.keys(benchByCell).sort();
+    if (!keys.length) return false;
+    const counts = {};
+    for (let i = 0; i < people.length; i++) {
+      const p = people[i];
+      if (p.in) continue;
+      const k = p.x + ',' + p.y;
+      if (benchByCell[k]) counts[k] = (counts[k] || 0) + 1;
+    }
+    let best = keys[0], bestN = -1;
+    keys.forEach(k => {
+      const n = counts[k] || 0;
+      if (n > bestN) { bestN = n; best = k; }
+    });
+    focusBenchAt(benchByCell[best]);
+    return true;
+  }
+
+  function focusCell(x, y) {
+    focusAt(x + 0.5, TILE_TOP + 0.6, y + 0.5);
+    return true;
+  }
+
+  /* A stretch of the outer path, framed from the road side. The busiest
+   * perimeter bench is the target (any perimeter bench if nobody is out),
+   * and the camera stands further back on the bench's outward side, off to
+   * one side along the path, so the shot holds the path and its
+   * neighbouring seats rather than a block's roof. The bench faces the
+   * estate, so this view is over its shoulder; the road side is the one
+   * side with no building between the camera and the seat. */
+  function focusPerimeter() {
+    const keys = Object.keys(benchByCell)
+      .filter(k => benchByCell[k].perimeter).sort();
+    if (!keys.length) return false;
+    const counts = {};
+    for (let i = 0; i < people.length; i++) {
+      const p = people[i];
+      if (p.in) continue;
+      const k = p.x + ',' + p.y;
+      if (benchByCell[k] && benchByCell[k].perimeter) {
+        counts[k] = (counts[k] || 0) + 1;
+      }
+    }
+    let best = keys[0], bestN = -1;
+    keys.forEach(k => {
+      const n = counts[k] || 0;
+      if (n > bestN) { bestN = n; best = k; }
+    });
+    const b = benchByCell[best];
+    const { fx, fz } = b;
+    const sx = fz, sz = -fx;          // along the path, across the view
+    const ox = -fx, oz = -fz;         // away from the estate, to the road
+    const y = TILE_TOP + 0.9;
+    controls.target.set(b.x + sx * 2.0, y, b.z + sz * 2.0);
+    camera.position.set(b.x + ox * 6.0 + sx * 3.0,
+                        y + 6.2,
+                        b.z + oz * 6.0 + sz * 3.0);
+    controls.update();
+    return true;
+  }
+
+  /* What the route machinery is doing, for the page's debug hook: how many
+   * walks are in flight, the longest one's waypoints, and how many positions
+   * ever had to fall back to a straight line. */
+  function routeStats() {
+    const now = performance.now();
+    let active = 0;
+    for (let i = 0; i < people.length; i++) {
+      const r = routes[i];
+      if (r && r.total > 1e-6 && now - routeT0[i] < routeDur[i]) active++;
+    }
+    return { active, maxWaypoints: routeMaxPoints,
+             fallbacks: routeFallbacks };
   }
 
   return {
     scene, camera, renderer, controls,
-    setState, frame, resize, pick, stateSummary,
+    setState, frame, resize, pick, stateSummary, focusBench, focusPerimeter,
+    focusCell, routeStats,
     phaseIndex: () => phaseInfo.index,
     phaseName: () => phaseInfo.name,
-    hasState: () => haveState,
+    dayFraction: () => phaseInfo.dayFrac,
+    hasState: () => clock.haveState,
     staticMode,
   };
 }

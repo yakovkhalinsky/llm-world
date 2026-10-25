@@ -87,9 +87,38 @@ SPEC = {
     # broke every few days. A kind the estate cannot keep up with still
     # fails; it just has to be used past what its own upkeep can carry.
     "fixtures": {
-        "bench":      {"affords": {"rest": 0.55, "company": 0.25},
-                       "capacity": 2, "decay": 0.00030, "loud": 0.015,
-                       "carry": 2,
+        # A bench's own affording is modest, and `quiet` is small: a seat
+        # in the open is not a silent room. The perimeter's benches read
+        # `perimeter_bonus` below, which is what makes the edge worth the
+        # walk — the quiet and green of the ring road's margin, and the
+        # stroll itself. It is a bonus on the place rather than a new need
+        # or a new subsystem: the chooser already knows how to weigh one.
+        #
+        # The bonus is deliberately no larger than the bench's own afford
+        # for each need, and it is folded into the base *before* condition
+        # and congestion scale it. Both facts matter: a worn seat loses the
+        # bonus with its condition, and a full one loses it to the crowd,
+        # so an edge seat at capacity is worth no more than an empty
+        # courtyard seat — the edge is a nudge on the place, not a second
+        # bench on top of a bench. (Folded in afterwards, the old 0.55 /
+        # 0.45 / 0.75 bonus kept its full value on a worn or crowded seat,
+        # and for quiet it was four times the bench itself.)
+        #
+        # The values sit at the top of that band because a small bonus
+        # cannot pay for the walk out: travel is priced per cell, and a
+        # one-third bonus leaves the edge unvisited. At the bench's own
+        # afford the edge is worth the stroll to people already near it,
+        # and still loses to a fresh courtyard seat once it is full.
+        "bench":      {"affords": {"rest": 0.55, "company": 0.25,
+                                   "quiet": 0.18},
+                       # A bench's capacity is a hard seat count, not only
+                       # the congestion term: two people sit on it, and a
+                       # third is not "a bit less comfortable", they are
+                       # standing. The chooser reads `hard_capacity`.
+                       "capacity": 2, "hard_capacity": True,
+                       "decay": 0.00030, "loud": 0.015, "carry": 2,
+                       "perimeter_bonus": {"rest": 0.55, "company": 0.25,
+                                           "quiet": 0.18},
                        "upkeep": 1.0, "break_prob": 0.0034, "glyph": "🪑"},
         "playground": {"affords": {"play": 0.95},
                        "capacity": 12, "decay": 0.00040, "loud": 0.110, "carry": 12,
@@ -158,13 +187,35 @@ SPEC = {
 
     # --------------------------------------------------------- the recipe
     "gen": {
-        "blocks": 4,
-        "block_floors": (3, 6),
-        "units_per_floor": (3, 5),
+        # One row of blocks along the north, not four around a courtyard:
+        # a block always hides what stands behind it, so the estate keeps
+        # its blocks on one far side and leaves the ground in front of them
+        # open. Both views look from the south-east, so a north row shows
+        # the courtyard, the shop, the pond, the playground and the
+        # perimeter path instead of standing in front of them. The row is
+        # two 12-cell blocks, centred, with the recipe's gap between them.
+        "layout": "row",
+        "blocks": 2,
+        # Fewer buildings, so each holds what two used to: the row is
+        # taller than the old four (7–9 floors against 3–6) and a little
+        # wider per floor (4–5 flats against 3–5), which keeps the total
+        # near the ~67 flats the four-block plan held at seed 42 (71 there,
+        # and 64–85 over the gate's eight seeds against 60–81 before).
+        "block_floors": (7, 9),
+        "units_per_floor": (4, 5),
         "block_gap": 2,                 # cells between a block and the road
         "road_width": 2,
         "playgrounds": 1,
         "benches": 7,
+        # The courtyard's seven benches are the old world and stay where
+        # they are. The second number is separate because the two are
+        # placed by different rules: the courtyard's fill the bands above
+        # and below it, and these stand on the outer side of the perimeter
+        # footpath, facing back across it, spread evenly around the four
+        # sides so the outside reads as furnished and every block has a
+        # seat out there.
+        "perimeter_path": True,
+        "perimeter_benches": 10,
         "tables": 2,
         "trees": 16,
         "lamps": 9,

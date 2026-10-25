@@ -229,6 +229,11 @@ def ground(est):
     return {
         "width": w["width"], "height": w["height"],
         "codes": codes, "rows": rows,
+        # What a step onto each site costs, from the pack — `null` where
+        # nobody may walk. The pages route their people over this ground, and
+        # the price of a lawn is the pack's fact: a renderer that wrote its
+        # own would be a second copy that drifts (grove b2/b34).
+        "walk": {name: rules.R["sites"][name].get("walk") for name in codes},
         "biome": w.get("biome"),
         "seed": w["seed"], "buildings": buildings, "units": units,
         # every glyph comes from the pack too. A page that spells its own
@@ -305,20 +310,34 @@ def snapshot(est, runner, lock):
                 "kind": hh.get("kind"), "age": r["age"],
                 "x": wh["x"], "y": wh["y"], "in": wh["mode"] == "in",
                 "unit": wh.get("unit"),
+                # the fixture this resident last used, so a view can seat
+                # them only where they chose to sit rather than wherever a
+                # walk happened to end
+                "fixture": wh.get("fixture"),
                 "px": px, "py": py, "pin": pmode == "in", "punit": punit,
                 "habit": r["habit"], "stress": round(r["stress"], 1),
                 "needs": {k: round(v, 2) for k, v in r["needs"].items()},
             })
         fixtures = [{"id": int(fid), "kind": f["kind"], "x": f["x"],
                      "y": f["y"], "c": round(f["condition"], 3),
-                     "uses": f["use_total"], "stock": f.get("stock")}
+                     "uses": f["use_total"], "stock": f.get("stock"),
+                     # how many can use it at once. The views seat people on
+                     # a bench up to its capacity, and capacity is the pack's
+                     # fact — a renderer that hardcoded two would be a second
+                     # home for it (grove b34).
+                     "cap": rules.R["fixtures"][f["kind"]].get("capacity", 0),
+                     # generation marks the benches it puts out beside the
+                     # perimeter footpath; `?focus=perimeter` needs the mark
+                     # to find them without a second copy of the geometry
+                     "perimeter": bool(f.get("perimeter"))}
                     for fid, f in w["fixtures"].items()]
         buildings = []
         for bid, b in w["buildings"].items():
             live = [u for u in b["units"]
                     if w["units"][str(u)]["household"] is not None]
             buildings.append({
-                "id": int(bid), "units": len(b["units"]), "lived": len(live),
+                "id": int(bid), "kind": b["kind"],
+                "units": len(b["units"]), "lived": len(live),
                 "power": b["power"], "water": b["water"],
             })
         shade, light = [], []
@@ -360,8 +379,32 @@ def _load_page():
 
     return (read("index.html")
             .replace("{{STYLE}}", "\n" + read("style.css"))
-            .replace("{{SCRIPT}}", read("boot.js") + read("scene.js")
-                     + read("panels.js")))
+            .replace("{{SCRIPT}}", read("walk.js") + read("boot.js")
+                     + read("scene.js") + read("panels.js")))
+
+
+WALK_JS = os.path.join(os.path.dirname(__file__), "page", "walk.js")
+
+_WALK_CACHE = None
+
+
+def _walk_bytes():
+    """The router the 3D page loads, and the plan page inlines.
+
+    One file, two pages: the 3D view is modules and the plan is classic
+    scripts, so it publishes itself as a global and is served rather than
+    imported. Served as JavaScript, never text/plain — a module (or a
+    script) the browser refuses to execute looks exactly like a broken
+    page.
+    """
+    global _WALK_CACHE
+    if _WALK_CACHE is None:
+        try:
+            with open(WALK_JS, "rb") as f:
+                _WALK_CACHE = f.read()
+        except OSError:
+            _WALK_CACHE = b""
+    return _WALK_CACHE
 
 
 PIXI_JS = os.path.join(os.path.dirname(__file__), "page",
@@ -434,6 +477,25 @@ def _page3d(rel):
     return data, ctype
 
 
+def _respond(handler, code, body, ctype):
+    """Write one response. Every response goes through here, so a header
+    added to one route cannot be forgotten on another.
+
+    `nosniff` is the whole point of the route: the vendored engine and the
+    page's modules are served by suffix, and a browser left to guess is a
+    browser that may run something the server did not send it as.
+    """
+    data = body if isinstance(body, bytes) else body.encode()
+    handler.send_response(code)
+    handler.send_header("Content-Type", ctype)
+    handler.send_header("Content-Length", str(len(data)))
+    handler.send_header("X-Content-Type-Options", "nosniff")
+    handler._nosniff_sent = True      # `end_headers` adds it only if unset
+    handler.send_header("Cache-Control", "no-store")
+    handler.end_headers()
+    handler.wfile.write(data)
+
+
 def _ip_hint(host):
     if host != "0.0.0.0":
         return ("local only: http://localhost:{}"
@@ -450,34 +512,44 @@ def _ip_hint(host):
         return "lan ip undetectable — check hostname -I"
 
 
-def cmd_web(args):
-    page = _load_page()          # loaded once, so a broken script fails here
-    est = Estate(args)
-    lock = threading.Lock()
-    runner = SimRunner(est, lock, args.tick_seconds, est.llm)
-    # the record the estate already has. Without this the dashboard showed
-    # an empty chronicle on every restart while the database held a year of
-    # it — the write path and the read path each worked, and nothing joined
-    # them. (The patch that was supposed to add this line silently matched
-    # nothing, which is why it is asserted now.)
-    runner.chronicle = list(est.history)
-    runner.past_lines = {d["day"]: d["line"] for d in est.past_days}
-    runner.past_news = {d["day"]: d["says"] for d in est.past_days if d["says"]}
-    runner.daybooks = {d["day"]: d["book"] for d in est.past_days if d["book"]}
-    runner.start()
+def make_handler(page, est, lock, runner):
+    """Build the request handler around a planted estate.
+
+    A factory rather than a closure inside `cmd_web`: the tests start a
+    real `ThreadingHTTPServer` on port 0 with this handler, and a test that
+    built its own would pin a server nobody serves.
+    """
 
     class Handler(BaseHTTPRequestHandler):
+        # The stdlib's default is HTTP/0.9, which is what a reply to a
+        # request line it could not parse goes out as: a bare body with no
+        # status line and no headers, so `end_headers` below never got the
+        # chance to add nosniff to the 400. Every client this page has
+        # speaks 1.0 or later.
+        default_request_version = "HTTP/1.0"
+
         def _send(self, code, body, ctype):
-            data = body if isinstance(body, bytes) else body.encode()
-            self.send_response(code)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(data)
+            _respond(self, code, body, ctype)
 
         def log_message(self, *_a):   # keep the terminal readable
             pass
+
+        def send_response(self, code, message=None):
+            # a fresh response per request, including on a keep-alive
+            # connection: the flag below must not leak across requests
+            self._nosniff_sent = False
+            super().send_response(code, message)
+
+        def end_headers(self):
+            # `send_error` writes the stdlib's own HTML for a 501 (PUT,
+            # HEAD) or a 400 (a malformed request line) and never passes
+            # through `_respond`, so those responses had no nosniff. The
+            # header belongs to every response, not to one route's writer;
+            # `_respond` marks its own so nothing is sent twice.
+            if not getattr(self, "_nosniff_sent", False):
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self._nosniff_sent = True
+            super().end_headers()
 
         def do_GET(self):
             path = urlparse(self.path).path
@@ -489,6 +561,14 @@ def cmd_web(args):
                     self._send(200, b, "application/javascript; charset=utf-8")
                 else:
                     self._send(404, "the engine's file is missing", "text/plain")
+            elif path == "/walk.js":
+                # shared by both viewers: the plan inlines it, the 3D page
+                # loads it as a classic script before its module
+                b = _walk_bytes()
+                if b:
+                    self._send(200, b, "application/javascript; charset=utf-8")
+                else:
+                    self._send(404, "the router is missing", "text/plain")
             elif path in ("/3d", "/3d/"):
                 f = _page3d("index.html")
                 if f:
@@ -538,6 +618,27 @@ def cmd_web(args):
                            "application/json")
             else:
                 self._send(404, "no such thing", "text/plain")
+
+    return Handler
+
+
+def cmd_web(args):
+    page = _load_page()          # loaded once, so a broken script fails here
+    est = Estate(args)
+    lock = threading.Lock()
+    runner = SimRunner(est, lock, args.tick_seconds, est.llm)
+    # the record the estate already has. Without this the dashboard showed
+    # an empty chronicle on every restart while the database held a year of
+    # it — the write path and the read path each worked, and nothing joined
+    # them. (The patch that was supposed to add this line silently matched
+    # nothing, which is why it is asserted now.)
+    runner.chronicle = list(est.history)
+    runner.past_lines = {d["day"]: d["line"] for d in est.past_days}
+    runner.past_news = {d["day"]: d["says"] for d in est.past_days if d["says"]}
+    runner.daybooks = {d["day"]: d["book"] for d in est.past_days if d["book"]}
+    runner.start()
+
+    Handler = make_handler(page, est, lock, runner)
 
     host = "0.0.0.0" if args.public else "127.0.0.1"
     httpd = ThreadingHTTPServer((host, args.port), Handler)
