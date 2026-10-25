@@ -45,27 +45,43 @@
    * grazing sun: below about 25° the shadow camera sees the estate
    * edge-on and a low sun throws long rectangles across everything beyond
    * it. The colour says the hour; the elevation stays high enough for the
-   * light to fall like light. */
+   * light to fall like light.
+   *
+   * The night is lit by the moon, not by the sky: the hemisphere fill is
+   * low (0.35) and a deep blue, so a night has depth and the warm lamps
+   * and the grove's few glows carry it, rather than a flat blue wash. By
+   * day the sun is the strong key and the fill is held at 0.55, so blocks
+   * and trees have a shadow side. */
   var LIGHT = [
-    { at: 0.00, sun: 0x9fb4e6, sunI: 0.55,
-      offset: [-20, 28, -28], sky: 0x17243f, hemiSky: 0x6e86b8,
-      hemiGround: 0x2a3038, hemiI: 1.05, dark: 1.0 },
+    { at: 0.00, sun: 0xa8b8d8, sunI: 0.35,
+      offset: [-20, 28, -28], sky: 0x0e1526, hemiSky: 0x3a4a6e,
+      hemiGround: 0x14171c, hemiI: 0.35, dark: 1.0 },
     { at: 0.20, sun: 0xffb27a, sunI: 1.15,
       offset: [28, 20, 20], sky: 0xe6b28c, hemiSky: 0xffd6ae,
       hemiGround: 0x4a4034, hemiI: 0.55, dark: 0.35 },
-    { at: 0.40, sun: 0xfff2dc, sunI: 2.35,
+    { at: 0.40, sun: 0xfff2dc, sunI: 2.6,
       offset: [24, 40, 26], sky: 0x9fcdf2, hemiSky: 0xdcecff,
-      hemiGround: 0x4e5648, hemiI: 0.82, dark: 0.0 },
-    { at: 0.60, sun: 0xffe0b0, sunI: 2.15,
+      hemiGround: 0x4e5648, hemiI: 0.55, dark: 0.0 },
+    { at: 0.60, sun: 0xffe0b0, sunI: 2.4,
       offset: [-24, 36, 18], sky: 0xa9d6f5, hemiSky: 0xe4f0ff,
-      hemiGround: 0x55584a, hemiI: 0.78, dark: 0.0 },
+      hemiGround: 0x55584a, hemiI: 0.55, dark: 0.0 },
     { at: 0.80, sun: 0xff8a4c, sunI: 1.35,
       offset: [-30, 20, -14], sky: 0xd98a62, hemiSky: 0xffc9a8,
       hemiGround: 0x40372e, hemiI: 0.48, dark: 0.50 },
-    { at: 1.00, sun: 0x9fb4e6, sunI: 0.55,
-      offset: [-20, 28, -28], sky: 0x17243f, hemiSky: 0x6e86b8,
-      hemiGround: 0x2a3038, hemiI: 1.05, dark: 1.0 },
+    { at: 1.00, sun: 0xa8b8d8, sunI: 0.35,
+      offset: [-20, 28, -28], sky: 0x0e1526, hemiSky: 0x3a4a6e,
+      hemiGround: 0x14171c, hemiI: 0.35, dark: 1.0 },
   ];
+
+  /* ACES exposure: a little over by day, a little under at night, eased by
+   * `dark` — the warm lamps stay strong against a darker night. */
+  var EXPOSURE_DAY = 1.1;
+  var EXPOSURE_NIGHT = 0.95;
+  /* The fog leans this far from the sky's colour toward the hemisphere's
+   * ground colour by day, so the horizon sits a little darker than the sky
+   * and the board does not float. It goes to nothing as `dark` comes on: a
+   * night's fog is the night sky's own colour. */
+  var FOG_GROUND = 0.15;
 
   function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
   function mixNum(a, b, f) { return a + (b - a) * f; }
@@ -195,12 +211,28 @@
       sky: lerp3(la.sky, lb.sky, t),
       hemiSky: lerp3(la.hemiSky, lb.hemiSky, t),
       hemiGround: lerp3(la.hemiGround, lb.hemiGround, t),
+      exposure: exposureAt(mixNum(a.dark, b.dark, t)),
     };
+  }
+
+  /* the renderer's exposure for a darkness 0..1 */
+  function exposureAt(dark) {
+    return mixNum(EXPOSURE_DAY, EXPOSURE_NIGHT, clamp01(dark));
+  }
+
+  /* how far the fog leans toward the ground colour at a darkness 0..1 */
+  function fogGroundMix(dark) {
+    return FOG_GROUND * (1 - clamp01(dark));
   }
 
   var api = {
     PHASE_NAMES: PHASE_NAMES,
     LIGHT: LIGHT,
+    EXPOSURE_DAY: EXPOSURE_DAY,
+    EXPOSURE_NIGHT: EXPOSURE_NIGHT,
+    FOG_GROUND: FOG_GROUND,
+    exposureAt: exposureAt,
+    fogGroundMix: fogGroundMix,
     clamp01: clamp01,
     mixNum: mixNum,
     smooth01: smooth01,
