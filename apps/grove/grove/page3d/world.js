@@ -130,13 +130,28 @@ function makeBatch(scene, geo, mat, cap, opts) {
     scene.add(b.mesh);
   }
   alloc(Math.max(8, cap));
+  /* past its capacity mid-build, a batch doubles and keeps what it has:
+   * nothing added is ever dropped */
+  function grow() {
+    const old = b.mesh, had = b.n;
+    b.mesh = null;                  // alloc must not dispose it yet
+    alloc(b.cap * 2);
+    b.mesh.instanceMatrix.array.set(
+      old.instanceMatrix.array.subarray(0, had * 16));
+    if (old.instanceColor && b.mesh.instanceColor) {
+      b.mesh.instanceColor.array.set(
+        old.instanceColor.array.subarray(0, had * 3));
+    }
+    scene.remove(old);
+    old.dispose();
+  }
   b.begin = n => {
     if (n > b.cap) alloc(Math.max(n, b.cap * 2));
     b.n = 0;
     b.owner.length = 0;
   };
   b.add = (matrix, colour, owner) => {
-    if (b.n >= b.cap) return;
+    if (b.n >= b.cap) grow();
     b.mesh.setMatrixAt(b.n, matrix);
     b.mesh.setColorAt(b.n, colour);
     b.owner[b.n] = owner;
@@ -804,22 +819,30 @@ export function createWorld(first, canvas, opts) {
   let faded = {};
   const bushFloor = new THREE.Color(BUSH_FLOOR);
 
+  /* every plant the server sent, by id, for picking and the summary */
+  function indexPlants(st) {
+    plantById = {};
+    (st.plants || []).forEach(p => { plantById[p.id] = p; });
+  }
+
+  /* The plant meshes come from Forest.drawList and nothing else (the
+   * forest_check test holds this function to that): the trees drawn are
+   * exactly the trees that stand for the router. */
   function buildPlants(st) {
-    const plants = st.plants || [];
-    const n = plants.length;
-    const shown = Forest.drawn(st).ids;
+    indexPlants(st);
+    const list = Forest.drawList(st);
+    const n = list.length;
     B.trunk.begin(n); B.cone.begin(n * 3); B.crown.begin(n * 3);
     B.strand.begin(n * 16); B.frond.begin(n * 4); B.bush.begin(n);
     B.fruit.begin(n * 4); B.arm.begin(n * 2); B.log.begin(n);
-    GHOSTED.forEach(k => GH[k].begin(64));
-    plantById = {};
+    /* the ghosts are sized from the faded set, as the solid ones are from
+     * the plants: a weeping willow alone is sixteen strands */
+    const nf = Object.keys(faded).length;
+    GH.trunk.begin(nf); GH.cone.begin(nf * 3); GH.crown.begin(nf * 3);
+    GH.strand.begin(nf * 16);
     treeBoxes = [];
     const dim = pal.canopyDim;
-    for (let k = 0; k < n; k++) {
-      const p = plants[k];
-      plantById[p.id] = p;
-      if (!(p.x >= 0 && p.y >= 0 && p.x < N && p.y < N)) continue;
-      if (!shown[p.id]) continue;          // thinned (forest.js drawn)
+    for (const p of list) {
       const sp = p.sp;
       const spot = spotOf(p);
       const gy = heightAt(spot.x, spot.z);
@@ -1503,8 +1526,20 @@ export function createWorld(first, canvas, opts) {
                                               e[2].fly ? 1.6 : 0.3));
     return fadeTargets;
   }
+  let fadeView = '';
   function updateFade(now) {
-    if (!st0 || (!staticMode && now - fadeAt < FADE_EVERY)) return;
+    if (!st0) return;
+    if (staticMode) {
+      /* the screenshot path draws every frame: look again only when the
+       * camera, the creature watched or the week has changed */
+      const c = camera.position, t = controls.target;
+      const view = [c.x, c.y, c.z, t.x, t.z, followId, selectedId,
+                    builtTick].join(' ');
+      if (view === fadeView) return;
+      fadeView = view;
+    } else if (now - fadeAt < FADE_EVERY) {
+      return;
+    }
     fadeAt = now;
     const ids = Forest.occluders(treeBoxes, camera.position,
                                  fadeTargetsNow());

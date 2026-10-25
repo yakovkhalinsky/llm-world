@@ -152,24 +152,28 @@ def _behave(w, a, spec, evs, rng, winter):
 
 # ------------------------------------------------------------------ water
 
-_SHORE = {"key": None, "cells": ()}
+_SHORE = {"cells": None, "tick": None, "shore": ()}
 
 
 def shore_cells(w):
     """Every land cell that touches water (eight ways), in row order. Water
     does not move in a week, so the list is kept for the week, outside the
-    world (it is never saved)."""
-    key = (id(w["cells"]), w["tick"])
-    if _SHORE["key"] != key:
+    world (it is never saved). The cache holds the world's own cell grid and
+    is matched by identity (`is`), not by id(): while it holds the grid, no
+    other world's grid can be that object, so one world can never be handed
+    another's shore."""
+    cells = w["cells"]
+    if _SHORE["cells"] is not cells or _SHORE["tick"] != w["tick"]:
         size = w["size"]
         out = []
         for y in range(size):
             for x in range(size):
-                if w["cells"][y][x]["terrain"] != "water" and \
+                if cells[y][x]["terrain"] != "water" and \
                         _near_water(w, x, y, 1):
                     out.append((x, y))
-        _SHORE["key"], _SHORE["cells"] = key, tuple(out)
-    return _SHORE["cells"]
+        _SHORE["cells"], _SHORE["tick"] = cells, w["tick"]
+        _SHORE["shore"] = tuple(out)
+    return _SHORE["shore"]
 
 
 def _go_drink(w, a, spec, speed):
@@ -190,10 +194,9 @@ def _go_drink(w, a, spec, speed):
         k = (d, sy, sx)
         if best is None or k < best:
             best = k
-    if best is None:
-        return False
-    if best[0]:
-        step_toward(w, a, best[2], best[1], speed, False)
+    if best is None or best[0] == 0:
+        return False            # none in reach, or already on the shore
+    step_toward(w, a, best[2], best[1], speed, False)
     return True
 
 

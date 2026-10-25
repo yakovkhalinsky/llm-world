@@ -68,7 +68,8 @@ def carve_creek(cells, size, rng, gr):
     """A creek from one edge of the map to the other, down the low ground.
 
     It runs along x or y (the rng's choice), keeping three cells off the
-    side edges, and takes one cell at a time either straight on or one cell
+    side edges (one on a map under seven cells across, so the smallest map
+    still gets a creek), and takes one cell at a time either straight on or one cell
     to the side, preferring the lower ground, so it meanders. Each sideways
     step is two cells, so the water is joined edge to edge (a creature that
     moves diagonally still cannot slip between two of its cells). Every
@@ -76,7 +77,10 @@ def carve_creek(cells, size, rng, gr):
     creature can cross, marked `ford`. Returns the path, fords included,
     from the source edge to the mouth."""
     horiz = rng.random() < 0.5
-    lo, hi = 3, size - 4
+    edge = 3 if size >= 7 else 1
+    lo, hi = edge, size - 1 - edge
+    if lo > hi:                     # a map too small for any creek
+        return []
 
     def xy(a, b):
         return (a, b) if horiz else (b, a)
@@ -138,51 +142,132 @@ def carve_creek(cells, size, rng, gr):
     return path
 
 
+def _cheb_from(cells, size, hit):
+    """Steps (eight ways) from every cell to the nearest cell `hit` picks
+    out; size * 2 where there is none."""
+    from collections import deque
+    far = size * 2
+    dist = [[far] * size for _ in range(size)]
+    q = deque()
+    for y in range(size):
+        for x in range(size):
+            if hit(cells[y][x]):
+                dist[y][x] = 0
+                q.append((x, y))
+    while q:
+        x, y = q.popleft()
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                nx, ny = x + dx, y + dy
+                if W.in_bounds(size, nx, ny) and dist[ny][nx] > dist[y][x] + 1:
+                    dist[ny][nx] = dist[y][x] + 1
+                    q.append((nx, ny))
+    return dist
+
+
+def _running(c):
+    return c.get("water") == "creek" or bool(c.get("ford"))
+
+
 def dig_pond(cells, size, rng, gr):
     """A still pond in a low spot, away from the creek, the edge and the
-    other ponds: a rough disc of water one or two cells across."""
-    creek = [(x, y) for y in range(size) for x in range(size)
-             if cells[y][x].get("water") == "creek"
-             or cells[y][x].get("ford")]
-    ponds = [(x, y) for y in range(size) for x in range(size)
-             if cells[y][x].get("water") == "pond"]
+    other ponds: a rough disc of water one or two cells across.
+
+    It asks for room first (four clear cells past its own radius between it
+    and the creek or another pond), and takes less as it must, down to a
+    pond whose centre is two steps from the nearest running or standing
+    water. No cell of it ever touches the creek, a ford or another pond
+    (not even on a diagonal), and it is one piece (four ways) around its
+    centre, so every pond dug is one pond. It never cuts the land in two:
+    a spot that would is passed over for the next. It keeps off the border
+    row, three cells in where it can and one where the map is small. None
+    if the map has no room."""
     r_lo, r_hi = gr.get("pond_radius", (1.3, 2.3))
     r = r_lo + (r_hi - r_lo) * rng.random()
-    best = None
-    for gap in (4, 3, 2):
-        for y in range(3, size - 3):
-            for x in range(3, size - 3):
-                if any(max(abs(x - cx), abs(y - cy)) < gap + int(r)
-                       for cx, cy in creek):
-                    continue
-                if any(max(abs(x - px), abs(y - py)) < 5 for px, py in ponds):
-                    continue
-                score = cells[y][x]["elev"] + rng.random() * 0.2
-                if best is None or score < best[0]:
-                    best = (score, x, y)
-        if best:
-            break
-    if best is None:
-        return None
-    _, px, py = best
-    for y in range(max(0, py - 3), min(size, py + 4)):
-        for x in range(max(0, px - 3), min(size, px + 4)):
+    near_creek = _cheb_from(cells, size, _running)
+    near_pond = _cheb_from(cells, size, lambda c: c.get("water") == "pond")
+    pieces = len(land_parts(cells, size))
+    for edge in (3, 1):
+        for gap in (4, 3, 2, 1, 0):
+            need = max(2, gap + int(r))
+            cands = []
+            for y in range(edge, size - edge):
+                for x in range(edge, size - edge):
+                    if near_creek[y][x] < need or near_pond[y][x] < need:
+                        continue
+                    cands.append((cells[y][x]["elev"] + rng.random() * 0.2,
+                                  y, x))
+            for _, py, px in sorted(cands):
+                if _fill_pond(cells, size, rng, r, px, py,
+                              near_creek, near_pond, pieces):
+                    return (px, py)
+    return None
+
+
+def _fill_pond(cells, size, rng, r, px, py, near_creek, near_pond, pieces):
+    wet = set()
+    for y in range(max(1, py - 3), min(size - 1, py + 4)):
+        for x in range(max(1, px - 3), min(size - 1, px + 4)):
             d = ((x - px) ** 2 + (y - py) ** 2) ** 0.5
             # a ragged shore: the rim cells are hashed in or out
             if d <= r - 0.5 or (d <= r + 0.4 and rng.random() < 0.55):
-                c = cells[y][x]
-                if c.get("water") == "creek" or c.get("ford"):
-                    continue
-                c["terrain"] = "water"
-                c["water"] = "pond"
-                c["elev"] = min(c["elev"], 0.0)
-    return (px, py)
+                if near_creek[y][x] >= 2 and near_pond[y][x] >= 2:
+                    wet.add((x, y))
+    # only the cells joined (four ways) to the centre: no stray puddles
+    keep, todo = {(px, py)}, [(px, py)]
+    while todo:
+        x, y = todo.pop()
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            n = (x + dx, y + dy)
+            if n in wet and n not in keep:
+                keep.add(n)
+                todo.append(n)
+    was = {}
+    for x, y in sorted(keep, key=lambda p: (p[1], p[0])):
+        c = cells[y][x]
+        was[(x, y)] = dict(c)
+        c["terrain"] = "water"
+        c["water"] = "pond"
+        c["elev"] = min(c["elev"], 0.0)
+    if len(land_parts(cells, size)) <= pieces:
+        return True
+    # it would cut the land in two: put the ground back, try the next spot
+    for (x, y), c in was.items():
+        cells[y][x].clear()
+        cells[y][x].update(c)
+    return False
+
+
+def ponds(cells, size):
+    """The ponds, each a list of its cells (joined eight ways, so two ponds
+    that touched would count as one), in row order of their first cell."""
+    seen, out = set(), []
+    for y in range(size):
+        for x in range(size):
+            if (x, y) in seen or cells[y][x].get("water") != "pond":
+                continue
+            part, todo = [], [(x, y)]
+            seen.add((x, y))
+            while todo:
+                cx, cy = todo.pop()
+                part.append((cx, cy))
+                for dy in (-1, 0, 1):
+                    for dx in (-1, 0, 1):
+                        n = (cx + dx, cy + dy)
+                        if n not in seen and W.in_bounds(size, *n) and \
+                                cells[n[1]][n[0]].get("water") == "pond":
+                            seen.add(n)
+                            todo.append(n)
+            out.append(sorted(part, key=lambda p: (p[1], p[0])))
+    return out
 
 
 def land_parts(cells, size):
-    """The land, in pieces a walking creature cannot leave: every cell that
-    is not water, joined to its eight neighbours (the creatures step
-    diagonally). Largest piece first, then by its first cell."""
+    """The land, in pieces: every cell that is not water, joined to its four
+    neighbours. The creatures step diagonally, but the page walks them on a
+    four-way grid and will not cut a corner between two water cells, so a
+    piece joined only at a corner is two pieces here. Largest piece first,
+    then by its first cell."""
     seen = [[False] * size for _ in range(size)]
     parts = []
     for y in range(size):
@@ -194,14 +279,12 @@ def land_parts(cells, size):
             while todo:
                 cx, cy = todo.pop()
                 part.append((cx, cy))
-                for dy in (-1, 0, 1):
-                    for dx in (-1, 0, 1):
-                        nx, ny = cx + dx, cy + dy
-                        if (dx or dy) and W.in_bounds(size, nx, ny) and \
-                                not seen[ny][nx] and \
-                                not _is_water(cells, nx, ny):
-                            seen[ny][nx] = True
-                            todo.append((nx, ny))
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = cx + dx, cy + dy
+                    if W.in_bounds(size, nx, ny) and not seen[ny][nx] and \
+                            not _is_water(cells, nx, ny):
+                        seen[ny][nx] = True
+                        todo.append((nx, ny))
             parts.append(sorted(part, key=lambda p: (p[1], p[0])))
     parts.sort(key=lambda p: (-len(p), p[0][1], p[0][0]))
     return parts
@@ -283,10 +366,12 @@ def generate(seed: int, size: int = None, biome: str = None) -> dict:
     for y in range(size):
         for x in range(size):
             e = elev[y][x]
-            if e <= e_lo:
+            if e <= e_lo and (gr.get("creeks", 0) or gr.get("ponds")):
+                # a pack with a creek and dug ponds has no other water: the
+                # lowest ground is a damp hollow the pond will likely take
+                cells[y][x]["terrain"] = "soil"
+            elif e <= e_lo:
                 cells[y][x]["terrain"] = "water"
-                if gr.get("creeks", 0) or gr.get("ponds"):
-                    cells[y][x]["water"] = "pond"
                 water_cells.append((x, y))
             elif e >= e_hi:
                 cells[y][x]["terrain"] = "rock"
@@ -304,11 +389,12 @@ def generate(seed: int, size: int = None, biome: str = None) -> dict:
         wrng = W.rng_for(seed, 0, "water")
         for _ in range(int(gr.get("creeks", 0))):
             path = carve_creek(cells, size, wrng, gr)
-            st["creeks"].append([[x, y] for x, y in path])
+            if path:
+                st["creeks"].append([[x, y] for x, y in path])
+        join_land(cells, size)
         lo, hi = gr.get("ponds", (0, 0))
         for _ in range(wrng.randint(int(lo), int(hi))):
-            dig_pond(cells, size, wrng, gr)
-        join_land(cells, size)
+            dig_pond(cells, size, wrng, gr)     # never cuts the land
         water_cells = [(x, y) for y in range(size) for x in range(size)
                        if cells[y][x]["terrain"] == "water"]
         rock_cells = [(x, y) for y in range(size) for x in range(size)

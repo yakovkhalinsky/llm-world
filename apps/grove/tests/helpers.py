@@ -12,12 +12,14 @@ import types
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def make_grove(seed=42, steps=0):
+def make_grove(seed=42, steps=0, size=None):
     tmp = tempfile.TemporaryDirectory()
     data = os.path.join(tmp.name, "data")
     env = dict(os.environ, PYTHONPATH=ROOT)
     subprocess.run([sys.executable, "-m", "grove", "--data", data, "new",
-                    "--seed", str(seed)], cwd=ROOT, env=env, check=True,
+                    "--seed", str(seed)]
+                   + (["--size", str(size)] if size else []),
+                   cwd=ROOT, env=env, check=True,
                    stdout=subprocess.DEVNULL)
     if steps:
         subprocess.run([sys.executable, "-m", "grove", "--data", data,

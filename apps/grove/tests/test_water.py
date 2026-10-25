@@ -1,7 +1,8 @@
-"""Every grove has water: a creek across the whole map and at least one
-pond, on every seed, with the land still one piece (fords), the same on
-every run; the desert's map is untouched; and a thirsty creature walks to
-the water and drinks, the same way every time."""
+"""Every grove has water: a creek across the whole map and one or two
+ponds, on every seed and every map size that has room, with the land still
+one piece four ways (fords), the same on every run; the desert's map is
+untouched; and a thirsty creature walks to the water and drinks, the same
+way every time."""
 
 import json
 import os
@@ -16,6 +17,28 @@ from grove.engine import animals
 from tests.helpers import ROOT
 
 SEEDS = range(0, 48)
+SIZES = range(4, 31)
+POND_ROOM = 7           # from seven cells across, every map has a pond
+
+
+def _flat(size=20, water=((10, 10),)):
+    """A bare, flat world of soil with water only where it is put, and no
+    grass, plants or creatures, so nothing but thirst moves a creature."""
+    w = W.new_state(1, size)
+    w["cells"] = [[{"terrain": "soil", "elev": 0.5, "fert": 0.5,
+                    "moisture": 0.5, "grass": 0.0, "mushroom": 0,
+                    "carcass": 0} for _ in range(size)] for _ in range(size)]
+    for x, y in water:
+        w["cells"][y][x]["terrain"] = "water"
+        w["cells"][y][x]["water"] = "pond"
+    w["tick"] = 5
+    return w
+
+
+def _touches(cells, size, x, y, pick):
+    return any(W.in_bounds(size, x + dx, y + dy)
+               and pick(cells[y + dy][x + dx])
+               for dx in (-1, 0, 1) for dy in (-1, 0, 1))
 
 
 def _make(seed):
@@ -40,12 +63,107 @@ class WaterOnEverySeed(unittest.TestCase):
                 self.assertTrue({0, size - 1} <= xs or {0, size - 1} <= ys,
                                 path[:3])
                 self.assertGreaterEqual(len(creek), size - 4)
-                self.assertGreaterEqual(len(ponds), 1)
+                self.assertIn(len(gen.ponds(cells, size)), (1, 2))
                 for x, y in creek + ponds:
                     self.assertEqual(cells[y][x]["terrain"], "water")
                 # creek steps are edge to edge, never a diagonal gap
                 for (x0, y0), (x1, y1) in zip(path, path[1:]):
                     self.assertEqual(abs(x0 - x1) + abs(y0 - y1), 1)
+
+    def test_one_or_two_ponds_that_are_ponds(self):
+        # the pack says one or two ponds: that many separate ponds, dug, on
+        # every seed at the small, default and large sizes; no other water
+        # is called a pond, and no pond runs into the creek or a ford
+        for size in (8, 12, 16, 24, 32):
+            for seed in range(0, 120 if size <= 24 else 30):
+                st = gen.generate(seed, size)
+                cells = st["cells"]
+                found = gen.ponds(cells, size)
+                with self.subTest(size=size, seed=seed):
+                    self.assertIn(len(found), (1, 2))
+                    for y in range(size):
+                        for x in range(size):
+                            c = cells[y][x]
+                            if c["terrain"] == "water":
+                                self.assertIn(c.get("water"),
+                                              ("creek", "pond"))
+                            if c.get("water") == "pond":
+                                self.assertFalse(_touches(
+                                    cells, size, x, y, gen._running))
+
+    def test_dig_pond_never_gives_up_where_there_is_room(self):
+        # the old digger gave up on a fifth of the 16-cell maps; now it
+        # shrinks its asks, and only a map with no room at all has none
+        gr = rules.R["gen"]
+        for seed in range(0, 60):
+            st = gen.generate(seed, 16)
+            cells, size = st["cells"], 16
+            before = len(gen.ponds(cells, size))
+            got = gen.dig_pond(cells, size, W.rng_for(seed, 0, "more"), gr)
+            with self.subTest(seed=seed):
+                if got is None:
+                    continue
+                self.assertEqual(len(gen.ponds(cells, size)), before + 1)
+                self.assertEqual(len(gen.land_parts(cells, size)), 1)
+
+    def test_every_size_generates(self):
+        # the smallest maps used to crash on the creek's edge margin
+        for size in SIZES:
+            for seed in range(0, 12):
+                st = gen.generate(seed, size)
+                cells = st["cells"]
+                with self.subTest(size=size, seed=seed):
+                    self.assertEqual(len(cells), size)
+                    self.assertEqual(len(st["creeks"]), 1)
+                    path = st["creeks"][0]
+                    xs = {p[0] for p in path}
+                    ys = {p[1] for p in path}
+                    self.assertTrue({0, size - 1} <= xs
+                                    or {0, size - 1} <= ys)
+                    self.assertEqual(len(gen.land_parts(cells, size)), 1)
+                    n = len(gen.ponds(cells, size))
+                    self.assertLessEqual(n, 2)
+                    if size >= POND_ROOM:
+                        self.assertGreaterEqual(n, 1)
+                    for a in st["animals"].values():
+                        self.assertNotEqual(
+                            cells[a["y"]][a["x"]]["terrain"], "water")
+                    for p in st["plants"].values():
+                        self.assertNotEqual(
+                            cells[p["y"]][p["x"]]["terrain"], "water")
+
+    def test_cli_new_at_the_smallest_sizes(self):
+        import tempfile
+        for size in (4, 5, 6, 7):
+            with tempfile.TemporaryDirectory() as d:
+                out = subprocess.run(
+                    [sys.executable, "-m", "grove", "--data", d, "new",
+                     "--seed", "3", "--size", str(size)],
+                    cwd=ROOT, env=dict(os.environ, PYTHONPATH=ROOT),
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True)
+                self.assertEqual(out.returncode, 0, out.stderr)
+                self.assertIn(f"{size}×{size}", out.stdout)
+
+    def test_land_is_one_piece_four_ways(self):
+        # the page walks four ways and never cuts a corner between two
+        # water cells, so the land must join up four ways, at every size
+        for size in list(SIZES) + [32, 40, 48]:
+            for seed in range(0, 24 if size <= 30 else 10):
+                st = gen.generate(seed, size)
+                cells = st["cells"]
+                land = {(x, y) for y in range(size) for x in range(size)
+                        if cells[y][x]["terrain"] != "water"}
+                start = min(land, key=lambda p: (p[1], p[0]))
+                seen, todo = {start}, [start]
+                while todo:
+                    x, y = todo.pop()
+                    for n in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                        if n in land and n not in seen:
+                            seen.add(n)
+                            todo.append(n)
+                with self.subTest(size=size, seed=seed):
+                    self.assertEqual(len(seen), len(land))
 
     def test_land_is_one_piece(self):
         for seed in SEEDS:
@@ -107,6 +225,65 @@ class Drinking(unittest.TestCase):
                 W.in_bounds(size, x + dx, y + dy)
                 and st["cells"][y + dy][x + dx]["terrain"] == "water"
                 for dx in (-1, 0, 1) for dy in (-1, 0, 1)))
+
+    def test_shore_cache_follows_the_world(self):
+        # two worlds in the same week never share a shore list
+        a, b = _flat(water=((3, 3),)), _flat(water=((15, 15),))
+        sa = animals.shore_cells(a)
+        sb = animals.shore_cells(b)
+        self.assertIn((2, 2), sa)
+        self.assertNotIn((2, 2), sb)
+        self.assertIn((14, 14), sb)
+        self.assertEqual(animals.shore_cells(a), sa)
+        # a fresh grid at the same week (a loaded copy) is looked at anew
+        c = json.loads(json.dumps(b))
+        c["cells"][3][3]["terrain"] = "water"
+        self.assertIn((2, 2), animals.shore_cells(c))
+
+    def test_thirsty_creature_walks_to_the_nearest_shore(self):
+        spec = dict(rules.R["animals"]["rabbit"])
+        every, reach = spec["drink_every"], spec.get("drink_reach", 8)
+        w = _flat()
+        # the shore is the ring around (10, 10); from (10, 4) the nearest
+        # is five steps off, and the tie breaks on row, then column: (9, 9)
+        a = W.new_animal(1, "rabbit", 10, 4)
+        a["thirst"] = every
+        self.assertTrue(animals._go_drink(w, a, spec, 1))
+        self.assertEqual((a["x"], a["y"]), (9, 4))   # toward (9, 9)
+        a = W.new_animal(1, "rabbit", 10, 4)
+        a["thirst"] = every
+        self.assertTrue(animals._go_drink(w, a, spec, 3))
+        self.assertEqual((a["x"], a["y"]), (9, 6))
+        # not thirsty yet, too far to see the water, or already there
+        for pos, thirst in (((10, 4), every - 1),
+                            ((10, 10 - 2 - reach), every),
+                            ((9, 9), every)):
+            a = W.new_animal(1, "rabbit", *pos)
+            a["thirst"] = thirst
+            self.assertFalse(animals._go_drink(w, a, spec, 2), pos)
+            self.assertEqual((a["x"], a["y"]), pos)
+
+    def test_a_thirsty_creature_with_nothing_to_eat_goes_and_drinks(self):
+        # the whole week, not only the helper: a lone rabbit on bare ground
+        # seven steps from a pond walks straight there and drinks
+        w = _flat()
+        a = W.new_animal(1, "rabbit", 10, 2)
+        a["thirst"] = rules.R["animals"]["rabbit"]["drink_every"]
+        a["hunger"] = 0.0
+        w["animals"] = {1: a}
+        w["next_id"] = 2
+        path = []
+        for week in range(6, 12):
+            w["tick"] = week
+            animals._update_animals(w, [])
+            path.append((a["x"], a["y"]))
+            if a.get("drank"):
+                break
+        self.assertTrue(a.get("drank"), path)
+        self.assertTrue(_touches(w["cells"], 20, a["x"], a["y"],
+                                 lambda c: c["terrain"] == "water"), path)
+        ys = [y for _, y in path]
+        self.assertEqual(ys, sorted(ys), path)     # never back the way
 
     def test_creatures_drink_the_same_way_every_run(self):
         from grove import sim

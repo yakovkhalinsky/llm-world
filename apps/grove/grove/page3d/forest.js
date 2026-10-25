@@ -92,6 +92,9 @@
     for (y = 0; y < N; y++) {
       for (x = 0; x < N; x++) {
         if (isWater(st, x, y)) continue;
+        /* four ways: a willow stands where the bank faces the water. The
+         * sim's shore (animals.py shore_cells) is eight ways, so a creature
+         * can drink at a corner of the water with no bank willow by it */
         if (isWater(st, x + 1, y) || isWater(st, x - 1, y) ||
             isWater(st, x, y + 1) || isWater(st, x, y - 1)) {
           bank[x + ',' + y] = 1;
@@ -193,6 +196,18 @@
     var out = { ids: ids, zones: Z };
     if (DRAWN) DRAWN.set(st, out);
     return out;
+  }
+
+  /* The plants world.js draws, in the order the server listed them: those
+   * on the map that `drawn` keeps. The page builds its plant meshes from
+   * this list and nothing else, so what is drawn and what stands for the
+   * router (`trunks`) cannot drift apart. */
+  function drawList(st) {
+    var N = Number(st.size) | 0;
+    var shown = drawn(st).ids;
+    return (st.plants || []).filter(function (p) {
+      return p.x >= 0 && p.y >= 0 && p.x < N && p.y < N && !!shown[p.id];
+    });
   }
 
   /* ---------------------------------------------------- seeing through
@@ -495,7 +510,7 @@
     route: route, kindOf: kindOf,
     frameOf: frameOf, figure: figure, restSpots: restSpots, stagger: stagger,
     space: space, TRUNK_KEEP: TRUNK_KEEP,
-    zones: zones, drawn: drawn, occluders: occluders, shapeOf: shapeOf,
+    zones: zones, drawn: drawn, drawList: drawList, occluders: occluders, shapeOf: shapeOf,
     RADIUS: RADIUS, BODY_OF: BODY_OF, SCALE_OF: SCALE_OF,
   };
   if (typeof module !== 'undefined' && module.exports) {

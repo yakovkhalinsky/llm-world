@@ -6,7 +6,12 @@
  *   cell, none on a ford's path or in a clearing, only weeping trees on a
  *   bank (a named plant is always drawn);
  * - every ford has its path and the world has a clearing;
- * - the trunks the creatures walk round are exactly the trees drawn;
+ * - the trunks the creatures walk round are exactly the trees drawn, the
+ *   page builds its plant meshes from Forest.drawList only (world.js's
+ *   buildPlants is read and held to that; WORLD_JS may name a mutant), and
+ *   drawList is the drawn plants on the map;
+ * - the page's router (walk.js, four ways, round the trunks) reaches every
+ *   land cell of the map from every other;
  * - the same snapshot draws the same forest;
  * - `occluders` fades a tree between the camera and what it looks at, and
  *   not one behind it, beside the line, or below a line that clears it.
@@ -71,6 +76,89 @@ const want = plants.filter(p => STANDING[p.st] && kind(p.sp) === 'tree' &&
 const got = Object.keys(T.at).map(Number).sort((a, b) => a - b);
 if (JSON.stringify(want) !== JSON.stringify(got)) {
   fails.push(`trunks ${n(got.length)} != trees drawn ${n(want.length)}`);
+}
+
+/* the plants the page draws: drawList, the drawn ones on the map */
+const list = F.drawList(st);
+const wantList = plants.filter(p => D.ids[p.id] && p.x >= 0 && p.y >= 0 &&
+                                    p.x < (st.size | 0) && p.y < (st.size | 0))
+  .map(p => p.id);
+if (JSON.stringify(list.map(p => p.id)) !== JSON.stringify(wantList)) {
+  fails.push(`drawList ${n(list.length)} != drawn plants ${n(wantList.length)}`);
+}
+const listTrees = list.filter(p => STANDING[p.st] && kind(p.sp) === 'tree')
+  .map(p => p.id).sort((a, b) => a - b);
+if (JSON.stringify(listTrees) !== JSON.stringify(got)) {
+  fails.push(`drawList standing trees ${n(listTrees.length)} != trunks ${n(got.length)}`);
+}
+
+/* world.js: buildPlants draws from drawList and from nothing else */
+const worldSrc = fs.readFileSync(process.env.WORLD_JS ||
+  path.join(__dirname, '..', 'grove', 'page3d', 'world.js'), 'utf8');
+const bodyOf = (src, head) => {
+  const at = src.indexOf(head);
+  if (at < 0) return null;
+  let i = src.indexOf('{', at), depth = 0;
+  for (let j = i; j < src.length; j++) {
+    if (src[j] === '{') depth++;
+    else if (src[j] === '}' && --depth === 0) return src.slice(i + 1, j);
+  }
+  return null;
+};
+const bp = bodyOf(worldSrc, 'function buildPlants(st)');
+if (!bp) {
+  fails.push('world.js has no buildPlants(st)');
+} else {
+  const m = bp.match(/const (\w+) = Forest\.drawList\(st\);/);
+  if (!m) fails.push('world.js buildPlants does not take Forest.drawList(st)');
+  const loops = bp.match(/for \([^)]*\)/g) || [];
+  const plantLoops = loops.filter(l => /\bp\b/.test(l) || /plants/.test(l));
+  if (!m || plantLoops.length !== 1 ||
+      plantLoops[0] !== `for (const p of ${m[1]})`) {
+    fails.push(`world.js buildPlants loops ${JSON.stringify(plantLoops)}, ` +
+               'not once over the drawList');
+  }
+  if (/\bplants\b|st\.plants|\bshown\b/.test(bp.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ''))) {
+    fails.push('world.js buildPlants reaches past drawList to the plants');
+  }
+}
+
+/* the router: four ways round the trunks, every land cell reachable */
+require(path.join(__dirname, '..', '..', 'shared', 'page3d', 'walk.js'));
+const Walk = globalThis.Page3DWalk;
+const grid = Walk.buildGrid(F.subGround(st), { solid: { trunk: 1 } });
+Walk.setFixtures(grid, T.fixtures);
+{
+  const SUB = F.SUB, GW = grid.W;
+  const open = i => grid.base[i] && !grid.solid[i];
+  const seen = new Uint8Array(grid.n);
+  let start = -1;
+  for (let i = 0; i < grid.n && start < 0; i++) if (open(i)) start = i;
+  const todo = start >= 0 ? [start] : [];
+  if (start >= 0) seen[start] = 1;
+  while (todo.length) {
+    const i = todo.pop(), x = i % GW, y = (i - x) / GW;
+    [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dy]) => {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= GW || ny >= grid.H) return;
+      const j = ny * GW + nx;
+      if (!seen[j] && open(j)) { seen[j] = 1; todo.push(j); }
+    });
+  }
+  let lost = 0, first = '';
+  for (let cy = 0; cy < N; cy++) {
+    for (let cx = 0; cx < N; cx++) {
+      const c = st.cells[cy * N + cx];
+      if (!c || c[0] === 'w') continue;
+      let reach = false;
+      for (let q = 0; q < SUB * SUB; q++) {
+        const i = (cy * SUB + (q / SUB | 0)) * GW + cx * SUB + q % SUB;
+        if (seen[i]) reach = true;
+      }
+      if (!reach) { lost++; if (!first) first = cx + ',' + cy; }
+    }
+  }
+  if (lost) fails.push(`the router cannot reach ${n(lost)} land cells (first ${first})`);
 }
 
 const again = F.drawn(JSON.parse(JSON.stringify(st)));

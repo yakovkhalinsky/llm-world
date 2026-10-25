@@ -16,8 +16,15 @@ from grove import web
 from tests.helpers import ROOT, make_grove
 
 NODE = shutil.which("node")
+
+
+def _read(p):
+    with open(p) as f:
+        return f.read()
+
 CHECK = os.path.join(ROOT, "tools", "forest_check.js")
 FOREST = os.path.join(ROOT, "grove", "page3d", "forest.js")
+WORLD = os.path.join(ROOT, "grove", "page3d", "world.js")
 
 
 @unittest.skipUnless(NODE, "node is not installed")
@@ -54,8 +61,56 @@ class ForestCheckTest(unittest.TestCase):
             self.assertEqual(run.returncode, 0, run.stdout)
             self.assertIn("forest check ok", run.stdout)
 
+    def test_the_router_reaches_all_land_at_every_size(self):
+        # the sim's land is one piece four ways; the page's router, four
+        # ways round the trunks, must reach all of it on every map
+        bad = []
+        for size in (12, 16, 24, 32):
+            for seed in (1, 5, 9, 13, 17):
+                tmp, data, g, lock, runner = make_grove(seed, 0, size)
+                try:
+                    state = web.snapshot(g, runner, lock)
+                finally:
+                    g.db.con.close()
+                    tmp.cleanup()
+                p = os.path.join(self.dir.name, "s-%d-%d.json" % (size, seed))
+                with open(p, "w") as f:
+                    json.dump(state, f)
+                run = self._run(p)
+                if "the router cannot reach" in run.stdout:
+                    bad.append((size, seed, run.stdout))
+        self.assertEqual(bad, [])
+
+    def _mutant(self, src, old, new, name):
+        self.assertIn(old, src)
+        p = os.path.join(self.dir.name, name)
+        with open(p, "w") as f:
+            f.write(src.replace(old, new, 1))
+        return p
+
+    def test_the_page_drawing_every_tree_fails(self):
+        # world.js drawing the whole forest, not the drawList: the trees
+        # drawn would no longer be the trunks the creatures walk round
+        src = _read(WORLD)
+        for old, new in (
+                ("const list = Forest.drawList(st);",
+                 "const list = st.plants || [];"),
+                ("    for (const p of list) {\n",
+                 "    for (const p of (st.plants || [])) {\n")):
+            p = self._mutant(src, old, new, "world_mutant.js")
+            run = self._run(self.snaps[0], {"WORLD_JS": p})
+            self.assertNotEqual(run.returncode, 0, (old, run.stdout))
+            self.assertIn("buildPlants", run.stdout)
+
+    def test_a_drawlist_that_keeps_every_plant_fails(self):
+        src = _read(FOREST)
+        p = self._mutant(src, "&& !!shown[p.id];", ";", "forest_list.js")
+        run = self._run(self.snaps[0], {"FOREST_JS": p})
+        self.assertNotEqual(run.returncode, 0, run.stdout)
+        self.assertIn("drawList", run.stdout)
+
     def test_a_forest_on_its_paths_fails(self):
-        src = open(FOREST).read()
+        src = _read(FOREST)
         line = "        if (Z.path[key] || Z.clear[key] || standing[key]) return;\n"
         self.assertIn(line, src)
         mutant = src.replace(line, "        if (standing[key]) return;\n", 1)
