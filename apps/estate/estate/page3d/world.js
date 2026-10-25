@@ -141,6 +141,43 @@ export function createWorld(ground, canvas, opts) {
   const W = ground.width, H = ground.height;
   const centre = new THREE.Vector3(W / 2, 1.4, H / 2);
 
+  /* The outer band of the estate: walkable ground inside the ring road
+   * within three cells of it. The plan is the source — the road's own
+   * cells say where the ring is, so a wider plan or a different road
+   * width moves the band with it. The `perimeter` count uses this, and
+   * `?focus=perimeter` uses the bench marks the server sends; neither
+   * invents a second copy of the geometry. */
+  const perimeterCells = (() => {
+    const roads = [];
+    let x0 = W, x1 = -1, y0 = H, y1 = -1;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (ground.codes[ground.rows[y][x]] === 'road') {
+          roads.push([x, y]);
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+      }
+    }
+    const cells = new Set();
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const code = ground.codes[ground.rows[y][x]];
+        if (code === 'road' || code === 'building' || code === 'water') {
+          continue;
+        }
+        let near = false;
+        for (let i = 0; i < roads.length && !near; i++) {
+          near = Math.abs(x - roads[i][0]) + Math.abs(y - roads[i][1]) <= 3;
+        }
+        if (near) cells.add(x + ',' + y);
+      }
+    }
+    return cells;
+  })();
+
   /* ------------------------------------------------------------ renderer */
 
   const renderer = new THREE.WebGLRenderer({
@@ -1040,6 +1077,7 @@ export function createWorld(ground, canvas, opts) {
       bench = { key: f.x + ',' + f.y, cx: f.x, cy: f.y,
                 x: f.x + 0.5, z: f.y + 0.5,
                 fx: face.fx, fz: face.fz, yaw: face.yaw,
+                perimeter: !!f.perimeter,
                 cap: Math.max(0, Number(f.cap) || 0) };
     } else if (f.kind === 'table') {
       const wood = fixtureMaterial(0x9c7f52, 0.9);
@@ -1341,9 +1379,23 @@ export function createWorld(ground, canvas, opts) {
   }
 
   function stateSummary() {
+    /* Who is outdoors, who is between cells (the page glides them, so a
+     * changed cell is a person visibly walking this tick), and who is out
+     * on the estate's edge. `outside` is everyone not in a flat; the two
+     * narrower counts are the ones a screenshot of the perimeter is about. */
+    let outside = 0, walking = 0, onPerimeter = 0;
+    for (let i = 0; i < people.length; i++) {
+      const p = people[i];
+      if (p.in) continue;
+      outside++;
+      if ((p.px != null && p.x !== p.px) ||
+          (p.py != null && p.y !== p.py)) walking++;
+      if (perimeterCells.has(p.x + ',' + p.y)) onPerimeter++;
+    }
     return { residents: people.length,
              buildings: (ground.buildings || []).length,
-             benches: benchCount, seated: seatedCount };
+             benches: benchCount, seated: seatedCount,
+             outside, walking, perimeter: onPerimeter };
   }
 
   /* --------------------------------------------------------------- focus */
@@ -1410,9 +1462,48 @@ export function createWorld(ground, canvas, opts) {
     return true;
   }
 
+  /* A stretch of the outer path, framed from the road side. The busiest
+   * perimeter bench is the target (any perimeter bench if nobody is out),
+   * and the camera stands further back on the bench's outward side, off to
+   * one side along the path, so the shot holds the path and its
+   * neighbouring seats rather than a block's roof. The bench faces the
+   * estate, so this view is over its shoulder; the road side is the one
+   * side with no building between the camera and the seat. */
+  function focusPerimeter() {
+    const keys = Object.keys(benchByCell)
+      .filter(k => benchByCell[k].perimeter).sort();
+    if (!keys.length) return false;
+    const counts = {};
+    for (let i = 0; i < people.length; i++) {
+      const p = people[i];
+      if (p.in) continue;
+      const k = p.x + ',' + p.y;
+      if (benchByCell[k] && benchByCell[k].perimeter) {
+        counts[k] = (counts[k] || 0) + 1;
+      }
+    }
+    let best = keys[0], bestN = -1;
+    keys.forEach(k => {
+      const n = counts[k] || 0;
+      if (n > bestN) { bestN = n; best = k; }
+    });
+    const b = benchByCell[best];
+    const { fx, fz } = b;
+    const sx = fz, sz = -fx;          // along the path, across the view
+    const ox = -fx, oz = -fz;         // away from the estate, to the road
+    const y = TILE_TOP + 0.9;
+    controls.target.set(b.x + sx * 2.0, y, b.z + sz * 2.0);
+    camera.position.set(b.x + ox * 6.0 + sx * 3.0,
+                        y + 6.2,
+                        b.z + oz * 6.0 + sz * 3.0);
+    controls.update();
+    return true;
+  }
+
   return {
     scene, camera, renderer, controls,
-    setState, frame, resize, pick, stateSummary, focusBench, focusCell,
+    setState, frame, resize, pick, stateSummary, focusBench, focusPerimeter,
+    focusCell,
     phaseIndex: () => phaseInfo.index,
     phaseName: () => phaseInfo.name,
     hasState: () => haveState,

@@ -316,7 +316,11 @@ def snapshot(est, runner, lock):
                      # a bench up to its capacity, and capacity is the pack's
                      # fact — a renderer that hardcoded two would be a second
                      # home for it (grove b34).
-                     "cap": rules.R["fixtures"][f["kind"]].get("capacity", 0)}
+                     "cap": rules.R["fixtures"][f["kind"]].get("capacity", 0),
+                     # generation marks the benches it puts out beside the
+                     # perimeter footpath; `?focus=perimeter` needs the mark
+                     # to find them without a second copy of the geometry
+                     "perimeter": bool(f.get("perimeter"))}
                     for fid, f in w["fixtures"].items()]
         buildings = []
         for bid, b in w["buildings"].items():

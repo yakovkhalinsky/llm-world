@@ -15,12 +15,19 @@
  *                   rather than a dawn taken from a standing start.
  *   ?view=top       start overhead, for looking at the whole plan at once.
  *   ?focus=bench    frame the camera close on the busiest occupied bench
- *                   (any bench if nobody is out). `?focus=x,y` frames a
- *                   cell instead, for a close-up of a particular place.
+ *                   (any bench if nobody is out).
+ *   ?focus=perimeter
+ *                   frame a stretch of the outer footpath, wide enough to
+ *                   hold its benches and the people on them.
+ *   ?focus=x,y     frames a named cell instead, for a close-up of a
+ *                   particular place.
  *
  * When the first state has been drawn it publishes
  * `window.__estate3d = {ready, residents, buildings, benches, seated,
- * phase}` — `seated` is how many residents are on a bench now.
+ * outside, walking, perimeter, phase}` — `seated` is how many residents
+ * are on a bench now, `outside` how many are not in a flat, `walking` how
+ * many the page is gliding between cells, and `perimeter` how many are out
+ * on the estate's edge.
  */
 
 import { createWorld } from './world.js';
@@ -216,6 +223,9 @@ function publishReady() {
     buildings: summary.buildings,
     benches: summary.benches,
     seated: summary.seated,
+    outside: summary.outside,
+    walking: summary.walking,
+    perimeter: summary.perimeter,
     phase: S.world.phaseName(),
     static: STATIC,
   };
@@ -231,6 +241,8 @@ function applyFocus() {
   focusApplied = true;
   if (FOCUS === 'bench') {
     S.world.focusBench();
+  } else if (FOCUS === 'perimeter') {
+    S.world.focusPerimeter();
   } else {
     const m = /^(-?\d+),(-?\d+)$/.exec(FOCUS);
     if (m) S.world.focusCell(Number(m[1]), Number(m[2]));
@@ -278,6 +290,9 @@ function poll() {
       const summary = S.world.stateSummary();
       window.__estate3d.seated = summary.seated;
       window.__estate3d.benches = summary.benches;
+      window.__estate3d.outside = summary.outside;
+      window.__estate3d.walking = summary.walking;
+      window.__estate3d.perimeter = summary.perimeter;
       applyFocus();
     }
     if (STATIC) return;

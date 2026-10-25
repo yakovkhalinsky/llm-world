@@ -87,9 +87,18 @@ SPEC = {
     # broke every few days. A kind the estate cannot keep up with still
     # fails; it just has to be used past what its own upkeep can carry.
     "fixtures": {
-        "bench":      {"affords": {"rest": 0.55, "company": 0.25},
+        # A bench's own affording is modest, and `quiet` is small: a seat
+        # in the open is not a silent room. The perimeter's benches read
+        # `perimeter_bonus` below, which is what makes the edge worth the
+        # walk — the quiet and green of the ring road's margin, and the
+        # stroll itself. It is a bonus on the place rather than a new need
+        # or a new subsystem: the chooser already knows how to weigh one.
+        "bench":      {"affords": {"rest": 0.55, "company": 0.25,
+                                   "quiet": 0.18},
                        "capacity": 2, "decay": 0.00030, "loud": 0.015,
                        "carry": 2,
+                       "perimeter_bonus": {"rest": 0.55, "company": 0.45,
+                                           "quiet": 0.75},
                        "upkeep": 1.0, "break_prob": 0.0034, "glyph": "🪑"},
         "playground": {"affords": {"play": 0.95},
                        "capacity": 12, "decay": 0.00040, "loud": 0.110, "carry": 12,
@@ -165,13 +174,15 @@ SPEC = {
         "road_width": 2,
         "playgrounds": 1,
         "benches": 7,
-        # Benches in the courtyard's two bands, plus benches beside the door
-        # paths themselves — the walkways through the courtyard, where the
-        # estate actually passes. The second number is separate because the
-        # two are placed by different rules: the courtyard's fill the bands
-        # above and below it, and these are chosen from free cells that
-        # touch a path, spaced apart, preferring ground near a tree or lamp.
-        "path_benches": 6,
+        # The courtyard's seven benches are the old world and stay where
+        # they are. The second number is separate because the two are
+        # placed by different rules: the courtyard's fill the bands above
+        # and below it, and these stand on the outer side of the perimeter
+        # footpath, facing back across it, spread evenly around the four
+        # sides so the outside reads as furnished and every block has a
+        # seat out there.
+        "perimeter_path": True,
+        "perimeter_benches": 10,
         "tables": 2,
         "trees": 16,
         "lamps": 9,

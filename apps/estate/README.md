@@ -118,10 +118,15 @@ For screenshots and headless checks:
 - `?view=top` starts overhead, for looking at the whole plan at once.
 - `?focus=bench` frames the camera close on the busiest occupied bench
   (any bench if the estate is indoors), so a screenshot can show people
-  sitting on one; `?focus=x,y` frames a named cell instead.
+  sitting on one. `?focus=perimeter` frames a stretch of the outer
+  footpath, wide enough to hold its benches and the people on them;
+  `?focus=x,y` frames a named cell instead.
 - once the first state is drawn the page publishes
   `window.__estate3d = {ready, residents, buildings, benches, seated,
-  phase}` — `seated` is how many residents are on a bench now.
+  outside, walking, perimeter, phase}` — `seated` is how many residents
+  are on a bench now, `outside` how many are not in a flat, `walking` how
+  many the page is gliding between cells, and `perimeter` how many are out
+  on the estate's edge.
 
 Three.js **r170** (MIT) is vendored in `estate/page3d/vendor/` together
 with `OrbitControls` and the licence; the page's import map resolves
@@ -153,15 +158,20 @@ node tools/pixi_check.js /tmp/g.json /tmp/s.json
 - **Five needs** — food, rest, company, play (children only), and quiet —
   met at the places that afford them, and interfering by design.
 - **Fixtures** are the placed things: benches, the playground, tables, the
-  shop, lamps and trees. They are used, they wear, and they break. Benches
-  stand in the courtyard's bands and beside the door paths — the walkways
-  through the courtyard — spaced apart and preferring ground near a tree or
-  a lamp, so the estate passes seats on its way rather than having to know
-  where they are. In both views a resident on a bench's cell sits on it, up
-  to its capacity — a path-side bench turned to face the walkway it serves.
-  A lamp affords nothing by itself — it
-  *lights*, and what it lights is worth more in the evening, which is the
-  whole reason a courtyard has them.
+  shop, lamps and trees. They are used, they wear, and they break. The
+  courtyard's seven benches stand in its bands, as they always have. Ten
+  more furnish the edge: a footpath runs one cell in from the ring road,
+  and the benches stand on the outermost cell of the band, facing back
+  across the path to the estate and spread evenly around all four sides.
+  The path is cheap walking ground, so a resident who heads out crosses it
+  rather than skirting it. The edge's benches carry a `perimeter_bonus` in
+  the pack — the quiet and green of the margin, and the stroll for its own
+  sake — which is enough for a resident with rest, company or quiet to
+  spend to walk out, sit, and come back. In both views a resident on a
+  bench's cell sits on it, up to its capacity — a bench beside a path turns
+  to face it. A lamp affords nothing by itself — it *lights*, and what it
+  lights is worth more in the evening, which is the whole reason a
+  courtyard has them.
 - **A need is chosen before a place.** The resident picks what presses
   hardest and *then* the best place for it, falling to the next need down
   when the first has nowhere to go. Scored the other way round, the nearest
@@ -218,14 +228,24 @@ quiet in the wrong way, or settled into a marching band — and it prints a
 fingerprint, so an engine change that alters the world's behaviour cannot
 land unnoticed.
 
-The recipe grew on this branch: `gen.path_benches` asks for six benches
-beside the courtyard walkways, so an estate now has thirteen benches where
-it had seven. That is a deliberate change to the world, and the gate's
-fingerprint moved with it — `dcb219a70d21072f` → `ba8cdf35318ba5eb` — because
-world generation is the world. Every law still holds, with friction between
-1.33 and 1.37 and distinctness between 7.90 and 7.98. The new benches draw
-from their own rng salt after the trees, so for a given seed every other
-fixture stands where it stood; what changed is the benches, not a reshuffle.
+The recipe grew on this branch. `gen.perimeter_path` lays a footpath one
+cell in from the ring road, and `gen.perimeter_benches` asks for ten seats
+on its outer side, spread evenly around all four sides and facing back
+across it; the courtyard's original seven benches keep their places. A
+perimeter bench carries the pack's `perimeter_bonus` for rest, company and
+quiet — the margin is quieter and greener, and the stroll is worth
+something — and a bench now affords a little quiet of its own, so the
+existing chooser sends people out to the edge without a new need or a new
+subsystem. Over 60 days at seed 42 the perimeter went from no residents to
+1.8–6.5 out there at the end of each phase (9.6 outdoors at night, up from
+4.5), with 54–389 perimeter-bench visits a phase over the run.
+
+That is a deliberate change to the world, and the gate's fingerprint moved
+with it — `dcb219a70d21072f` on main → `ba8cdf35318ba5eb` when the first
+benches landed → `0a687daff322d77a` now. Every law still holds, with
+friction between 1.43 and 1.52 and distinctness between 8.74 and 8.94. The
+footpath moves the trees, so the generation is not a no-op for them; the
+courtyard's own fixtures stand where they stood.
 
 Nineteen faults are recorded in `docs/BUGS.md` under Grove's sixteen
 classes. Almost none of them crashed anything. They were found by asking

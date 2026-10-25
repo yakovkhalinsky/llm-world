@@ -168,6 +168,16 @@ def _utility(w, r, c, need, phase, rng):
             eff *= 0.4 + 0.6 * shade      # and it is quiet under a tree
         if phase in ("evening", "night"):
             eff *= 1.0 + 0.7 * w["cells"][f["y"]][f["x"]]["light"]
+        # The perimeter's own benches are worth the walk out: the quiet
+        # and green of the ring road's margin, and the stroll for its own
+        # sake. The bonus lives in the pack beside the bench's affords, so
+        # the engine does not know which cells generation calls the edge;
+        # it only sees the mark. Rain damps it like every other outdoor
+        # draw, because nobody strolls the perimeter in a downpour.
+        if f.get("perimeter"):
+            bonus = rules.R["fixtures"][f["kind"]].get(
+                "perimeter_bonus", {}).get(need, 0.0)
+            eff += bonus * (1.0 - 0.45 * wet)
         d = abs(c["x"] - px) + abs(c["y"] - py)
         if d > rules.R["engine"]["scan"]:
             return None

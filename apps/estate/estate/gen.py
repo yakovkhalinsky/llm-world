@@ -1,9 +1,10 @@
 """Seeded, deterministic estate generation — pure code, no LLM involved.
 
-Draws a plan, not a landscape: a ring road, four residential blocks facing a
-courtyard, a shop, a pond, a playground, and the fixtures and households
-that fill them. Everything comes from (seed, 0, "gen") in a fixed order, so
-the same seed is the same estate in any process.
+Draws a plan, not a landscape: a ring road with a footpath along its inner
+edge, four residential blocks facing a courtyard, a shop, a pond, a
+playground, and the fixtures and households that fill them. Everything
+comes from (seed, 0, "gen") in a fixed order, so the same seed is the same
+estate in any process.
 """
 
 from . import rules
@@ -88,6 +89,22 @@ def generate(seed: int, width: int = None, height: int = None,
         edge = cy1 if by < h // 2 else cy0
         _rect(cells, door[0], min(door[1], edge),
               door[0], max(door[1], edge), "path")
+
+    # --- the perimeter footpath -----------------------------------------
+    # The ring road carries the estate's traffic; this is the walk beside
+    # it. It sits one cell in from the ring road, leaving the outermost
+    # cell of the band for the benches: the path is the walking lane and
+    # the seats face back across it to the estate, so a walk out to the
+    # edge actually uses the path rather than stepping around it. Without
+    # the path the outer band was lawn only — walkable, but nobody's
+    # destination.
+    if g.get("perimeter_path"):
+        inner = rw * 2 + 1
+        far_x, far_y = w - rw * 2 - 2, h - rw * 2 - 2
+        _rect(cells, inner, inner, far_x, inner, "path")       # north
+        _rect(cells, inner, far_y, far_x, far_y, "path")       # south
+        _rect(cells, inner, inner, inner, far_y, "path")       # west
+        _rect(cells, far_x, inner, far_x, far_y, "path")       # east
 
     # --- the shop and the playground, together, in the middle -----------
     # Where these stand is not decoration. A need is only served if the
@@ -179,50 +196,67 @@ def generate(seed: int, width: int = None, height: int = None,
         if place("tree", x, y):
             planted += 1
 
-    # --- benches beside the walkways -------------------------------------
+    # --- benches along the perimeter footpath ----------------------------
     # The courtyard's benches stand in the bands above and below it; these
-    # stand along the door paths, where the estate walks. A resident
-    # crossing the courtyard passes a seat rather than having to know it
-    # exists. Candidates are free walkable cells that touch a path and are
-    # not themselves path (a bench on the walkway is an obstacle, not a
-    # seat beside it), spaced apart so a row of benches does not become a
-    # wall, and preferred near a tree or a lamp because shade and lamplight
-    # are both worth having at a bench (`_utility` reads both).
-    #
-    # The draw uses its own salt. These are planted after the trees, so the
-    # main rng's sequence is untouched and every other fixture stays exactly
-    # where it was for a given seed; only the new benches are new.
-    path_benches = g.get("path_benches", 0)
-    if path_benches:
-        prng = W.rng_for(seed, 0, "path-benches")
-        anchors = [(f["x"], f["y"]) for f in st["fixtures"].values()
-                   if f["kind"] in ("tree", "lamp")]
-        spots = []
-        for y in range(h):
-            for x in range(w):
-                if not free(x, y) or cells[y][x]["site"] == "path":
-                    continue
-                if not any(0 <= x + dx < w and 0 <= y + dy < h
-                           and cells[y + dy][x + dx]["site"] == "path"
-                           for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))):
-                    continue
-                near = min((abs(x - ax) + abs(y - ay)
-                            for ax, ay in anchors), default=99)
-                spots.append((near, prng.random(), x, y))
-        spots.sort()
+    # stand on the outer side of the path that runs beside the ring road,
+    # so the estate has furnished edges rather than a green margin nobody
+    # stops on. They are spread around all four sides — a quota per side,
+    # evenly spaced along it — so a resident leaving any block finds a seat
+    # out there, and the walk to it is the stroll. The cell is beside the
+    # path and not upon it: a bench on a walkway is an obstacle, not a seat
+    # beside it. There is no fresh randomness here: the even spacing and
+    # what the trees left free are enough, so the same seed still chooses
+    # the same cells. The path is drawn before the trees, which moves the
+    # trees; the courtyard's own fixtures keep their places.
+    perimeter_benches = g.get("perimeter_benches", 0)
+    if perimeter_benches:
+        # the outermost cell of the band, between the path and the road, so
+        # the walker crosses the path to reach the seat and sits facing the
+        # estate. The corners belong to the long sides, so the short sides
+        # start a cell later and no two sides can choose the same cell.
+        edge = rw * 2
+        far_x, far_y = w - rw * 2 - 1, h - rw * 2 - 1
+        sides = {
+            "top": ([(x, edge) for x in range(edge + 1, far_x)],
+                    lambda p: p[0]),
+            "bottom": ([(x, far_y) for x in range(edge + 1, far_x)],
+                       lambda p: p[0]),
+            "left": ([(edge, y) for y in range(edge + 2, far_y - 1)],
+                     lambda p: p[1]),
+            "right": ([(far_x, y) for y in range(edge + 2, far_y - 1)],
+                      lambda p: p[1]),
+        }
+        order = ("top", "bottom", "left", "right")
+        base, extra = divmod(perimeter_benches, len(order))
+        quota = {s: base + (1 if i < extra else 0)
+                 for i, s in enumerate(order)}
         chosen = []
-        for _, _, x, y in spots:
-            if all(abs(x - cx) + abs(y - cy) >= 3 for cx, cy in chosen):
-                chosen.append((x, y))
-                if len(chosen) == path_benches:
-                    break
-        if len(chosen) != path_benches:
+        for s in order:
+            spots = [p for p in sides[s][0] if free(*p)]
+            spots.sort(key=sides[s][1])
+            want = quota[s]
+            if len(spots) < want:
+                raise ValueError(
+                    f"the recipe asks for {perimeter_benches} perimeter "
+                    f"benches but the {s} side holds only {len(spots)} free "
+                    f"spots beside the path — widen the plan or lower "
+                    f"gen.perimeter_benches")
+            # evenly spaced along the side, endpoints included. The spots
+            # are already filtered by what the trees left free, so the seed
+            # still chooses the exact cell without any fresh randomness.
+            for i in range(want):
+                t = i / (want - 1) if want > 1 else 0.5
+                idx = round(t * (len(spots) - 1))
+                chosen.append(spots[idx])
+        if len(chosen) != perimeter_benches:
             raise ValueError(
-                f"the recipe asks for {path_benches} path benches but this "
-                f"plan holds only {len(chosen)} free path-side spots — "
-                f"widen the plan or lower gen.path_benches")
+                f"the recipe asks for {perimeter_benches} perimeter benches "
+                f"but this plan holds only {len(chosen)} free spots beside "
+                f"the path — widen the plan or lower gen.perimeter_benches")
         for x, y in chosen:
-            place("bench", x, y)
+            f = place("bench", x, y)
+            if f:
+                f["perimeter"] = True
 
     if shop_b:
         place("shop", shop_b["door"][0], shop_b["door"][1])
@@ -234,7 +268,7 @@ def generate(seed: int, width: int = None, height: int = None,
     got = {}
     for f in st["fixtures"].values():
         got[f["kind"]] = got.get(f["kind"], 0) + 1
-    asked = {"bench": g["benches"] + path_benches, "lamp": g["lamps"],
+    asked = {"bench": g["benches"] + perimeter_benches, "lamp": g["lamps"],
              "table": g["tables"], "tree": g["trees"],
              "playground": g["playgrounds"] if play_at else 0,
              "shop": 1 if shop_b else 0}
@@ -314,7 +348,10 @@ def _check_reach(st, cells, buildings):
     doors = [tuple(b["door"]) for b in buildings]
     for need, spec in rules.R["needs"].items():
         if spec.get("from") == "noise":
-            continue                     # quiet is met at home, or nowhere
+            # quiet is filled by the noise where you stand, not by a
+            # destination every door must reach. A bench affords a little
+            # of it now, but no door is cut off from quiet by distance.
+            continue
         goals = [(f["x"], f["y"]) for f in st["fixtures"].values()
                  if rules.R["fixtures"][f["kind"]]["affords"].get(need)]
         if not goals:
