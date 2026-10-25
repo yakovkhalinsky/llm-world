@@ -716,6 +716,11 @@ export function createWorld(ground, canvas, opts) {
   let personAt = [];
   const fromX = [], fromZ = [], toX = [], toZ = [];
   const offX = [], offZ = [], roleScale = [];
+  /* 0 stands, 1 sits on the bench, 2 stands beside it because it is full */
+  const sitMode = [], seatFx = [], seatFz = [];
+  /* last state's seat positions, so somebody who stays on the same bench
+   * does not glide from the cell's centre to the seat on every poll */
+  let prevSeat = {};
   /* The day is the clock, not the poll. The page is polled several times
    * per day, and resetting these on every state made the light restart
    * toward dawn and the glide restart toward the old position before
@@ -776,6 +781,9 @@ export function createWorld(ground, canvas, opts) {
         fromX[i] = fromZ[i] = toX[i] = toZ[i] = 0;
         offX[i] = offZ[i] = 0;
         roleScale[i] = 1;
+        sitMode[i] = 0;
+        seatFx[i] = 0;
+        seatFz[i] = 1;
       }
     }
 
@@ -792,6 +800,7 @@ export function createWorld(ground, canvas, opts) {
       offX[i] = (hash01(p.id, 11) * 2 - 1) * 0.17;
       offZ[i] = (hash01(p.id, 12) * 2 - 1) * 0.17;
       roleScale[i] = p.role === 'child' ? 0.78 : p.role === 'elder' ? 0.92 : 1;
+      sitMode[i] = 0;
 
       _c1.setHex(ROLE_COLOUR[p.role] === undefined ? 0xcccccc
                                                    : ROLE_COLOUR[p.role]);
@@ -799,6 +808,59 @@ export function createWorld(ground, canvas, opts) {
       _c1.setHex(SKIN[Math.floor(hash01(p.id, 13) * SKIN.length) % SKIN.length]);
       headMesh.setColorAt(i, _c1);
     }
+
+    /* Who is on a bench. A resident whose cell holds a bench is seated on
+     * it, up to the bench's capacity, side by side (the lowest ids first, so
+     * the picture does not shuffle between polls); anyone else on that cell
+     * stands beside it rather than inside the sitter. A fixture is a place,
+     * and the state already says who is standing on it. */
+    seatedCount = 0;
+    const onBench = {};
+    for (let i = 0; i < people.length; i++) {
+      const p = people[i];
+      if (p.in) continue;
+      const key = p.x + ',' + p.y;
+      if (!benchByCell[key]) continue;
+      (onBench[key] = onBench[key] || []).push(i);
+    }
+    const seatNow = {};
+    for (const key in onBench) {
+      const b = benchByCell[key];
+      const idx = onBench[key].sort((a, c) => people[a].id - people[c].id);
+      /* local +x, which runs along the seat, in world coordinates */
+      const ax = Math.cos(b.yaw), az = -Math.sin(b.yaw);
+      for (let rank = 0; rank < idx.length; rank++) {
+        const i = idx[rank];
+        const p = people[i];
+        if (rank < b.cap) {
+          const off = b.cap > 1 ? (rank - (b.cap - 1) / 2) * 0.42 : 0;
+          toX[i] = b.x + ax * off;
+          toZ[i] = b.z + az * off;
+          offX[i] = offZ[i] = 0;
+          sitMode[i] = 1;
+          seatFx[i] = b.fx;
+          seatFz[i] = b.fz;
+          const prev = prevSeat[p.id];
+          if (prev && prev.cell === key) {
+            fromX[i] = prev.x;
+            fromZ[i] = prev.z;
+          }
+          seatNow[p.id] = { cell: key, x: toX[i], z: toZ[i] };
+          seatedCount++;
+        } else {
+          /* no room on the seat: stand at the end of it, not on top */
+          const side = (p.id & 1) ? 1 : -1;
+          const off = side * (0.52 + hash01(p.id, 41) * 0.12);
+          toX[i] = b.x + ax * off;
+          toZ[i] = b.z + az * off;
+          offX[i] = offZ[i] = 0;
+          sitMode[i] = 2;
+          seatFx[i] = b.fx;
+          seatFz[i] = b.fz;
+        }
+      }
+    }
+    prevSeat = seatNow;
     if (bodyMesh.instanceColor) bodyMesh.instanceColor.needsUpdate = true;
     if (headMesh.instanceColor) headMesh.instanceColor.needsUpdate = true;
 
@@ -848,6 +910,25 @@ export function createWorld(ground, canvas, opts) {
       const s = roleScale[i];
       const x = fromX[i] + (toX[i] - fromX[i]) * e + offX[i];
       const z = fromZ[i] + (toZ[i] - fromZ[i]) * e + offZ[i];
+      if (sitMode[i] === 1) {
+        /* sitting: the body is shorter and its foot is the seat's top, and
+         * a small lean toward the path is what makes it read as sitting
+         * rather than as a figure sunk into the ground */
+        const fx = seatFx[i], fz = seatFz[i];
+        const seatY = TILE_TOP + 0.46;
+        dummy.rotation.set(0.16 * fz, 0, -0.16 * fx);
+        dummy.scale.set(s, s * 0.72, s);
+        dummy.position.set(x, seatY + 0.26 * s, z);
+        dummy.updateMatrix();
+        bodyMesh.setMatrixAt(i, dummy.matrix);
+        dummy.rotation.set(0, 0, 0);
+        dummy.scale.set(s, s, s);
+        dummy.position.set(x + fx * 0.09 * s, seatY + 0.60 * s,
+                          z + fz * 0.09 * s);
+        dummy.updateMatrix();
+        headMesh.setMatrixAt(i, dummy.matrix);
+        continue;
+      }
       const bob = Math.sin(now * 0.003 + i * 1.7) * 0.014;
       dummy.rotation.set(0, 0, 0);
       dummy.scale.set(s, s, s);
@@ -870,6 +951,13 @@ export function createWorld(ground, canvas, opts) {
   let fixturesBuilt = false;
   let fixtureEntries = [];
   let treeEntries = [];
+  /* The benches, by cell, with the way each one faces. A resident on a
+   * bench's cell is seated on it (up to its capacity), and `focus=bench`
+   * needs to know where the benches are without inventing a second copy of
+   * the fixture list. Both are derived from the state the server sends. */
+  let benchByCell = {};
+  let benchCount = 0;
+  let seatedCount = 0;
 
   function clearFixtures() {
     fixtureEntries.forEach(fx => {
@@ -912,15 +1000,35 @@ export function createWorld(ground, canvas, opts) {
     treeEntries.push({ id, canopy, trunk });
   }
 
+  /* Which way a bench faces. A bench beside a path turns its back to the
+   * walkway's far side and looks at the path, its seat running along it, so
+   * whoever sits watches the estate go past. The path is a fact already in
+   * the ground (`codes` and `rows`), never a second map in the page. A bench
+   * with no path beside it — the courtyard's own — keeps the default pose,
+   * which is the one both views have always drawn. */
+  function benchFacing(f) {
+    for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+      const x = f.x + dx, y = f.y + dy;
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      if (ground.codes[ground.rows[y][x]] === 'path') {
+        return { fx: dx, fz: dy, yaw: Math.atan2(dx, dy) };
+      }
+    }
+    return { fx: 0, fz: 1, yaw: 0 };
+  }
+
   function buildFixture(f, season) {
     const g = new THREE.Group();
     g.position.set(f.x + 0.5, TILE_TOP, f.y + 0.5);
     g.userData.pick = { kind: 'fixture', id: f.id };
     const mats = [];
 
+    let bench = null;
     if (f.kind === 'tree') {
       treeMesh(g, mats, season, f.id);
     } else if (f.kind === 'bench') {
+      const face = benchFacing(f);
+      g.rotation.y = face.yaw;
       const wood = fixtureMaterial(0x8a6a3f, 0.9);
       const metal = fixtureMaterial(0x454c54, 0.7);
       mats.push(wood, metal);
@@ -928,6 +1036,11 @@ export function createWorld(ground, canvas, opts) {
       addBox(g, wood.mat, 0.9, 0.3, 0.07, 0, 0.58, -0.16);
       addBox(g, metal.mat, 0.07, 0.42, 0.3, -0.34, 0.21, 0);
       addBox(g, metal.mat, 0.07, 0.42, 0.3, 0.34, 0.21, 0);
+      /* local +z is the way it faces; local +x runs along the seat */
+      bench = { key: f.x + ',' + f.y, cx: f.x, cy: f.y,
+                x: f.x + 0.5, z: f.y + 0.5,
+                fx: face.fx, fz: face.fz, yaw: face.yaw,
+                cap: Math.max(0, Number(f.cap) || 0) };
     } else if (f.kind === 'table') {
       const wood = fixtureMaterial(0x9c7f52, 0.9);
       const metal = fixtureMaterial(0x454c54, 0.7);
@@ -979,14 +1092,21 @@ export function createWorld(ground, canvas, opts) {
     }
 
     fixtureGroup.add(g);
-    return { id: f.id, kind: f.kind, group: g, mats };
+    return { id: f.id, kind: f.kind, group: g, mats, bench };
   }
 
   function buildFixtures(st) {
     clearFixtures();
     const season = Math.max(0, Math.min(3, st.season || 0));
+    benchByCell = {};
+    benchCount = 0;
     (st.fixtures || []).forEach(f => {
-      fixtureEntries.push(buildFixture(f, season));
+      const entry = buildFixture(f, season);
+      fixtureEntries.push(entry);
+      if (entry.bench) {
+        benchByCell[entry.bench.key] = entry.bench;
+        benchCount++;
+      }
     });
     fixtureKey = (st.fixtures || []).map(f => f.id + ':' + f.kind).join(',');
     fixturesBuilt = true;
@@ -1222,12 +1342,77 @@ export function createWorld(ground, canvas, opts) {
 
   function stateSummary() {
     return { residents: people.length,
-             buildings: (ground.buildings || []).length };
+             buildings: (ground.buildings || []).length,
+             benches: benchCount, seated: seatedCount };
+  }
+
+  /* --------------------------------------------------------------- focus */
+
+  /* A close camera on one spot, for a screenshot that can be read. The
+   * offset is longer than `controls.minDistance`, so the controls do not
+   * pull the camera back out again the moment it is placed. */
+  function focusAt(x, y, z) {
+    controls.target.set(x, y, z);
+    camera.position.set(x + 5.2, y + 5.4, z + 5.4);
+    controls.update();
+  }
+
+  /* Is the ground clear for six cells in this direction? A camera put too
+   * close behind a bench stands inside the block the bench is against. */
+  function clearAhead(b, fx, fz) {
+    for (let d = 1; d <= 6; d++) {
+      const x = b.cx + fx * d, y = b.cy + fz * d;
+      if (x < 0 || y < 0 || x >= W || y >= H) return false;
+      if (ground.codes[ground.rows[y][x]] === 'building') return false;
+    }
+    return true;
+  }
+
+  /* A bench is framed from the side it faces. That side is the path, which
+   * is open ground by definition; the courtyard's own benches have no path,
+   * so they take the first open side instead. */
+  function focusBenchAt(b) {
+    let { fx, fz } = b;
+    if (!clearAhead(b, fx, fz)) {
+      [fx, fz] = [[0, 1], [0, -1], [1, 0], [-1, 0]]
+        .filter(d => d[0] !== b.fx || d[1] !== b.fz)
+        .find(d => clearAhead(b, d[0], d[1])) || [fx, fz];
+    }
+    const y = TILE_TOP + 0.9;
+    controls.target.set(b.x, y, b.z);
+    camera.position.set(b.x + fx * 5.7, y + 5.7, b.z + fz * 5.7);
+    controls.update();
+  }
+
+  /* The busiest occupied bench, so `?focus=bench` lands on people rather
+   * than on an empty seat; any bench if the estate is indoors. */
+  function focusBench() {
+    const keys = Object.keys(benchByCell).sort();
+    if (!keys.length) return false;
+    const counts = {};
+    for (let i = 0; i < people.length; i++) {
+      const p = people[i];
+      if (p.in) continue;
+      const k = p.x + ',' + p.y;
+      if (benchByCell[k]) counts[k] = (counts[k] || 0) + 1;
+    }
+    let best = keys[0], bestN = -1;
+    keys.forEach(k => {
+      const n = counts[k] || 0;
+      if (n > bestN) { bestN = n; best = k; }
+    });
+    focusBenchAt(benchByCell[best]);
+    return true;
+  }
+
+  function focusCell(x, y) {
+    focusAt(x + 0.5, TILE_TOP + 0.6, y + 0.5);
+    return true;
   }
 
   return {
     scene, camera, renderer, controls,
-    setState, frame, resize, pick, stateSummary,
+    setState, frame, resize, pick, stateSummary, focusBench, focusCell,
     phaseIndex: () => phaseInfo.index,
     phaseName: () => phaseInfo.name,
     hasState: () => haveState,

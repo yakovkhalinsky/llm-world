@@ -311,7 +311,12 @@ def snapshot(est, runner, lock):
             })
         fixtures = [{"id": int(fid), "kind": f["kind"], "x": f["x"],
                      "y": f["y"], "c": round(f["condition"], 3),
-                     "uses": f["use_total"], "stock": f.get("stock")}
+                     "uses": f["use_total"], "stock": f.get("stock"),
+                     # how many can use it at once. The views seat people on
+                     # a bench up to its capacity, and capacity is the pack's
+                     # fact — a renderer that hardcoded two would be a second
+                     # home for it (grove b34).
+                     "cap": rules.R["fixtures"][f["kind"]].get("capacity", 0)}
                     for fid, f in w["fixtures"].items()]
         buildings = []
         for bid, b in w["buildings"].items():

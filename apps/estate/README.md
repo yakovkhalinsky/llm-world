@@ -110,8 +110,12 @@ For screenshots and headless checks:
 - `?static=1` draws the first state and stops — afternoon if no phase was
   named — so a screenshot does not depend on when the browser was ready.
 - `?view=top` starts overhead, for looking at the whole plan at once.
+- `?focus=bench` frames the camera close on the busiest occupied bench
+  (any bench if the estate is indoors), so a screenshot can show people
+  sitting on one; `?focus=x,y` frames a named cell instead.
 - once the first state is drawn the page publishes
-  `window.__estate3d = {ready, residents, buildings, phase}`.
+  `window.__estate3d = {ready, residents, buildings, benches, seated,
+  phase}` — `seated` is how many residents are on a bench now.
 
 Three.js **r170** (MIT) is vendored in `estate/page3d/vendor/` together
 with `OrbitControls` and the licence; the page's import map resolves
@@ -143,9 +147,15 @@ node tools/pixi_check.js /tmp/g.json /tmp/s.json
 - **Five needs** — food, rest, company, play (children only), and quiet —
   met at the places that afford them, and interfering by design.
 - **Fixtures** are the placed things: benches, the playground, tables, the
-  shop, lamps and trees. They are used, they wear, and they break. A lamp
-  affords nothing by itself — it *lights*, and what it lights is worth more
-  in the evening, which is the whole reason a courtyard has them.
+  shop, lamps and trees. They are used, they wear, and they break. Benches
+  stand in the courtyard's bands and beside the door paths — the walkways
+  through the courtyard — spaced apart and preferring ground near a tree or
+  a lamp, so the estate passes seats on its way rather than having to know
+  where they are. In both views a resident on a bench's cell sits on it, up
+  to its capacity — a path-side bench turned to face the walkway it serves.
+  A lamp affords nothing by itself — it
+  *lights*, and what it lights is worth more in the evening, which is the
+  whole reason a courtyard has them.
 - **A need is chosen before a place.** The resident picks what presses
   hardest and *then* the best place for it, falling to the next need down
   when the first has nowhere to go. Scored the other way round, the nearest
@@ -201,6 +211,15 @@ model at all and refuses one that has lost a household type, emptied, gone
 quiet in the wrong way, or settled into a marching band — and it prints a
 fingerprint, so an engine change that alters the world's behaviour cannot
 land unnoticed.
+
+The recipe grew on this branch: `gen.path_benches` asks for six benches
+beside the courtyard walkways, so an estate now has thirteen benches where
+it had seven. That is a deliberate change to the world, and the gate's
+fingerprint moved with it — `dcb219a70d21072f` → `ba8cdf35318ba5eb` — because
+world generation is the world. Every law still holds, with friction between
+1.33 and 1.37 and distinctness between 7.90 and 7.98. The new benches draw
+from their own rng salt after the trees, so for a given seed every other
+fixture stands where it stood; what changed is the benches, not a reshuffle.
 
 Nineteen faults are recorded in `docs/BUGS.md` under Grove's sixteen
 classes. Almost none of them crashed anything. They were found by asking

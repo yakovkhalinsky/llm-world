@@ -14,9 +14,13 @@
  *                   frozen light is afternoon, so a screenshot is legible
  *                   rather than a dawn taken from a standing start.
  *   ?view=top       start overhead, for looking at the whole plan at once.
+ *   ?focus=bench    frame the camera close on the busiest occupied bench
+ *                   (any bench if nobody is out). `?focus=x,y` frames a
+ *                   cell instead, for a close-up of a particular place.
  *
  * When the first state has been drawn it publishes
- * `window.__estate3d = {ready, residents, buildings, phase}`.
+ * `window.__estate3d = {ready, residents, buildings, benches, seated,
+ * phase}` — `seated` is how many residents are on a bench now.
  */
 
 import { createWorld } from './world.js';
@@ -41,6 +45,8 @@ const phaseArg = (params.get('phase') || '').toLowerCase();
 const STATIC = params.get('static') === '1';
 /* a plan-like overhead camera, for looking at the whole estate at once */
 const TOP = params.get('view') === 'top';
+/* a close camera on the busiest bench, or on a named cell */
+const FOCUS = (params.get('focus') || '').toLowerCase();
 const parsedPhase = Object.prototype.hasOwnProperty.call(PHASE_ALIAS, phaseArg)
   ? PHASE_ALIAS[phaseArg] : -1;
 /* static with no named phase freezes at afternoon for a legible shot */
@@ -198,6 +204,7 @@ function showHover(hit) {
 
 let rafId = 0;
 let ready = false;
+let focusApplied = false;
 
 function publishReady() {
   if (ready) return;
@@ -207,12 +214,30 @@ function publishReady() {
     ready: true,
     residents: summary.residents,
     buildings: summary.buildings,
+    benches: summary.benches,
+    seated: summary.seated,
     phase: S.world.phaseName(),
     static: STATIC,
   };
   /* the same signal in the DOM, so a headless check that only dumps the
    * page can tell a drawn estate from a module that never ran */
   document.body.dataset.estate3d = 'ready';
+}
+
+/* Once, when the first state (and so the people) has arrived: a screenshot
+ * taken after a poll should already be framed. */
+function applyFocus() {
+  if (focusApplied || !FOCUS || !S.world) return;
+  focusApplied = true;
+  if (FOCUS === 'bench') {
+    S.world.focusBench();
+  } else {
+    const m = /^(-?\d+),(-?\d+)$/.exec(FOCUS);
+    if (m) S.world.focusCell(Number(m[1]), Number(m[2]));
+  }
+  /* static mode has no animation loop, and the first render happened before
+   * the camera moved — draw the focused frame now */
+  if (STATIC) S.world.frame(performance.now());
 }
 
 function tick(now) {
@@ -248,6 +273,12 @@ function poll() {
         phaseLabel(info);
         publishReady();
       }
+      /* the counts move with the estate, and a headless check is entitled
+       * to ask for them on any poll, not only the first */
+      const summary = S.world.stateSummary();
+      window.__estate3d.seated = summary.seated;
+      window.__estate3d.benches = summary.benches;
+      applyFocus();
     }
     if (STATIC) return;
     pollTimer = window.setTimeout(poll, 700);

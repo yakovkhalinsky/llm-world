@@ -179,6 +179,51 @@ def generate(seed: int, width: int = None, height: int = None,
         if place("tree", x, y):
             planted += 1
 
+    # --- benches beside the walkways -------------------------------------
+    # The courtyard's benches stand in the bands above and below it; these
+    # stand along the door paths, where the estate walks. A resident
+    # crossing the courtyard passes a seat rather than having to know it
+    # exists. Candidates are free walkable cells that touch a path and are
+    # not themselves path (a bench on the walkway is an obstacle, not a
+    # seat beside it), spaced apart so a row of benches does not become a
+    # wall, and preferred near a tree or a lamp because shade and lamplight
+    # are both worth having at a bench (`_utility` reads both).
+    #
+    # The draw uses its own salt. These are planted after the trees, so the
+    # main rng's sequence is untouched and every other fixture stays exactly
+    # where it was for a given seed; only the new benches are new.
+    path_benches = g.get("path_benches", 0)
+    if path_benches:
+        prng = W.rng_for(seed, 0, "path-benches")
+        anchors = [(f["x"], f["y"]) for f in st["fixtures"].values()
+                   if f["kind"] in ("tree", "lamp")]
+        spots = []
+        for y in range(h):
+            for x in range(w):
+                if not free(x, y) or cells[y][x]["site"] == "path":
+                    continue
+                if not any(0 <= x + dx < w and 0 <= y + dy < h
+                           and cells[y + dy][x + dx]["site"] == "path"
+                           for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+                    continue
+                near = min((abs(x - ax) + abs(y - ay)
+                            for ax, ay in anchors), default=99)
+                spots.append((near, prng.random(), x, y))
+        spots.sort()
+        chosen = []
+        for _, _, x, y in spots:
+            if all(abs(x - cx) + abs(y - cy) >= 3 for cx, cy in chosen):
+                chosen.append((x, y))
+                if len(chosen) == path_benches:
+                    break
+        if len(chosen) != path_benches:
+            raise ValueError(
+                f"the recipe asks for {path_benches} path benches but this "
+                f"plan holds only {len(chosen)} free path-side spots — "
+                f"widen the plan or lower gen.path_benches")
+        for x, y in chosen:
+            place("bench", x, y)
+
     if shop_b:
         place("shop", shop_b["door"][0], shop_b["door"][1])
 
@@ -189,7 +234,7 @@ def generate(seed: int, width: int = None, height: int = None,
     got = {}
     for f in st["fixtures"].values():
         got[f["kind"]] = got.get(f["kind"], 0) + 1
-    asked = {"bench": g["benches"], "lamp": g["lamps"],
+    asked = {"bench": g["benches"] + path_benches, "lamp": g["lamps"],
              "table": g["tables"], "tree": g["trees"],
              "playground": g["playgrounds"] if play_at else 0,
              "shop": 1 if shop_b else 0}

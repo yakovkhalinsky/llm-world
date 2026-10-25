@@ -57,6 +57,7 @@ const Scene = (() => {
     gObj: null, gPeople: null, gLight: null, gFx: null, gMark: null,
     ground: null, state: null, tickMs: 6000, t0: 0,
     agents: {}, drops: [], season: -1, built: false, shadeKey: '',
+    benchByCell: {}, seatPrev: {},
     scale: 1, ox: 0, oy: 0, cw: 0, ch: 0,
     ext: { x0: 0, y0: 0, w: 1, h: 1 },
     heights: null,
@@ -248,14 +249,21 @@ const Scene = (() => {
 
   /* ------------------------------------------------------------- people */
 
-  function drawAgent(a, p, inside) {
+  function drawAgent(a, p, inside, seated) {
     const r = p.role === 'child' ? 3.0 : 3.6;
     a.clear();
     const col = ROLE[p.role] || 0xcccccc;
     const al = inside ? 0.8 : 1;
-    a.circle(0, -r * 1.1, r * 0.6).fill({ color: col, alpha: al });
-    a.roundRect(-r * 0.68, -r * 0.4, r * 1.36, r * 1.5, r * 0.5)
-      .fill({ color: col, alpha: al });
+    if (seated) {
+      /* a shorter figure whose foot is the seat: head low, body folded */
+      a.circle(0, -r * 0.95, r * 0.6).fill({ color: col, alpha: al });
+      a.roundRect(-r * 0.68, -r * 0.55, r * 1.36, r * 1.1, r * 0.5)
+        .fill({ color: col, alpha: al });
+    } else {
+      a.circle(0, -r * 1.1, r * 0.6).fill({ color: col, alpha: al });
+      a.roundRect(-r * 0.68, -r * 0.4, r * 1.36, r * 1.5, r * 0.5)
+        .fill({ color: col, alpha: al });
+    }
     if (p.stress >= 3) {
       a.circle(0, 0, r * 1.9).stroke({ width: 1.2, color: 0xff6b5a,
                                        alpha: 0.8 });
@@ -268,6 +276,41 @@ const Scene = (() => {
   };
 
   function syncPeople(st) {
+    /* who is on a bench. The fixtures say where the benches are and how
+     * many each holds; the people say who is standing on one. Lowest ids
+     * take the seats first, so the picture does not shuffle between polls;
+     * whoever does not fit stands at the end of the bench. */
+    const benches = {};
+    st.fixtures.forEach(f => {
+      if (f.kind === 'bench' && f.cap > 0) {
+        benches[f.x + ',' + f.y] = { x: f.x, y: f.y, cap: f.cap };
+      }
+    });
+    SC.benchByCell = benches;
+    const groups = {};
+    st.people.forEach(p => {
+      if (p.in) return;
+      const key = p.x + ',' + p.y;
+      if (benches[key]) (groups[key] = groups[key] || []).push(p.id);
+    });
+    const sitAt = {};
+    for (const key in groups) {
+      const b = benches[key];
+      const base = atop({ x: b.x, y: b.y });
+      groups[key].slice().sort((a, c) => a - c).forEach((id, rank) => {
+        if (rank < b.cap) {
+          const off = b.cap > 1 ? (rank - (b.cap - 1) / 2) * 6 : 0;
+          sitAt[id] = { x: base.x + off, y: base.y - 1, seated: true,
+                        cell: key };
+        } else {
+          const side = (id & 1) ? 1 : -1;
+          const off = 10 + (id % 3) * 2;
+          sitAt[id] = { x: base.x + side * off, y: base.y, seated: false,
+                        cell: key };
+        }
+      });
+    }
+
     const seen = {};
     st.people.forEach(p => {
       seen[p.id] = 1;
@@ -277,13 +320,24 @@ const Scene = (() => {
         SC.gPeople.addChild(a);
         SC.agents[p.id] = a;
       }
-      const tag = p.role + p.in + (p.stress >= 3);
-      if (a.__drawn !== tag) { drawAgent(a, p, p.in); a.__drawn = tag; }
-      a.__to = p.in ? windowOf(p.unit) : atop(p);
-      a.__from = p.pin ? windowOf(p.punit) : atop({ x: p.px, y: p.py });
+      const sit = p.in ? null : sitAt[p.id];
+      const seated = !!(sit && sit.seated);
+      const tag = p.role + p.in + (p.stress >= 3) + (seated ? 's' : '');
+      if (a.__drawn !== tag) { drawAgent(a, p, p.in, seated); a.__drawn = tag; }
+      a.__to = p.in ? windowOf(p.unit) : (sit || atop(p));
+      const prev = SC.seatPrev[p.id];
+      /* somebody who stays on the same bench starts from the seat rather
+       * than from the cell's centre, so the seat does not re-enter the
+       * bench on every poll */
+      if (!p.in && prev && sit && prev.cell === p.x + ',' + p.y) {
+        a.__from = prev;
+      } else {
+        a.__from = p.pin ? windowOf(p.punit) : atop({ x: p.px, y: p.py });
+      }
       if (!a.__from) a.__from = a.__to;
       if (!a.__init) { a.position.set(a.__to.x, a.__to.y); a.__init = true; }
     });
+    SC.seatPrev = sitAt;
     for (const id in SC.agents) {
       if (!seen[id]) {
         SC.gPeople.removeChild(SC.agents[id]);

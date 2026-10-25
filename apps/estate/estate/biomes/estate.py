@@ -165,6 +165,13 @@ SPEC = {
         "road_width": 2,
         "playgrounds": 1,
         "benches": 7,
+        # Benches in the courtyard's two bands, plus benches beside the door
+        # paths themselves — the walkways through the courtyard, where the
+        # estate actually passes. The second number is separate because the
+        # two are placed by different rules: the courtyard's fill the bands
+        # above and below it, and these are chosen from free cells that
+        # touch a path, spaced apart, preferring ground near a tree or lamp.
+        "path_benches": 6,
         "tables": 2,
         "trees": 16,
         "lamps": 9,
