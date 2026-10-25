@@ -1,0 +1,326 @@
+/* Grove — moss, bark and the mushrooms' glow under a real sky.
+   The glass panels share the estate's shape (both views are one family)
+   in the forest's own colours. */
+
+:root {
+  --ink: #e6ecdf;
+  --dim: #9aa79a;
+  --glass: rgba(14, 22, 18, 0.72);
+  --edge: rgba(220, 236, 214, 0.14);
+  --lamp: #b8f0c8;
+  --paper: #d6e0cf;
+  --soul: #d9c4ff;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #0a100d;
+  color: var(--ink);
+  font: 14px/1.45 ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden;
+}
+
+#view {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+#view:active { cursor: grabbing; }
+
+/* --------------------------------------------------------------- the hud */
+
+.hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+.hud > * { pointer-events: auto; }
+.hud > .hint { pointer-events: none; }
+
+.panel {
+  position: absolute;
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  padding: 10px 12px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  max-width: 340px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+.title {
+  top: 14px; left: 16px;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.title .mark { color: var(--lamp); }
+.engine-mark { font-size: 11px; color: var(--dim); letter-spacing: 0; }
+
+.idbox { top: 14px; right: 16px; }
+.idrow {
+  display: flex; justify-content: space-between; gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.poplines { margin-top: 6px; font-size: 12px; color: var(--dim); }
+.poplines b { color: var(--ink); font-weight: 600; }
+.watchline {
+  margin-top: 7px; padding-top: 7px; font-size: 12.5px;
+  border-top: 1px solid var(--edge);
+  color: var(--ink);
+}
+.watchline .d { color: var(--lamp); }
+/* the moon is not a lamp: at night the glyph takes the sky's own blue */
+.watchline .d.night { color: #cfe0ff; }
+.watchline .dim { color: var(--dim); }
+.watchline.phase { border-top: 0; padding-top: 0; margin-top: 5px; }
+.voiceline { font-size: 11px; color: var(--dim); margin-top: 3px; }
+
+/* the bottom-left corner holds the feed and the controls, stacked; the
+   estate itself stays clear above them */
+.bl {
+  position: absolute;
+  bottom: 14px; left: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: min(340px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.bl > * { pointer-events: auto; }
+.bl .panel { position: static; }
+
+.feed {
+  width: 320px;
+  max-height: 30vh;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.chron {
+  list-style: none; margin: 0; padding: 0;
+  overflow-y: auto;
+  font-size: 12.5px;
+}
+.chron li {
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(233, 229, 220, 0.06);
+  color: var(--dim);
+}
+.chron li:first-child { color: var(--ink); }
+.chron li.quiet { color: var(--dim); opacity: 0.75; }
+.chron li .shape { color: var(--dim); }
+.chron li .news { color: var(--ink); display: block; padding-left: 26px; }
+.chron li .d { color: var(--lamp); font-variant-numeric: tabular-nums; }
+
+.tabs {
+  display: flex; gap: 6px;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--edge);
+}
+.tabs button { flex: 1; }
+
+.row { display: flex; gap: 6px; flex-wrap: wrap; }
+.speedrow { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+.speedrow .hint { font-size: 11px; color: var(--dim); }
+.speedrow #speeds { display: flex; gap: 4px; }
+
+button {
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: rgba(233, 229, 220, 0.06);
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+button:hover { background: rgba(233, 229, 220, 0.13); }
+button.on { background: rgba(184, 240, 200, 0.16); border-color: var(--lamp); }
+button:disabled { opacity: 0.45; cursor: default; }
+
+/* ----------------------------------------------------------------- card */
+
+.card {
+  position: absolute;
+  bottom: 14px; right: 16px;
+  width: 320px;
+  max-height: 46vh;
+  overflow-y: auto;
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  padding: 12px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  display: none;
+}
+.card.on { display: block; }
+.cardhead {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 8px;
+}
+.cardhead h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.cardhead .x { padding: 1px 7px; }
+
+.status { margin-top: 8px; font-size: 12px; color: var(--dim); }
+.status:empty { display: none; }
+
+.timeline { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12.5px; }
+.timeline li {
+  display: flex; justify-content: space-between; gap: 10px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(233, 229, 220, 0.06);
+}
+.timeline li span:last-child {
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* a bar for a need, drawn rather than described */
+.bar {
+  display: inline-block;
+  width: 74px; height: 6px;
+  background: rgba(233, 229, 220, 0.12);
+  border-radius: 3px;
+  overflow: hidden;
+  vertical-align: middle;
+}
+.bar i { display: block; height: 100%; background: var(--lamp); }
+
+/* -------------------------------------------------------------- the rest */
+
+.hint.foot {
+  position: absolute;
+  bottom: 18px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 11.5px;
+  color: var(--dim);
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+
+#tip {
+  position: fixed;
+  z-index: 20;
+  pointer-events: none;
+  opacity: 0;
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  border-left: 2px solid var(--lamp);
+  border-radius: 7px;
+  padding: 5px 9px;
+  font-size: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  transition: opacity 80ms linear;
+}
+#tip.on { opacity: 1; }
+
+#nogl {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  overflow: auto;
+  background: #0a100d;
+}
+#nogl[hidden] { display: none; }
+.noglbox {
+  position: static;
+  max-width: min(720px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+}
+.noglbox h3 { margin: 0 0 8px; font-weight: 600; }
+.noglbox p { color: var(--dim); font-size: 13px; }
+.noglhint { margin: 12px 0 6px; }
+#plain {
+  margin: 0;
+  padding: 10px 12px;
+  font: 12px/1.15 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--paper);
+  white-space: pre;
+  overflow-x: auto;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+}
+
+body.nogl #view, body.nogl .hud { display: none; }
+
+/* --------------------------------------------------------------- grove */
+
+/* the soul's line and the voices' status, under the title */
+.souline { top: 58px; left: 16px; max-width: 360px; }
+.souline:has(.soul:empty) .llmstat { margin-top: 0; }
+.soul { color: var(--soul); font-style: italic; font-size: 13px; }
+.soul:empty { display: none; }
+.soul.pulse { animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.45; } }
+.llmstat { font-size: 11px; color: var(--dim); margin-top: 4px; }
+
+.poplines .popline { display: inline-block; margin-right: 8px; }
+.poplines .pnum { color: var(--ink); font-weight: 600; margin-left: 2px; }
+
+.chron li .when { float: right; color: var(--dim); font-size: 11px;
+                  margin-left: 8px; }
+.mark-llm { color: var(--soul); }
+.mark-voice { color: #9cc9ff; }
+.mark-template { color: var(--dim); }
+
+.sparkline { display: flex; justify-content: space-between; gap: 8px;
+             font-size: 12px; padding: 2px 0; }
+.sparkline .spark { font-family: ui-monospace, monospace; letter-spacing: -1px;
+                    color: var(--lamp); }
+.tune li { display: block; }
+.tune .when { color: var(--dim); font-size: 11.5px; }
+.tune .sub { margin-top: 8px; color: var(--dim); font-size: 12px;
+             font-style: italic; }
+button.mini { padding: 2px 7px; font-size: 11px; margin-top: 4px; }
+
+.askrow { margin-top: 8px; flex-wrap: nowrap; }
+#qinput {
+  flex: 1; min-width: 0;
+  font: inherit; font-size: 12px; color: var(--ink);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--edge); border-radius: 7px; padding: 5px 8px;
+}
+#askout { margin-top: 6px; max-width: 300px; }
+
+.timeline .wk { color: var(--lamp); margin-right: 8px;
+                font-variant-numeric: tabular-nums; }
+.timeline li.ev { justify-content: flex-start; }
+
+/* 'c' clears the panels; an open card holds itself on screen */
+body.calm .hud > .panel, body.calm .bl, body.calm .hint.foot {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .souline { top: 52px; left: 10px; right: 10px; max-width: none; }
+  .idbox { top: auto; bottom: 76px; right: 10px; left: 10px;
+           max-width: none; }
+  .title { top: 10px; left: 10px; }
+  .bl { bottom: 10px; left: 10px; right: 10px; max-width: none; }
+  .feed { width: auto; max-height: 22vh; }
+  .card { bottom: 10px; right: 10px; width: min(320px, calc(100vw - 20px)); }
+  .hint.foot { display: none; }
+}

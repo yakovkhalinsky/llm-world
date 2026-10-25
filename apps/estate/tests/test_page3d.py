@@ -63,6 +63,14 @@ class WalkModuleTest(unittest.TestCase):
         self.assertLess(page.index("/3d/walk.js"),
                         page.index("/3d/viewer.js"))
 
+    def test_the_page_loads_the_light_field_before_its_module(self):
+        """The lamplight is painted by the shared `field.js`; the world
+        throws without it, so it must load before the module runs."""
+        page = web._page3d("index.html")[0].decode()
+        self.assertIn('src="/3d/field.js"', page)
+        self.assertLess(page.index("/3d/field.js"),
+                        page.index("/3d/viewer.js"))
+
 
 class Page3dTest(unittest.TestCase):
     def test_page_resolves(self):
@@ -114,6 +122,35 @@ class Page3dTest(unittest.TestCase):
             "%252e%252e/web.py",    # encoded once by the client, once by us
         ]
         for rel in paths:
+            with self.subTest(rel=rel):
+                self.assertIsNone(web._page3d(rel))
+
+    def test_shared_files_come_from_the_shared_folder(self):
+        """The engine, the clock and the router live in apps/shared/page3d
+        (the grove's 3D view reads the same files); they are still served
+        under the estate's `/3d/`, and only from that folder."""
+        shared = os.path.realpath(web.SHARED3D)
+        for rel in ("clock.js", "walk.js", "field.js",
+                    "vendor/three.module.min.js", "vendor/OrbitControls.js"):
+            with self.subTest(rel=rel):
+                got = web._page3d(rel)
+                self.assertIsNotNone(got)
+                with open(os.path.join(shared, rel), "rb") as f:
+                    self.assertEqual(got[0], f.read())
+        # nothing of the estate's own is duplicated in the shared folder
+        for name in os.listdir(web.PAGE3D):
+            with self.subTest(own=name):
+                self.assertFalse(os.path.exists(os.path.join(shared, name)),
+                                 name + " is in both folders")
+
+    def test_traversal_out_of_the_shared_folder_is_refused(self):
+        """The second root is confined like the first: its parent is the
+        other apps, and none of them is reachable through it."""
+        for rel in ("../../estate/estate/web.py",
+                    "../../grove/grove/web.py",
+                    "%2e%2e/%2e%2e/estate/estate/web.py",
+                    "vendor/../../../estate/estate/web.py",
+                    "../page3d/../../estate/estate/web.py"):
             with self.subTest(rel=rel):
                 self.assertIsNone(web._page3d(rel))
 

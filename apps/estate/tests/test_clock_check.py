@@ -1,6 +1,6 @@
 """The day clock's Node check, run where Node exists.
 
-`tools/clock_check.js` tests `estate/page3d/clock.js` — the pure clock and
+`tools/clock_check.js` tests `shared/page3d/clock.js` — the pure clock and
 light table `world.js` uses. The property is the one a browser screenshot
 cannot pin: the light never jumps at the day's turn or when a poll
 re-anchors, at all three paces, and `light(0) == light(1)`.

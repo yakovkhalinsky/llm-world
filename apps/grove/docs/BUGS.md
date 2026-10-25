@@ -933,6 +933,11 @@ constitution) changes a value the engine never consults.
 > `tools/pixi_check.js`, which is the one that exists and runs today
 > (`node tools/pixi_check.js`). The entries are left as written: they are
 > the record of what was done then, not a map of the tree now.
+>
+> *Later still:* `tools/pixi_check.js` was itself removed with the plan
+> view (the 3D port, PR #4); the page's checks now are
+> `tools/hud_check.js` and `tools/route_check.js`, run by
+> `tests/test_hud_check.py` and `tests/test_route_check.py`.
 
 ## The creatures, looked at for the first time
 

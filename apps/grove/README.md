@@ -42,25 +42,40 @@ Keys in watch mode: `space` pause · `s` step · `n` invite the soul now ·
 ## Viewing it from another device
 
 `grove web` serves a live dashboard over plain HTTP — no build step, works
-offline, one hand-written page, rendered by **PixiJS** (vendored, served at
-`/pixi.js`): the ground and its trees captured as textures when the week
-changes, creatures caught once per pose, every frame only moves light and
-souls. It is a **full-screen HUD**: the isometric
-map fills the window and the controls float as translucent panels over it
-— the chronicle, the census and the tuning tab **stay open**, because
-there is room for them beside the world; `c` clears them when you want the
-grove alone. The
-scene: a floating earth slab, diamonds shaded by season and moisture,
-procedural pines/birches/willows swaying and occluding each other
-depth-sorted, creatures gliding to their weekly cells with soft shadows
-(birds hover above theirs), rain and snowfall, lightning in storms,
-autumn leaf-drift, name tags over named souls, and Diamond washes where
-the soul's effects are active. Click a named creature for its biography
-(born → named → hunted → remembered) with a follow-cam; ask the grove
-questions and it answers from the world's own history. Keys: `space`
-pause · `s` step · `n` invite the soul · `f` fullscreen · `c` calm.
-`?plain` (or no WebGL) falls back to the emoji page. The scene's headless
-checks: `node tools/pixi_check.js`.
+offline, hand-written files, rendered in **3D with Three.js** (r170,
+vendored and shared with the estate under `apps/shared/page3d/`). It is a
+**full-screen HUD**: the forest fills the window and the controls float as
+translucent panels over it — the chronicle, the census and the tuning tab
+**stay open**, because there is room for them beside the world; `c` clears
+them when you want the grove alone. Drag to orbit, wheel to zoom,
+right-drag to pan.
+
+The scene: the forest floor is a real surface lifted by the engine's
+elevation, with the water lying in its hollows, coloured by the season
+(the first two weeks of a season blend in from the last). Pines, birches
+and willows, ferns and berry bushes (cacti and the rest in the desert)
+stand on it at the size their stage gives them; creatures walk to their
+weekly cells **round the trunks and the water** — the estate's router on a
+quartered grid, so no deer walks through a tree — and the robins fly
+straight, hovering over theirs. The light is a **day clock** shared with
+the estate: a page day lasts a few weeks of the grove's, close to a minute
+and a half of wall time, and the sun crosses the sky continuously rather
+than stepping when a week turns. After dark the **mushrooms glow**: the
+server sends a light field (`glow` in `/api/state`) and the page lays it
+on the floor as one soft pool of light, the way the estate lays its
+lamplight. Rain, snow, lightning in storms, fireflies over the water on
+summer nights. Click a creature or a tree for its card (named souls show
+their biography, born → named → hunted → remembered) with a follow-cam;
+ask the grove questions and it answers from the world's own history.
+Keys: `space` pause · `s` step · `n` invite the soul · `f` fullscreen ·
+`c` calm. `?plain` (or no WebGL) falls back to the emoji page.
+
+Debug parameters: `?phase=dawn|morning|afternoon|evening|night` freezes
+the light, `?clock=0.2` pins the day's fraction, `?static=1` draws the
+first state and stops (for screenshots), `?view=top` looks straight down.
+The page's headless checks: `node tools/hud_check.js` (every model string
+escaped), `node tools/route_check.js <state.json>` (no walk crosses a
+trunk or water), and `python3 -m unittest discover -s tests`.
 
 ```sh
 ./grove.sh web                  # loopback only (for an ssh tunnel)
@@ -77,6 +92,14 @@ checks: `node tools/pixi_check.js`.
 - **No browser at all:** `ssh` in and run `./grove.sh run` inside
   `tmux` (or `nohup ./grove.sh web > grove-web.log 2>&1 &`) — the
   terminal view is the same world, and detach/reattach as you like.
+
+The page's buttons (pause, step, ask, accept/dismiss) are POSTs, and the
+server answers them only from the page itself: a JSON body, an `Origin`
+(if any) matching the `Host`, and a `Host` it knows. That is loopback
+always; with `--public`, also this box's LAN address and the station's
+tailnet name (`station.tail8a1a2.ts.net`) and its addresses. Opened by any
+other name, the page still shows but its buttons get a 403 — add the name
+with `--allow-host NAME` (repeatable). `web` prints the list it answers.
 
 Leave it running detached with `tmux` (recommended), or `nohup` a
 server: `nohup ./grove.sh web --public > grove-web.log 2>&1 &`; use
@@ -172,7 +195,7 @@ all species must persist).
 |---|---|
 | `grove/engine/` | the tick's domains: weather/soil, plants, animals, the population's nets, the operator's fates |
 | `grove/biomes/` | a world's nature as packs: `grove.py`, `desert.py` (species, recipes, words, colours, shapes) |
-| `grove/page/` | the dashboard's hand-written files (style, boot, scene, panels), joined at import |
+| `grove/page3d/` | the 3D dashboard: `index.html`, `style.css`, `hud.js` (panels, all text escaped), `forest.js` (trunks and the walk grid), `world.js` (the Three.js scene), `viewer.js` (polling and input); the shared clock, router, light field and Three.js come from `apps/shared/page3d/` |
 | `grove/world.py` | state containers, species-table aliases, helpers |
 | `grove/gen.py` | seeded worldgen (no LLM) |
 | `grove/sim.py` | the tick engine + validated operator effects |
@@ -185,10 +208,12 @@ all species must persist).
 | `grove/render.py` | the emoji map + header + chronicle feed |
 | `grove/db.py` | SQLite: world, stats, events, chronicle, cache, biographies |
 | `grove/app.py` | shared runner (used by CLI and web) |
-| `grove/web.py` | the full-screen isometric dashboard (one HTML page) |
+| `grove/web.py` | the dashboard's server: the state JSON, the light field, the 3D page's files |
 | `grove/__main__.py` | CLI + run loop |
 | `tools/balance.py` | the ecologist's gate: seeded worlds × years, all must pass |
-| `tools/check_page.py` | headless verification of the served page |
+| `tools/hud_check.js` | the HUD's escaping check: hostile strings in every field must come out inert |
+| `tools/route_check.js` | the walk check: every creature's route on a snapshot avoids trunks and water |
+| `tests/` | the server's routes and headers, the light field, and the two checks above (with mutants) |
 | `tools/render_svg.py` | the README's scene, rendered from the live world |
 | `docs/ARCHITECTURE.md` | how it all works: tick order, contracts, threads |
 | `docs/ECOLOGY.md` | the field guide: how the biome's mechanics work |

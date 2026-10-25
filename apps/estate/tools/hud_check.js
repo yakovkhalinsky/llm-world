@@ -85,9 +85,13 @@ if (!EstateHUD) {
  * still looks alive. That is how a dead day feed once ran for a day while
  * every other check passed. The 3D page's classic scripts are each one
  * IIFE, so a collision inside a file is the shape this can still have. */
+/* hud.js is the estate's own; the router and the clock are the folder
+ * both apps' 3D views share */
+const SHARED = path.join(__dirname, '..', '..', 'shared', 'page3d');
 for (const f of ['walk.js', 'hud.js', 'clock.js']) {
-  const src = fs.readFileSync(
-    path.join(__dirname, '..', 'estate', 'page3d', f), 'utf8');
+  const dir = f === 'hud.js' ? path.join(__dirname, '..', 'estate', 'page3d')
+                             : SHARED;
+  const src = fs.readFileSync(path.join(dir, f), 'utf8');
   const seen = {};
   for (const m of src.matchAll(
       /^\s*(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/gm)) {

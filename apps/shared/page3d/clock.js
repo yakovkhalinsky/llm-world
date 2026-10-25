@@ -8,6 +8,9 @@
  * `light(0) == light(1)`, a pinned clock or phase, a paused day frozen) are
  * therefore properties of a pure module, not of a renderer.
  *
+ * Shared by both 3D views (apps/shared/page3d/); each app serves this
+ * folder under its own `/3d/`.
+ *
  * It publishes itself as a classic script, like `walk.js` beside it: the 3D
  * page loads it before its module, and `tools/clock_check.js` requires it
  * in Node.
@@ -214,5 +217,8 @@
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
   }
+  /* `Page3DClock` is the shared name (both apps' 3D views read it);
+   * `EstateClock` stays for the estate's module and checks. */
+  root.Page3DClock = api;
   root.EstateClock = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

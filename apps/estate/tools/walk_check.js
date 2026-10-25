@@ -29,7 +29,8 @@ const vm = require('vm');
 const http = require('http');
 const https = require('https');
 
-const WALK = path.join(__dirname, '..', 'estate', 'page3d', 'walk.js');
+const WALK = path.join(__dirname, '..', '..', 'shared', 'page3d',
+                        'walk.js');
 
 /* walk.js is a classic script, so it publishes itself on `globalThis` rather
  * than exporting. Load it in a context of its own, exactly as the 3D page
