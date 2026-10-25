@@ -14,6 +14,7 @@ Run from `apps/estate`:
 import http.client
 import io
 import os
+import socket
 import threading
 import types
 import unittest
@@ -248,6 +249,37 @@ class ResponseHeaderLiveTest(_LiveServer, unittest.TestCase):
         resp, _ = self.request("HEAD", "/")
         self.assertEqual(resp.status, 501)
         self.assert_nosniff_once(resp)
+
+    def raw(self, line):
+        """Send one request line as bytes and read the whole reply.
+
+        `http.client` will not send a malformed request line, and the 400
+        for one is the case that matters: until the handler's default
+        version was HTTP/1.0, the stdlib answered it as HTTP/0.9 and
+        `send_header` wrote no headers at all, nosniff included.
+        """
+        with socket.create_connection(("127.0.0.1", self.port),
+                                      timeout=10) as s:
+            s.sendall(line + b"\r\n\r\n")
+            chunks = []
+            while True:
+                b = s.recv(65536)
+                if not b:
+                    break
+                chunks.append(b)
+        return b"".join(chunks)
+
+    def test_nosniff_on_400_for_a_malformed_request_line(self):
+        for line in (b"GARBAGE", b"GET / HTTP/1.x", b"GET / HTTP/9.9",
+                     b"GET / NOTHTTP/1.1"):
+            with self.subTest(line=line):
+                reply = self.raw(line)
+                head = reply.split(b"\r\n\r\n", 1)[0].decode("latin-1")
+                status, *headers = head.split("\r\n")
+                self.assertRegex(status, r"^HTTP/1\.[01] (400|505) ")
+                values = [h.split(":", 1)[1].strip() for h in headers
+                          if h.lower().startswith("x-content-type-options:")]
+                self.assertEqual(values, ["nosniff"], repr(head))
 
 
 class _Handler:

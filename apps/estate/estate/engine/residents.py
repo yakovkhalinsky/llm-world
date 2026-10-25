@@ -370,15 +370,49 @@ def drain(w, phase):
             r["needs"][need] = min(top, r["needs"][need])
 
 
+def _held_fixture(w, r):
+    """The fixture `r` is sitting at, if they are still on its cell."""
+    where = r["where"]
+    fid = where.get("fixture")
+    if where["mode"] != "at" or fid is None:
+        return None
+    f = w["fixtures"].get(str(fid))
+    if f is None or (f["x"], f["y"]) != (where["x"], where["y"]):
+        return None
+    return f
+
+
+def _seat_holders(w):
+    for f in w["fixtures"].values():
+        f["occupants"] = []
+    for rid in sorted(w["residents"], key=lambda k: int(k)):
+        r = w["residents"][rid]
+        f = _held_fixture(w, r)
+        if f is not None:
+            f["occupants"].append(r["id"])
+
+
 def update_residents(w, evs):
     cand = candidates(w)
     line = rules.R["engine"]["stress_at"]
     for phase in PHASES:
         drain(w, phase)
+        # A seat is held from the moment it is taken until its holder gets
+        # up: whoever is still sitting from the last phase counts against
+        # the bench before anyone else chooses. Clearing the lists and
+        # letting each resident re-claim on their turn left a stayer — who
+        # keeps their seat when nothing pulls them away — invisible to the
+        # chooser, and two more could sit down beside them.
+        _seat_holders(w)
         for rid in sorted(w["residents"], key=lambda k: int(k)):
             r = w["residents"].get(rid)
             if r is None:
                 continue
+            # a resident re-deciding is not competing with themselves for
+            # the seat they are on
+            held = _held_fixture(w, r)
+            if held is not None:
+                held["occupants"].remove(r["id"])
             best, best_u, need_of = None, None, None
             rng = W.rng_for(w["seed"], w["day"], f"whim:{rid}:{phase}")
             # the most pressing need first, and if there is nowhere to
@@ -399,6 +433,8 @@ def update_residents(w, evs):
                     rules.R["engine"]["arrive_restore"]
                 r["needs"]["rest"] = max(
                     0.0, r["needs"]["rest"] - full * rules.R["engine"]["home_rest"])
+                if held is not None:
+                    held["occupants"].append(r["id"])   # still sitting
                 continue
             if _go_to(w, r, best):
                 _satisfy(w, r, best, need_of, phase)

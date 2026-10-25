@@ -16,6 +16,7 @@ exists to catch (Grove's b20: a gate that lied about what it checked).
 import argparse
 import fnmatch
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -60,9 +61,15 @@ def leaves(node, path=()):
 
 
 def read_dynamically(path, blob):
-    """A dynamic reader counts only if the reader it names is present."""
+    """A dynamic reader counts only if the function it names is defined.
+
+    The name alone is not enough: it also appears in comments and in the
+    rules that declare the key, so a deleted reader would still have
+    passed. What has to exist is `def <reader>(`.
+    """
     for pattern, reader in DYNAMIC_READERS.items():
-        if fnmatch.fnmatchcase(path, pattern) and reader in blob:
+        if fnmatch.fnmatchcase(path, pattern) and re.search(
+                r"^\s*def " + re.escape(reader) + r"\s*\(", blob, re.M):
             return True
     return False
 

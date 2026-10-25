@@ -521,6 +521,13 @@ def make_handler(page, est, lock, runner):
     """
 
     class Handler(BaseHTTPRequestHandler):
+        # The stdlib's default is HTTP/0.9, which is what a reply to a
+        # request line it could not parse goes out as: a bare body with no
+        # status line and no headers, so `end_headers` below never got the
+        # chance to add nosniff to the 400. Every client this page has
+        # speaks 1.0 or later.
+        default_request_version = "HTTP/1.0"
+
         def _send(self, code, body, ctype):
             _respond(self, code, body, ctype)
 

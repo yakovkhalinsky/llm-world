@@ -154,8 +154,8 @@ const Panels = (() => {
     if (sel.kind === 'fixture') {
       const f = st.fixtures.filter(f => f.id === sel.id)[0];
       if (!f) return { name: 'a place', state: 'gone', rows: '' };
-      const spec = esc(S.ground.glyphs.fixtures[f.kind] || '') + ' ' +
-        esc(f.kind);
+      // names are plain text: the card escapes them once, where it writes
+      const spec = (S.ground.glyphs.fixtures[f.kind] || '') + ' ' + f.kind;
       return {
         name: spec,
         state: 'at ' + Number(f.x) + ',' + Number(f.y) + ' · used ' +
@@ -183,7 +183,7 @@ const Panels = (() => {
       const i = sel.y * S.ground.width + sel.x;
       const site = S.ground.codes[S.ground.rows[sel.y][sel.x]];
       return {
-        name: esc(glyphOf('sites', site)) + ' ' + esc(site),
+        name: glyphOf('sites', site) + ' ' + site,
         state: 'at ' + Number(sel.x) + ',' + Number(sel.y),
         rows: '<li><span>shade</span><span>' +
           (Number(st.shade[i]) / 9).toFixed(2) + '</span></li>' +
