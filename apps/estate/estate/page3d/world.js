@@ -1494,19 +1494,25 @@ export function createWorld(ground, canvas, opts) {
     ndc.set(((clientX - rect.left) / rect.width) * 2 - 1,
             -((clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
+    /* Whatever is nearest is what was clicked. A fixture standing in front
+     * of a block must win over the block behind it, so the three pickable
+     * layers are compared by distance rather than checked in an order. */
+    let best = null;
     if (bodyMesh) {
       /* the head is a person too: without it a click on the most visible
        * part of a figure fell through to whatever stood behind */
       const hits = raycaster.intersectObjects([bodyMesh, headMesh], false);
       if (hits.length) {
         const p = personAt[hits[0].instanceId];
-        if (p) return { kind: 'resident', person: p };
+        if (p) best = { d: hits[0].distance,
+                        hit: { kind: 'resident', person: p } };
       }
     }
     const bh = raycaster.intersectObjects(buildingBodies, false);
-    if (bh.length) {
+    if (bh.length && (!best || bh[0].distance < best.d)) {
       const id = bh[0].object.userData.pick.id;
-      return { kind: 'building', id, building: buildingById[id] };
+      best = { d: bh[0].distance,
+               hit: { kind: 'building', id, building: buildingById[id] } };
     }
     /* a fixture's own group carries the id; the ray lands on a mesh inside
      * it, so walk back up to the group that owns the pick */
@@ -1514,13 +1520,15 @@ export function createWorld(ground, canvas, opts) {
     if (fh.length) {
       let o = fh[0].object;
       while (o && !o.userData.pick) o = o.parent;
-      const pick = o && o.userData.pick;
-      if (pick) {
-        return { kind: 'fixture', id: pick.id,
-                 fixture: fixtureById[pick.id] ||
-                          { id: pick.id, kind: 'a place' } };
+      const mark = o && o.userData.pick;
+      if (mark && (!best || fh[0].distance < best.d)) {
+        best = { d: fh[0].distance,
+                 hit: { kind: 'fixture', id: mark.id,
+                        fixture: fixtureById[mark.id] ||
+                                 { id: mark.id, kind: 'a place' } } };
       }
     }
+    if (best) return best.hit;
     /* the ground itself: an instanced tile knows its own cell, so a click
      * on a lawn or the water can say which one it was */
     if (withGround) {
