@@ -163,8 +163,8 @@
 
   function head(st) {
     $('when').textContent =
-      'day ' + fmt(st.day) + ' · ' + st.season_name + ' · ' + st.weekday +
-      (st.viewPhase ? ' · ' + st.viewPhase : '');
+      'day ' + fmt(st.day) + ' · ' + st.season_name + ' · ' + st.weekday;
+    /* a scrubbed phase is the phase line's to say, not said twice */
     $('weather').textContent =
       glyphOf('weather', st.weather) + ' ' +
       (WEATHER_WORD[st.weather] || st.weather);
@@ -251,7 +251,7 @@
         '<span class="d">day ' + fmt(d.day) + '</span>' +
         '<span class="shape">' + esc(d.line || '') + '</span>' +
         (says.length ? '<span class="news">' + says.map(function (s) {
-          return '· ' + esc(s);
+          return esc(s);   // no bullet, as the grove's feed
         }).join('<br>') + '</span>' : '') +
         '</li>';
     }).join('') : '<li>nothing has happened yet — it\'s early</li>';
@@ -457,6 +457,8 @@
     if (!WORDS[k]) return 'in a ' + kindWord(k || 'household') + ' household';
     /* a household whose others have left is one person on their own */
     if (k === 'single' || !(p.family || []).length) return 'lives alone';
+    /* an elder in an elder household lives with family, not "an elder" */
+    if (k === 'elder' && p.role === 'elder') return 'lives with family';
     return WORDS[k];
   }
 
@@ -613,8 +615,9 @@
       return '<li><span>' + esc(glyphOf('households', k)) + ' ' +
         esc(kindWord(k)) + '</span><span>' + fmt(kinds[k]) + '</span></li>';
     }).join('');
+    var bg = glyphOf('sites', 'building');
     return {
-      name: b.name,
+      name: (bg ? bg + ' ' : '') + b.name,   // headed like a cell or the shop
       state: fmt(b.floors) + ' floors · ' + fmt(d.lived) + ' of ' +
         fmt(d.units) + ' flats lived in' + offs(d),
       rows: row('people live here', fmt(here.length)) +
@@ -693,9 +696,13 @@
       bar(shade, 9) + '<span>' + shadeWord(shade) + '</span></li>' : '') +
       (light > 0 ? '<li class="need"><span>lamplight</span>' + bar(light, 9) +
       '<span>' + lightWord(light) + '</span></li>' : '');
+    /* with nothing near and no rows, a line still says what it is: a card
+     * that is only a heading reads as broken */
+    var plain = { road: 'a road round the estate', path: 'a footpath' };
     return {
       name: glyphOf('sites', site) + ' ' + siteWord(site),
-      state: by ? 'near the ' + esc(kindName(by.kind)) : '',
+      state: by ? 'near the ' + esc(kindName(by.kind))
+        : rows ? '' : plain[site] || 'no shade or lamplight here',
       rows: rows,
     };
   }

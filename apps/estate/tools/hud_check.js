@@ -198,6 +198,22 @@ if (!person) {
      els.cardRows.innerHTML.slice(0, 120));
 }
 
+/* an elder in an elder household lives with family (Iris A8) */
+if (person) {
+  const st = clone(state);
+  const gran = Object.assign(clone(person), { id: 9003, name: 'Hal',
+    role: 'elder', age: 71, kind: 'elder', family: [9004] });
+  const son = Object.assign(clone(person), { id: 9004, name: 'Rob',
+    role: 'adult', age: 44, kind: 'elder', family: [9003] });
+  st.people = [gran, son];
+  EstateHUD.card(st, { kind: 'resident', id: 9003 });
+  ok('an elder\'s card: lives with family, not "lives with an elder"',
+     els.cardState.innerHTML.indexOf('lives with family') >= 0, els.cardState.innerHTML);
+  EstateHUD.card(st, { kind: 'resident', id: 9004 });
+  ok('the elder\'s family: lives with an elder',
+     els.cardState.innerHTML.indexOf('lives with an elder') >= 0, els.cardState.innerHTML);
+}
+
 /* the family: a two-person household cards each other, and a young child
  * out with a guardian names them */
 if (person) {
@@ -241,7 +257,7 @@ if (!building) {
 } else {
   ok('a block gets a card',
      EstateHUD.card(state, { kind: 'building', id: building.id}) &&
-     els.cardName.textContent === building.name,
+     els.cardName.textContent === '🏢 ' + building.name,
      els.cardName.textContent);
   ok('the block card carries the flats and who lives there',
      els.cardState.innerHTML.indexOf('flats lived in') >= 0 &&
@@ -277,6 +293,33 @@ if (!cell) {
       if (r.indexOf('>lamplight<') >= 0) lit++;
       if (/width:0%|>none<|dark at night/.test(r)) empty = r;
     }
+  }
+  /* a road or footpath with nothing near and no rows still says what it
+   * is: a heading with an empty body read as broken (Iris A2) */
+  let bare = '';
+  for (let y = 0; y < ground.height && !bare; y++) {
+    for (let x = 0; x < ground.width; x++) {
+      if (ground.codes[ground.rows[y][x]] === 'building') continue;
+      if (!EstateHUD.card(state, { kind: 'cell', x, y })) continue;
+      if (!els.cardRows.innerHTML && !els.cardState.innerHTML) {
+        bare = x + ',' + y + ' ' + els.cardName.textContent; break;
+      }
+    }
+  }
+  ok('no cell card is a heading with nothing under it', !bare, bare);
+  {
+    let road = null;
+    for (let y = 0; y < ground.height && !road; y++) {
+      for (let x = 0; x < ground.width; x++) {
+        if (ground.codes[ground.rows[y][x]] !== 'road') continue;
+        EstateHUD.card(state, { kind: 'cell', x, y });
+        if (!els.cardRows.innerHTML && els.cardState.innerHTML.indexOf('near the') < 0) {
+          road = els.cardState.innerHTML; break;
+        }
+      }
+    }
+    ok('a bare road says it is the road round the estate',
+       road === null || road === 'a road round the estate', road);
   }
   ok('cell cards carry shade and lamplight where there is some',
      shaded > 0 && lit > 0, shaded + ' shaded, ' + lit + ' lit');
@@ -364,8 +407,11 @@ if (ph && ph.order) {
        (p.mode !== 'school' || !p.in) &&
        (p.mode !== 'away' || p.pmode !== 'away' || p.in)));
   EstateHUD.update(morning);
-  ok('the header says which phase is shown',
-     els.when.textContent.indexOf('morning') >= 0, els.when.textContent);
+  /* the phase line under it (viewer.js phaseLabel) says which phase is
+   * shown; the date saying it too read twice (Iris A4) */
+  ok('a scrubbed phase is not said again in the date line',
+     els.when.textContent.indexOf('morning') < 0 &&
+     els.when.textContent.indexOf(state.weekday) >= 0, els.when.textContent);
   const pupil = morning.people.find(p => p.mode === 'school');
   if (pupil) {
     EstateHUD.card(morning, { kind: 'resident', id: pupil.id });
@@ -633,6 +679,10 @@ escaped('the day feed escapes a day\'s line', els.chron.innerHTML);
 evil.days = [{ day: 1, line: '', says: [TAG, TAG] }];
 EstateHUD.tab('chron', evil);
 escaped('the day feed escapes a day\'s news', els.chron.innerHTML);
+evil.days = [{ day: 1, line: 'quiet', says: ['the Ossian household left the estate'] }];
+EstateHUD.tab('chron', evil);
+ok('the day feed\'s news has no bullet, as the grove\'s (Iris A3)',
+   els.chron.innerHTML.indexOf('<span class="news">the Ossian') >= 0, els.chron.innerHTML);
 
 /* the watcher tab: the chronicle */
 evil.chronicle = [{ day: 1, text: TAG }];

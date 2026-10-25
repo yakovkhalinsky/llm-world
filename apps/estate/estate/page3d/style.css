@@ -236,6 +236,8 @@ button.on { background: rgba(255, 202, 122, 0.18); border-color: var(--lamp); }
   display: none;
 }
 .card.on { display: block; }
+/* a card with no rows leaves no empty band under its state line */
+.card .timeline:empty { display: none; }
 /* the card scrolls as one; its head stays */
 .cardhead {
   display: flex; justify-content: space-between; align-items: center;
@@ -379,5 +381,8 @@ body.nogl #view, body.nogl .hud { display: none; }
   /* the sheet is one width whatever the tab: the feed and the controls
    * both run edge to edge */
   .bl > .feed, .bl > .ctl { width: auto; align-self: stretch; }
+  /* and as wide as the status box and the card: .panel's 340px cap is
+   * for the desktop corners */
+  .bl > .panel { max-width: none; }
   .hint.foot { display: none; }
 }

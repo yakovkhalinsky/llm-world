@@ -193,6 +193,8 @@ function updateHUD(st) {
   const b = $('pauseBtn');
   b.textContent = st.paused ? '▶ play' : '⏸ pause';
   b.classList.toggle('on', !!st.paused);
+  /* a day is stepped by hand only while paused, as the grove's week */
+  $('stepBtn').disabled = !st.paused;
 }
 
 function markPace(now) {
@@ -246,7 +248,7 @@ function showHover(hit) {
   if (!hit) { tip.classList.remove('on'); S.hover = null; return; }
   S.hover = hit;
   if (hit.kind === 'resident') {
-    tip.textContent = hit.person.name + ' · ' + hit.person.role;
+    tip.textContent = hit.person.name;   // as the card heads it
   } else if (hit.kind === 'building') {
     tip.textContent = hit.building.name;   // as the card heads it
   } else if (hit.kind === 'fixture') {

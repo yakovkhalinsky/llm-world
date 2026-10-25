@@ -119,6 +119,20 @@ class Page3dTest(unittest.TestCase):
         self.assertLess(fresh, body.index("drawCard();"))
         self.assertLess(body.index("S.selected = sel;"), fresh)
 
+    def test_round_two_nits_hold(self):
+        """Iris round 2: the sheet at 390 runs as wide as the status box and
+        card (A1); a card with no rows leaves no empty band (A2); a person's
+        tip is their name, as the card heads it (A9); a day is stepped by
+        hand only while paused, as the grove's week (A13)."""
+        css = web._page3d("style.css")[0].decode()
+        phone = css[css.index("@media (max-width: 760px)"):]
+        self.assertIn(".bl > .panel { max-width: none; }", phone)
+        self.assertIn(".card .timeline:empty { display: none; }", css)
+        viewer = web._page3d("viewer.js")[0].decode()
+        self.assertIn("tip.textContent = hit.person.name;", viewer)
+        self.assertNotIn("hit.person.name + ' · ' + hit.person.role", viewer)
+        self.assertIn("$('stepBtn').disabled = !st.paused;", viewer)
+
     def test_vendored_licence_resolves(self):
         got = web._page3d("vendor/LICENSE")
         self.assertIsNotNone(got)
