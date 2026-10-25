@@ -242,6 +242,61 @@ class WalkTest(unittest.TestCase):
             self.assertEqual(r["where"]["mode"], "in", r["id"])
             self.assertEqual(r["where"]["unit"], hh["unit"])
 
+    def test_the_evening_choice_passes_over_what_the_walk_cannot_reach(self):
+        # #10 review: nothing failed with the reach left out of `_choose`.
+        # A family wanting to play goes to the playground; with that one
+        # cell beyond the walk this evening, they go somewhere else
+        w = gen.generate(42)
+        hh = _family_with_young(w)
+        party = sorted(families.members(w, hh),
+                       key=lambda r: (not families.is_guardian(r), r["id"]))
+        party = [party[0]] + [r for r in party if families.is_young(r)]
+        door = w["buildings"][str(
+            w["units"][str(hh["unit"])]["building"])]["door"]
+        for r in party:
+            _out(r, *door)
+            r["needs"].update(food=0.0, rest=0.0, quiet=0.0, company=1.0,
+                              play=4.0)
+        cand = residents.candidates(w)
+        c, need, _ = residents._choose(w, party, cand, "evening",
+                                       random.Random(1))
+        self.assertEqual((c["kind"], need), ("playground", "play"))
+        real = residents._reach
+
+        def beyond(w, sx, sy, limit=None):
+            dist = real(w, sx, sy, limit)
+            dist.pop((c["x"], c["y"]), None)
+            return dist
+        with mock.patch.object(residents, "_reach", beyond):
+            c2, _, _ = residents._choose(w, party, cand, "evening",
+                                         random.Random(1))
+        self.assertIsNotNone(c2)
+        self.assertNotEqual((c2["x"], c2["y"]), (c["x"], c["y"]))
+
+    def test_a_minders_evening_walk_home_is_sure_without_a_curfew(self):
+        # in range, in the evening, no curfew yet: the walk home must still
+        # arrive, or a capped one could end the evening beyond the range
+        w = gen.generate(42)
+        hh = _family_with_young(w)
+        g = next(r for r in families.members(w, hh)
+                 if families.is_guardian(r))
+        door = w["buildings"][str(
+            w["units"][str(hh["unit"])]["building"])]["door"]
+        _out(g, door[0] + 1, door[1])
+        self.assertFalse(families.curfew(w, g, "evening", True))
+        self.assertTrue(families.sure_home(w, g, "evening", True))
+        self.assertFalse(families.sure_home(w, g, "evening", False))
+
+    def test_the_capped_reach_is_the_full_one_cut_at_the_budget(self):
+        w = gen.generate(42)
+        hh = _family_with_young(w)
+        door = w["buildings"][str(
+            w["units"][str(hh["unit"])]["building"])]["door"]
+        full = residents._reach(w, *door)
+        for budget in (1, 5, 12, 30):
+            self.assertEqual(residents._reach(w, *door, budget),
+                             {k: d for k, d in full.items() if d <= budget})
+
     def test_an_evening_outing_is_one_the_party_can_reach(self):
         w = gen.generate(42)
         hh = _family_with_young(w)

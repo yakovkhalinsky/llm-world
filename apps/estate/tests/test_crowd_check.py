@@ -8,7 +8,9 @@ once, and two groups meeting head-on — and on made-up scenes (a passer-by
 at a lamp from every side, a head-on pair a little to the wrong side, a
 one-wide corridor, ten at a bench in a nook, fifteen at a lamp in a dead
 end, a resident by a shop's stall or a wall's corner, centres on a wall's
-edge, the walk to a lamp or a tree and back by walls and water). It judges them with an oracle of its own — the walls from the
+edge, the walk to a lamp or a tree and back by walls and water, a child
+following a guardian onto a tile with a pole, a trunk, a table or a
+bench). It judges them with an oracle of its own — the walls from the
 ground, each fixture's drawn body where the state puts it — never with
 the clearAt or okAt it is checking. It needs Node, so this skips without
 it.
@@ -17,8 +19,9 @@ The other tests prove the check can fail, each on a mutant of the page:
 spacing taken out; keeping right taken out; the fixture keep-out taken
 out of clearAt, or only out of the per-frame push; and a push that
 ignores what the ground allows; a walk round a pole that ignores the walls,
-or goes round only on the way back; a stall with no body; a box's corner
-measured square; an edge guard that says yes to everything.
+or goes round only on the way back; a child's follow whose end legs skip
+the detour; a stall with no body; a box's corner measured square; an
+edge guard that says yes to everything.
 
 Run from `apps/estate`:
 
@@ -180,9 +183,18 @@ def _no_beside(src):
 
 def _no_follow(src):
     """crowd.js whose children walk their own way, not their guardian's."""
-    return _swap(src, "  function follow(lead, leadFrom, own, ownFrom) {\n",
-                 "  function follow(lead, leadFrom, own, ownFrom) {\n"
-                 "    return own;\n")
+    sig = "  function follow(lead, leadFrom, own, ownFrom, Walk, grid, fixAt) {\n"
+    return _swap(src, sig, sig + "    return own;\n")
+
+
+def _follow_plain_ends(src):
+    """crowd.js whose follow is the one before the fix: the guardian's
+    route with the child's two ends put on it, the end legs neither bent
+    round a pole or a trunk nor checked against the child's own route."""
+    src = _swap(src, "    if (Walk && Walk.around && fixAt) {\n      /* every pole",
+                "    if (false) {\n      /* every pole")
+    return _swap(src, "    if (got.into > Math.max(mine.into, 0) + FOLLOW_TOL ||\n",
+                 "    if (false && got.into > Math.max(mine.into, 0) + FOLLOW_TOL ||\n")
 
 
 @unittest.skipUnless(NODE, "node is not installed")
@@ -240,10 +252,17 @@ class CrowdCheckTest(unittest.TestCase):
         out = self._mutant(_no_follow, CROWD, "PAGE3D_CROWD")
         self.assertIn("cells from their guardian", out)
 
+    def test_a_child_following_into_a_pole_fails(self):
+        # #10 review: the follow's end legs skipped #12's detour, and a
+        # child walked 0.19 into a tree trunk here
+        out = self._mutant(_follow_plain_ends, CROWD, "PAGE3D_CROWD")
+        self.assertRegex(out, r"FAIL follow-walk: a child following .* "
+                         r"runs 0\.\d+ into the (tree|lamp)@")
+
     def test_the_scenes_ran(self):
         out = self._run().stdout
         for tag in ("lamp", "table-passer", "shop-passer", "box-corner",
-                    "wall-edge", "pole-walk", "head-on", "corridor",
+                    "wall-edge", "pole-walk", "follow-walk", "head-on", "corridor",
                     "bench-nook 20", "lamp-dead-end 15", "shop-door 8"):
             self.assertIn(tag, out)
 

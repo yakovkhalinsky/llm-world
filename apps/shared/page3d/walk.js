@@ -529,6 +529,7 @@
                [0.7071, 0.7071], [-0.7071, 0.7071],
                [0.7071, -0.7071], [-0.7071, -0.7071]];
   function clearAt(g, gx, gz, m, home, keep) {
+    var cx, cz, i;
     if (keep > 0 && home >= 0 && g.solid[home]) {
       var hx = home % g.W, hz = (home - hx) / g.W;
       if (Math.max(Math.abs(gx - hx - 0.5), Math.abs(gz - hz - 0.5)) <
@@ -538,11 +539,23 @@
     }
     for (var k = 0; k < PROBE.length; k++) {
       var px = gx + PROBE[k][0] * m, pz = gz + PROBE[k][1] * m;
-      var cx = Math.floor(px), cz = Math.floor(pz);
+      cx = Math.floor(px); cz = Math.floor(pz);
       if (cx < 0 || cz < 0 || cx >= g.W || cz >= g.H) return false;
-      var i = cz * g.W + cx;
+      i = cz * g.W + cx;
       if (i === home) continue;
       if (!g.base[i] || g.solid[i]) return false;
+    }
+    /* the probes can pass either side of a blocked cell's corner (water
+     * touching only diagonally): any blocked cell nearer than m, as a box */
+    for (cz = Math.floor(gz - m); cz <= Math.floor(gz + m); cz++) {
+      for (cx = Math.floor(gx - m); cx <= Math.floor(gx + m); cx++) {
+        if (cx < 0 || cz < 0 || cx >= g.W || cz >= g.H) continue;
+        i = cz * g.W + cx;
+        if (i === home || (g.base[i] && !g.solid[i])) continue;
+        var ex = Math.max(cx - gx, 0, gx - cx - 1);
+        var ez = Math.max(cz - gz, 0, gz - cz - 1);
+        if (ex * ex + ez * ez < m * m) return false;
+      }
     }
     return true;
   }

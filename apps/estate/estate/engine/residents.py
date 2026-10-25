@@ -234,13 +234,16 @@ def _path(w, sx, sy, tx, ty):
     return None
 
 
-def _reach(w, sx, sy):
+def _reach(w, sx, sy, limit=None):
     """How many steps every walkable cell is from here (the same search as
-    `_path`, run to the end): what a walk can still get to this phase."""
+    `_path`): what a walk can still get to this phase. With `limit` the
+    search stops at that many steps — a cell further off is simply not in
+    the answer, which is all the evening's choice asks of it (`_choose`),
+    and it is most of the cost of a minder's evening choice otherwise."""
     dist = {(sx, sy): 0}
     frontier = [(sx, sy)]
     d = 0
-    while frontier:
+    while frontier and (limit is None or d < limit):
         d += 1
         nxt = []
         for cx, cy in frontier:
@@ -369,9 +372,12 @@ def _go_to(w, r, c, route=False, sure=False, budget=None):
     a walk that was chosen because it can be made in the phase. `sure` is
     a walk that must arrive — the walk home at curfew — so it has no step
     cap: the phase's budget is how far someone strolls, not how far they
-    will go to get the children home to bed. A duty walk (`c["duty"]`:
-    the school gate, the bus) is a walk made every day by the way anyone
-    knows, so it too goes the shortest way, with `budget` steps."""
+    will go to get the children home to bed. It is bounded by the size of
+    the estate (width × height steps, more than any shortest way), not by
+    the phase: the stairs and the walker's mobility are not charged to it.
+    A duty walk (`c["duty"]`: the school gate, the bus) is a walk made
+    every day by the way anyone knows, so it too goes the shortest way,
+    with `budget` steps."""
     # `r["side"]` is a way round a wall still being walked (see `_walk`):
     # it is kept only while the walk is to the same place
     # a walk starts from where you were; until you arrive and use a place,
@@ -536,9 +542,8 @@ def _choose(w, party, cand, phase, rng, wanted=None):
         off = _set_off(w, lead)
         if off is not None:
             sx, sy, budget = off
-            dist = _reach(w, sx, sy)
-            reach = (lambda c: dist.get((c["x"], c["y"]), budget + 1)
-                     <= budget)
+            dist = _reach(w, sx, sy, budget)
+            reach = (lambda c: (c["x"], c["y"]) in dist)
         else:
             reach = lambda c: False       # noqa: E731 (stuck indoors)
     for _, need, p in wants:
