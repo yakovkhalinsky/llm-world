@@ -29,8 +29,15 @@ function ok(name, cond, detail) {
   if (!cond) fails.push(name);
 }
 
+/* The sun's offset is in world units (tens of cells), the other channels
+ * are 0..~2.4; scale the offset by the table's own largest offset so a
+ * jump in any channel is measured on the same footing. */
+const OFFSET_SCALE = 1 / Math.max(...Clock.LIGHT.map(
+  k => Math.max(...k.offset.map(Math.abs))));
 function fields(l) {
-  return [l.sunI, l.hemiI, l.dark, l.offset[0], l.offset[1], l.offset[2],
+  return [l.sunI, l.hemiI, l.dark,
+          l.offset[0] * OFFSET_SCALE, l.offset[1] * OFFSET_SCALE,
+          l.offset[2] * OFFSET_SCALE,
           l.sun[0], l.sun[1], l.sun[2],
           l.sky[0], l.sky[1], l.sky[2],
           l.hemiSky[0], l.hemiSky[1], l.hemiSky[2],
@@ -70,10 +77,16 @@ ok('?clock= pins the fraction, and wins over ?phase=',
    Clock.fraction(pinnedClock, 0) === 0.2 &&
    Clock.fraction(pinnedClock, 123456) === 0.2);
 
+/* the index is the one viewer.js's PHASE_ALIAS hands the clock, which is
+ * PHASE_NAMES order: dawn 0 … night 4 */
 const phases = [
-  [0, 'night', 0.0], [1, 'dawn', 0.2], [2, 'morning', 0.4],
-  [3, 'afternoon', 0.6], [4, 'evening', 0.8],
+  [4, 'night', 0.0], [0, 'dawn', 0.2], [1, 'morning', 0.4],
+  [2, 'afternoon', 0.6], [3, 'evening', 0.8],
 ];
+for (const [forced, name] of phases) {
+  ok('phase index ' + forced + ' is ' + name,
+     Clock.PHASE_NAMES[forced] === name, Clock.PHASE_NAMES[forced]);
+}
 for (const [forced, name, frac] of phases) {
   const c = Clock.makeClock({ forcedPhase: forced });
   ok('?phase=' + name + ' freezes at its own hour',
@@ -108,6 +121,8 @@ ok('night straddles the day turn',
 
 function run(tickSeconds, days, paceChangeAfter) {
   const c = Clock.makeClock({});
+  /* the page sets the pace from the first state's tick_seconds */
+  Clock.setPace(c, 0, tickSeconds);
   let now = 0;
   let day = 1;
   let dayMs = tickSeconds * 1000;

@@ -121,21 +121,24 @@ const SOLID = { tree: 1, lamp: 1, table: 1, playground: 1, shop: 1 };
 
 /* One straight segment of a pulled route, sampled densely enough that
  * "which cell did it cross" is not a matter of opinion. The route's own
- * endpoint is exempt: a destination may be a solid fixture, and the walk
- * is allowed to finish on the thing it set out for. */
-function segmentCrosses(ground, solidAt, ax, ay, bx, by, gx, gy) {
+ * endpoints are exempt from the solid-fixture test, exactly as the router's
+ * `openAt` exempts them: a destination may be a solid fixture, and the walk
+ * is allowed to finish on the thing it set out for; a start may be one too
+ * (the shop's stall stands on the shop's door), because that is where the
+ * walker already is. Buildings and water are never exempt. */
+function segmentCrosses(ground, solidAt, ax, ay, bx, by, sx, sy, gx, gy) {
   const L = Math.hypot(bx - ax, by - ay);
   const k = Math.max(1, Math.ceil(L * 20));
   for (let j = 0; j <= k; j++) {
     const x = Math.floor(ax + (bx - ax) * j / k);
     const y = Math.floor(ay + (by - ay) * j / k);
-    if (x === gx && y === gy) continue;
     const code = cellCode(ground, x, y);
     if (code === null) return 'off the plan at ' + x + ',' + y;
     if (code === 'building' || code === 'water') {
       return code + ' at ' + x + ',' + y;
     }
-    if (solidAt[y * ground.width + x]) {
+    const endpoint = (x === gx && y === gy) || (x === sx && y === sy);
+    if (!endpoint && solidAt[y * ground.width + x]) {
       return 'solid fixture at ' + x + ',' + y;
     }
   }
@@ -175,8 +178,14 @@ function run(Walk, ground, fixtures) {
         const why = segmentCrosses(ground, solid,
                                    p[i] + 0.5, p[i + 1] + 0.5,
                                    p[i + 2] + 0.5, p[i + 3] + 0.5,
-                                   t[0], t[1]);
-        if (why) { bad++; break; }
+                                   d[0], d[1], t[0], t[1]);
+        if (why) {
+          if (bad < 5) {
+            console.log('  ---- ' + d + ' -> ' + t + ': ' + why);
+          }
+          bad++;
+          break;
+        }
       }
     }
   }
