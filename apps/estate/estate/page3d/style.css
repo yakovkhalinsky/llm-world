@@ -1,0 +1,205 @@
+/* Highfield 3D — the plan page's palette over a real horizon.
+   Slate, paper, and lamplight; the same glass panels, so the two views of
+   the estate read as two views of one place rather than two products. */
+
+:root {
+  --ink: #e9e5dc;
+  --dim: #9aa0a6;
+  --glass: rgba(16, 20, 26, 0.72);
+  --edge: rgba(233, 229, 220, 0.14);
+  --lamp: #ffca7a;
+  --paper: #d9d4c8;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #0b0e12;
+  color: var(--ink);
+  font: 14px/1.45 ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden;
+}
+
+#view {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+#view:active { cursor: grabbing; }
+
+/* --------------------------------------------------------------- the hud */
+
+.hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+.hud > * { pointer-events: auto; }
+.hud > .hint { pointer-events: none; }
+
+.panel {
+  position: absolute;
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  padding: 10px 12px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  max-width: 340px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+.title {
+  top: 14px; left: 16px;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.title .mark { color: var(--lamp); }
+.engine-mark { font-size: 11px; color: var(--dim); letter-spacing: 0; }
+.viewlink {
+  margin-left: 8px;
+  font-size: 11.5px;
+  letter-spacing: 0;
+  color: var(--dim);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--edge);
+}
+.viewlink:hover { color: var(--lamp); border-color: var(--lamp); }
+
+.idbox { top: 14px; right: 16px; }
+.idrow {
+  display: flex; justify-content: space-between; gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.poplines { margin-top: 6px; font-size: 12px; color: var(--dim); }
+.poplines b { color: var(--ink); font-weight: 600; }
+.watchline {
+  margin-top: 7px; padding-top: 7px; font-size: 12.5px;
+  border-top: 1px solid var(--edge);
+  color: var(--ink);
+}
+.watchline .d { color: var(--lamp); }
+.watchline .dim { color: var(--dim); }
+
+.ctl { bottom: 14px; left: 16px; }
+.row { display: flex; gap: 6px; flex-wrap: wrap; }
+.speedrow { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+.speedrow .hint { font-size: 11px; color: var(--dim); }
+.speedrow #speeds { display: flex; gap: 4px; }
+
+button {
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: rgba(233, 229, 220, 0.06);
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+button:hover { background: rgba(233, 229, 220, 0.13); }
+button.on { background: rgba(255, 202, 122, 0.18); border-color: var(--lamp); }
+
+/* ----------------------------------------------------------------- card */
+
+.card {
+  position: absolute;
+  bottom: 14px; right: 16px;
+  width: 320px;
+  max-height: 46vh;
+  overflow-y: auto;
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  padding: 12px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  display: none;
+}
+.card.on { display: block; }
+.cardhead {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 8px;
+}
+.cardhead h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.cardhead .x { padding: 1px 7px; }
+
+.status { margin-top: 8px; font-size: 12px; color: var(--dim); }
+.status:empty { display: none; }
+
+.timeline { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12.5px; }
+.timeline li {
+  display: flex; justify-content: space-between; gap: 10px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(233, 229, 220, 0.06);
+}
+.timeline li span:last-child {
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------- the rest */
+
+.hint.foot {
+  position: absolute;
+  bottom: 18px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 11.5px;
+  color: var(--dim);
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+
+#tip {
+  position: fixed;
+  z-index: 20;
+  pointer-events: none;
+  opacity: 0;
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  border-left: 2px solid var(--lamp);
+  border-radius: 7px;
+  padding: 5px 9px;
+  font-size: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  transition: opacity 80ms linear;
+}
+#tip.on { opacity: 1; }
+
+#nogl {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #0b0e12;
+}
+#nogl[hidden] { display: none; }
+.noglbox { position: static; max-width: 380px; }
+.noglbox h3 { margin: 0 0 8px; font-weight: 600; }
+.noglbox p { color: var(--dim); font-size: 13px; }
+.noglbox a { color: var(--lamp); }
+
+body.nogl #view, body.nogl .hud { display: none; }
+
+@media (max-width: 760px) {
+  .idbox { top: auto; bottom: 76px; right: 10px; left: 10px;
+           max-width: none; }
+  .title { top: 10px; left: 10px; }
+  .ctl { bottom: 10px; left: 10px; }
+  .card { bottom: 10px; right: 10px; width: min(320px, calc(100vw - 20px)); }
+  .hint.foot { display: none; }
+}
