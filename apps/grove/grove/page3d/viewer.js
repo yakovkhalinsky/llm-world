@@ -234,8 +234,9 @@ function showHover(hit) {
   if (!hit) { tip.classList.remove('on'); return; }
   if (hit.kind === 'animal' || hit.kind === 'plant') {
     const e = hit.entity;
-    tip.textContent = (e.n ? e.n + ' · ' : '') + e.sp +
-      (hit.kind === 'plant' ? ' · ' + e.st : '');
+    // as the card heads it: "🌳 a young birch", "🦊 a wild fox"
+    tip.textContent = HUD ? HUD.heading(S.state || {}, hit.kind, e)
+      : (e.n ? e.n + ' · ' : '') + e.sp;
   } else {
     tip.textContent = hit.terrain || 'the ground';
   }
@@ -469,11 +470,27 @@ function wire() {
     }
   });
 
+  fitHint();
   window.addEventListener('resize', () => {
+    fitHint();
     if (!S.world) return;
     S.world.resize();
     if (STATIC) S.world.frame(performance.now());
   });
+}
+
+/* The hint at the foot is one line, whole, or not there: the keys drop
+ * first when the gap between the panels is narrow, then the hint itself;
+ * it never ends in "…". */
+function fitHint() {
+  const h = $('hint');
+  if (!h || !h.querySelector || !h.classList) return;
+  const keys = h.querySelector('.keys');
+  h.classList.remove('cut');
+  if (keys) keys.hidden = false;
+  const over = () => h.scrollWidth > h.clientWidth + 1;
+  if (keys && over()) keys.hidden = true;
+  if (over()) h.classList.add('cut');
 }
 
 /* --------------------------------------------------------------- start */

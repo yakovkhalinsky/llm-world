@@ -94,6 +94,8 @@ def _plural(word, n):
         return word
     if word in _PLURAL:
         return _PLURAL[word]
+    if len(word) > 1 and word.endswith("y") and word[-2] not in "aeiou":
+        return word[:-1] + "ies"          # berry → berries; a jay stays jays
     return word + ("es" if word.endswith(("h", "s", "x")) else "s")
 
 
@@ -157,7 +159,7 @@ def _line(world, e):
                  e.get("cause") or "age", ("Slow decline",))[0],
              "V": _CAUSE_VERBS[_stable(seed, tick, 7) % len(_CAUSE_VERBS)]}
     if bones_n > 1 and "{L}" in variant and not name:
-        plural = ph + ("es" if ph.endswith("h") else "s")
+        plural = _plural(ph, bones_n)
         bones["L"] = f"{bones_n:,} {plural}" if is_plant else \
             f"{bones_n:,} wild {plural}"
     bones["w"] = rules.R["presentation"]["world_word"]

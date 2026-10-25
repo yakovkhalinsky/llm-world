@@ -120,7 +120,7 @@ def day_line(book, people) -> str:
     if total >= 400:
         return f"a busy day — {total:,} errands, the {place} never empty"
     if total <= 352:
-        return f"a slow day — {total:,} errands, and the {place} mostly to itself"
+        return f"a slow day — {total:,} errands, and the {place} mostly empty"
     return f"{total:,} errands, most of them to the shop, and the {place} busy"
 
 

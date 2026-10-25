@@ -181,7 +181,10 @@
     var dt = daytime(countFrame(st));
     if (dt.school) bits.push('<b>' + fmt(dt.school) + '</b> at school');
     if (dt.away) bits.push('<b>' + fmt(dt.away) + '</b> at work');
-    write($('pops'), bits.join(' · '));
+    /* each count its own chip, so the line wraps between counts */
+    write($('pops'), bits.map(function (b) {
+      return '<span class="popline">' + b + '</span>';
+    }).join(''));
 
     /* the watcher, in its own words, and the voice that carried them */
     var w = st.watcher || {};
@@ -251,7 +254,7 @@
           return '· ' + esc(s);
         }).join('<br>') + '</span>' : '') +
         '</li>';
-    }).join('') : '<li>nothing has happened yet. it is early.</li>';
+    }).join('') : '<li>nothing has happened yet — it\'s early</li>';
   }
 
   /* ------------------------------------------------------- the watcher */
@@ -263,7 +266,7 @@
         '<span class="shape">' + esc(e.text) + '</span></li>';
     }).join('') :
       '<li class="quiet"><span class="shape">the watcher hasn\'t written ' +
-      'anything yet. the days tab keeps going either way.</span></li>';
+      'anything yet — the days tab keeps going either way</span></li>';
   }
 
   /* The list is written only when it changed, and the reader keeps their
@@ -473,7 +476,8 @@
     })[0];
     if (!p) {
       return { name: sel.name || 'a resident',
-               state: esc(sel.name || 'they') + ' has left the estate',
+               state: sel.name ? esc(sel.name) + ' has left the estate'
+                          : 'they have left the estate',
                rows: '' };
     }
     var where;
@@ -683,10 +687,12 @@
     var shade = field(st, 'shade', sel.x, sel.y);
     var light = field(st, 'light', sel.x, sel.y);
     var by = nearest(st, sel.x, sel.y, 3);
-    var rows = '<li class="need"><span>shade</span>' + bar(shade, 9) +
-      '<span>' + shadeWord(shade) + '</span></li>' +
-      '<li class="need"><span>lamplight</span>' + bar(light, 9) +
-      '<span>' + lightWord(light) + '</span></li>';
+    /* a row for what is there; no shade and no lamp are not rows with an
+     * empty bar */
+    var rows = (shade > 0 ? '<li class="need"><span>shade</span>' +
+      bar(shade, 9) + '<span>' + shadeWord(shade) + '</span></li>' : '') +
+      (light > 0 ? '<li class="need"><span>lamplight</span>' + bar(light, 9) +
+      '<span>' + lightWord(light) + '</span></li>' : '');
     return {
       name: glyphOf('sites', site) + ' ' + siteWord(site),
       state: by ? 'near the ' + esc(kindName(by.kind)) : '',

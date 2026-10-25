@@ -112,6 +112,8 @@ html, body {
   max-width: min(340px, calc(100vw - 32px));
   pointer-events: none;
 }
+/* the feed and the controls one width, so the panels line up */
+.bl > .ctl { align-self: stretch; }
 .bl > * { pointer-events: auto; }
 .bl .panel { position: static; }
 
@@ -275,9 +277,11 @@ button:disabled { opacity: 0.6; cursor: default; }
   overflow: hidden; text-overflow: ellipsis;
 }
 @media (max-width: 1100px) { .hint.foot { display: none; } }
+.hint.foot.cut { visibility: hidden; }   /* viewer.js: it would not fit */
 
 #tip {
   position: fixed;
+  white-space: nowrap;
   z-index: 20;
   pointer-events: none;
   opacity: 0;
@@ -359,11 +363,12 @@ body.nogl #view, body.nogl .hud { display: none; }
 .mark-template { color: var(--dim); }
 
 /* the name, the spark, the latest count: the counts make one column */
-.sparkline { display: grid; grid-template-columns: 1fr auto 3.5em;
+.sparkline { display: grid; grid-template-columns: 5.5em minmax(0, 1fr) 3em;
              align-items: center; column-gap: 10px;
              font-size: 12px; padding: 2px 0; white-space: nowrap; }
 .sparkline b { text-align: right; color: var(--ink); }
-.sparkline .spark { font-family: ui-monospace, monospace; letter-spacing: -1px;
+.sparkline .spark { min-width: 0; overflow: hidden; text-align: right;
+                    font-family: ui-monospace, monospace; letter-spacing: -1px;
                     color: var(--lamp); }
 .tune li { display: block; }
 .tune .when { color: var(--dim); font-size: 11.5px; }
@@ -398,9 +403,9 @@ body.calm .hint.foot {
   .tl > .idbox { position: static; order: 1; width: 100%; max-width: none; }
   .tl > .souline { order: 2; width: 100%; max-width: none; }
   .tl > .title { order: 0; }
-  /* the chips one row, swiped sideways */
-  .poplines { display: flex; flex-wrap: nowrap; overflow-x: auto;
-              gap: 12px; scrollbar-width: none; }
+  /* the chips in rows, each whole; none hidden off the side */
+  .poplines { display: flex; flex-wrap: wrap; gap: 2px 12px; }
+  .bl > .feed, .bl > .ctl { width: auto; align-self: stretch; }
   .bl { bottom: 10px; left: 10px; right: 10px; max-width: none; }
   .feed { width: auto; max-height: 24vh; }
   .card { left: 10px; right: 10px; bottom: 10px; width: auto;

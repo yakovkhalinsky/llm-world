@@ -88,6 +88,10 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 .poplines { margin-top: 6px; font-size: 12px; color: var(--dim); }
+/* the counts wrap between whole counts, never inside one */
+.idbox > #pops { white-space: normal; overflow: visible;
+                 display: flex; flex-wrap: wrap; column-gap: 10px; }
+.poplines .popline { white-space: nowrap; }
 .poplines b { color: var(--ink); font-weight: 600; }
 .watchline {
   margin-top: 7px; padding-top: 7px; font-size: 12.5px;
@@ -115,6 +119,8 @@ html, body {
   max-width: min(340px, calc(100vw - 32px));
   pointer-events: none;
 }
+/* the feed and the controls one width, so the panels line up */
+.bl > .ctl { align-self: stretch; }
 .bl > * { pointer-events: auto; }
 .bl .panel { position: static; }
 
@@ -181,8 +187,14 @@ html, body {
 .speedrow { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
 .speedrow .hint { font-size: 11px; color: var(--dim); white-space: nowrap; }
 .speedrow #speeds { display: flex; gap: 4px; }
-.speedrow #shows { display: flex; gap: 3px; flex-wrap: nowrap; min-width: 0; }
-.speedrow #shows button { padding-left: 5px; padding-right: 5px; }
+.speedrow #speeds { flex-wrap: wrap; }
+/* the day's phases: their own block under the word, three to a row, every
+   word whole; no button here is ever narrower than "afternoon" */
+.speedrow.phases { display: block; }
+.speedrow.phases .hint { display: block; margin-bottom: 4px; }
+.speedrow #shows { display: grid; grid-template-columns: repeat(3, minmax(max-content, 1fr));
+                   gap: 4px; }
+.speedrow #shows button { padding-left: 6px; padding-right: 6px; }
 
 button {
   font: inherit;
@@ -297,9 +309,11 @@ button.on { background: rgba(255, 202, 122, 0.18); border-color: var(--lamp); }
   overflow: hidden; text-overflow: ellipsis;
 }
 @media (max-width: 1100px) { .hint.foot { display: none; } }
+.hint.foot.cut { visibility: hidden; }   /* viewer.js: it would not fit */
 
 #tip {
   position: fixed;
+  white-space: nowrap;
   z-index: 20;
   pointer-events: none;
   opacity: 0;
@@ -359,11 +373,8 @@ body.nogl #view, body.nogl .hud { display: none; }
           max-height: 60vh; }
   body.carded .bl { visibility: hidden; }
   button { min-height: 40px; }
-  /* the day's phases at their own width, the row swiped sideways rather
-   * than each word cut to "morn…" */
-  .speedrow #shows { overflow-x: auto; overscroll-behavior-x: contain;
-                     scrollbar-width: none; touch-action: pan-x; }
-  .speedrow #shows::-webkit-scrollbar { display: none; }
-  .speedrow #shows button { flex: none; padding-left: 7px; padding-right: 7px; }
+  /* the sheet is one width whatever the tab: the feed and the controls
+   * both run edge to edge */
+  .bl > .feed, .bl > .ctl { width: auto; align-self: stretch; }
   .hint.foot { display: none; }
 }

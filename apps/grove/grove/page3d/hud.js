@@ -114,7 +114,7 @@
       return ['mark-llm', '☾', 'written by the grove\'s AI'];
     }
     if (source === 'voice') return ['mark-voice', '☂', 'the grove\'s voice'];
-    return ['mark-template', '·', 'from the rules'];
+    return ['mark-template', '', 'from the rules'];
   }
 
   /* the time first, so it floats right on the row's first line */
@@ -122,14 +122,17 @@
     var rows = st.chronicle || [];
     return rows.length ? rows.map(function (c) {
       var m = markOf(c.source);
+      /* a line from the rules carries no mark: the row starts with its
+       * words, not a stray "·" */
       return '<li><span class="when">' + esc(ago(c.tick, st.tick)) +
-        '</span><span class="' + m[0] + '" title="' + m[2] + '">' + m[1] +
-        '</span> ' + esc(c.text) + '</li>';
-    }).join('') : '<li>the chronicle is still blank. it is early.</li>';
+        '</span>' + (m[1] ? '<span class="' + m[0] + '" title="' + m[2] +
+        '">' + m[1] + '</span> ' : '') + esc(c.text) + '</li>';
+    }).join('') : '<li>the chronicle is still blank — it\'s early</li>';
   }
 
   /* ---------------------------------------------------------- the census */
 
+  var SPARK_WEEKS = 24;
   function spark(values) {
     var v = (values || []).map(function (x) { return Number(x) || 0; });
     if (!v.length) v = [0];
@@ -140,8 +143,18 @@
   }
 
   function census(st) {
-    var rows = (st.series || []).map(function (sr) {
+    /* most first, by the latest count; the spark is the last 24 weeks,
+     * so it fits the panel with the count beside it */
+    var latest = function (sr) {
       var v = sr.values || [];
+      return v.length ? +v[v.length - 1] || 0 : 0;   // a sort key only
+    };
+    var series = (st.series || []).slice().sort(function (a, b) {
+      return latest(b) - latest(a) ||
+        String(a.name).localeCompare(String(b.name));
+    });
+    var rows = series.map(function (sr) {
+      var v = (sr.values || []).slice(-SPARK_WEEKS);
       /* the latest count last, so the counts make one column */
       return '<li class="sparkline"><span class="name">' + esc(sr.emo) +
         ' ' + esc(sr.name) + '</span><span class="spark">' + spark(v) +
@@ -281,8 +294,8 @@
     return rows.length ? rows.map(function (ev) {
       return '<li class="ev"><span class="wk">week ' + fmt(ev.tick) +
         '</span>' + esc(ev.text) + '</li>';
-    }).join('') : '<li class="ev"><span class="wk">—</span>no marked ' +
-      'events yet; its story is still quiet.</li>';
+    }).join('') : '<li class="ev"><span class="wk">—</span>nothing written ' +
+      'about it yet</li>';
   }
 
   /* A living creature's needs, from the ledger's answer. Energy is kept
@@ -306,8 +319,25 @@
   /* a plant's stage, as a heading and as a state */
   var STAGE_HEAD = { sapling: 'a young ', mature: 'a grown ', old: 'an old ',
                      log: 'a fallen ' };
-  var STAGE_STATE = { sapling: 'a sapling', mature: 'grown', old: 'old',
-                      log: 'fallen, now a log' };
+  /* the heading already says the stage; the state says only what it adds */
+  var STAGE_STATE = { log: 'now a log' };
+  var PLANT_GLYPH = { pine: '🌲', birch: '🌳', oak: '🌳', willow: '🌳', fern: '🌿',
+                      berry: '🫐' };
+  function plantGlyph(sp) {
+    return Object.prototype.hasOwnProperty.call(PLANT_GLYPH, sp)
+      ? PLANT_GLYPH[sp] + ' ' : '🌱 ';
+  }
+  /* what a creature or a plant is called, on its card and in the tip */
+  function heading(st, kind, e) {
+    if (kind === 'animal') {
+      return emojiOf(st, e.sp) +
+        (e.n ? e.n + ' · ' + e.sp : 'a wild ' + e.sp);
+    }
+    var stage = String(e.st);
+    var head = Object.prototype.hasOwnProperty.call(STAGE_HEAD, stage)
+      ? STAGE_HEAD[stage] : article(e.sp);
+    return plantGlyph(e.sp) + (e.n ? e.n + ' · ' + e.sp : head + e.sp);
+  }
 
   /* the ground, in words */
   function grassWord(g) {
@@ -371,21 +401,21 @@
       }
       if (sel.kind === 'animal') {
         return {
-          name: emojiOf(st, e.sp) +
-            (e.n ? e.n + ' · ' + e.sp : 'a wild ' + e.sp),
+          name: heading(st, 'animal', e),
           state: fmt(e.ag) + ' weeks old' + (e.h ? ' · hungry' : ''),
           rows: needRows(b) + ledgerRows(led),
         };
       }
       var stage = String(e.st);
-      var head = Object.prototype.hasOwnProperty.call(STAGE_HEAD, stage)
-        ? STAGE_HEAD[stage] : article(e.sp);
-      var bits = [Object.prototype.hasOwnProperty.call(STAGE_STATE, stage)
-        ? STAGE_STATE[stage] : esc(e.st)];
+      var bits = [];
+      if (Object.prototype.hasOwnProperty.call(STAGE_STATE, stage)) {
+        bits.push(STAGE_STATE[stage]);
+      }
       if (e.el) bits.push('one of the grove\'s oldest');
       if (e.b) bits.push('in fruit');
+      if (!bits.length) bits.push('alive in the grove');
       return {
-        name: e.n ? e.n + ' · ' + e.sp : head + e.sp,
+        name: heading(st, 'plant', e),
         state: bits.join(' · '),
         rows: ledgerRows(led),
       };
@@ -409,12 +439,13 @@
         state: [heightWord(c[5], c[0]), here ||
                 (c[0] === 'w' ? 'open water' : 'nothing grows or walks here')]
           .filter(Boolean).join(' · '),
-        rows: (c[0] === 'w' ? '' :
+        /* grass and moisture are soil's; no glow is no row */
+        rows: (c[0] !== 's' ? '' :
                barRow('grass', grass, grassWord(grass)) +
                barRow('moisture', wet, wetWord(wet))) +
           (c[3] ? row('🍄 mushrooms', 'here') : '') +
           (c[4] ? row('remains', 'here') : '') +
-          barRow('glow', glow, glowWord(glow)),
+          (glow > 0 ? barRow('glow', glow, glowWord(glow)) : ''),
       };
     }
     return null;
@@ -445,6 +476,7 @@
     tune: tune,
     esc: esc,
     voiceLine: voiceLine,
+    heading: heading,
     view: function () { return view; },
   };
 

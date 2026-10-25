@@ -243,7 +243,7 @@ function showHover(hit) {
   if (hit.kind === 'resident') {
     tip.textContent = hit.person.name + ' · ' + hit.person.role;
   } else if (hit.kind === 'building') {
-    tip.textContent = hit.building.name + ' · ' + hit.building.kind;
+    tip.textContent = hit.building.name;   // as the card heads it
   } else if (hit.kind === 'fixture') {
     const kind = (hit.fixture && hit.fixture.kind) || 'a place';
     tip.textContent = (HUD ? HUD.glyphOf('fixtures', kind) + ' ' : '') + kind;
@@ -437,11 +437,27 @@ function wire() {
     }
   });
 
+  fitHint();
   window.addEventListener('resize', () => {
+    fitHint();
     if (!S.world) return;
     S.world.resize();
     if (STATIC) S.world.frame(performance.now());
   });
+}
+
+/* The hint at the foot is one line, whole, or not there: the keys drop
+ * first when the gap between the panels is narrow, then the hint itself;
+ * it never ends in "…". */
+function fitHint() {
+  const h = $('hint');
+  if (!h || !h.querySelector || !h.classList) return;
+  const keys = h.querySelector('.keys');
+  h.classList.remove('cut');
+  if (keys) keys.hidden = false;
+  const over = () => h.scrollWidth > h.clientWidth + 1;
+  if (keys && over()) keys.hidden = true;
+  if (over()) h.classList.add('cut');
 }
 
 /* --------------------------------------------------------------- start */

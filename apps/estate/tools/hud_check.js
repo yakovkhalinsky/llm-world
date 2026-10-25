@@ -265,10 +265,22 @@ if (!cell) {
      EstateHUD.card(state, { kind: 'cell', x: cell[0], y: cell[1]}) &&
      els.cardName.textContent.indexOf(site) >= 0,
      els.cardName.textContent);
-  ok('the cell card carries its shade and lamp',
-     els.cardRows.innerHTML.indexOf('shade') >= 0 &&
-     els.cardRows.innerHTML.indexOf('lamp') >= 0,
-     els.cardRows.innerHTML);
+  /* across the ground: shade and lamplight are rows where there is some,
+   * and never a row with an empty bar */
+  let shaded = 0, lit = 0, empty = '';
+  for (let y = 0; y < ground.height; y++) {
+    for (let x = 0; x < ground.width; x++) {
+      if (ground.codes[ground.rows[y][x]] === 'building') continue;
+      if (!EstateHUD.card(state, { kind: 'cell', x, y })) continue;
+      const r = els.cardRows.innerHTML;
+      if (r.indexOf('>shade<') >= 0) shaded++;
+      if (r.indexOf('>lamplight<') >= 0) lit++;
+      if (/width:0%|>none<|dark at night/.test(r)) empty = r;
+    }
+  }
+  ok('cell cards carry shade and lamplight where there is some',
+     shaded > 0 && lit > 0, shaded + ' shaded, ' + lit + ' lit');
+  ok('no cell card shows a zero row with an empty bar', !empty, empty);
 }
 
 /* --- the school, the bus stop and the day's phases -------------------- */
@@ -509,6 +521,10 @@ if (person) {
   ok('a resident who has gone says so',
      els.card.classList.contains('on') &&
      els.cardState.innerHTML.indexOf('Sasha has left the estate') >= 0,
+     els.cardState.innerHTML);
+  EstateHUD.card(st, { kind: 'resident', id: 987655 });
+  ok('a nameless resident who has gone is "they have left"',
+     els.cardState.innerHTML.indexOf('they have left the estate') >= 0,
      els.cardState.innerHTML);
   p.kind = 'flat_share';
   p.family = [p.id];

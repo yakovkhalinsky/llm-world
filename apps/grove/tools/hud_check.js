@@ -152,8 +152,11 @@ ok('a week that is not a number is written as a dash',
    els.when.textContent.indexOf('week —') === 0,
    els.chron.innerHTML + ' / ' + els.when.textContent);
 ok('the mark is from the fixed table, not the frame',
-   els.chron.innerHTML.indexOf('class="mark-template"') >= 0 &&
    els.chron.innerHTML.indexOf('class="mark-llm"') >= 0, els.chron.innerHTML);
+ok('a line from the rules starts with its words, no "·" bullet',
+   els.chron.innerHTML.indexOf('class="mark-template"') < 0 &&
+   els.chron.innerHTML.indexOf('</span>· ') < 0 &&
+   els.chron.innerHTML.indexOf('>·</span>') < 0, els.chron.innerHTML);
 ok('the soul line is text', els.soul.textContent === '☾ ' + TAG);
 
 step('the census tab', () => H.tab('census', state));
@@ -207,8 +210,9 @@ ok('the pick\'s id is read as a number: the live creature\'s card',
 
 step('a plant\'s card', () => H.card(state, { kind: 'plant', id: 9 }));
 clean('plant card');
-ok('the plant\'s stage is there, escaped',
-   els.cardState.innerHTML.indexOf(ESCAPED) === 0, els.cardState.innerHTML);
+ok('the plant\'s stage is the heading\'s, not repeated in its state',
+   els.cardState.innerHTML.indexOf(ESCAPED) < 0 &&
+   els.cardState.innerHTML.indexOf('<') < 0, els.cardState.innerHTML);
 ok('the plant\'s place is not written',
    els.cardState.innerHTML.indexOf(' at ') < 0 &&
    els.cardState.innerHTML.indexOf('NaN') < 0, els.cardState.innerHTML);
@@ -217,9 +221,9 @@ step('a cell\'s card', () => H.card(state, { kind: 'cell', x: 0, y: 0 }));
 clean('cell card');
 ok('the cell card is open on soil', els.cardName.textContent === 'soil',
    els.cardName.textContent);
-ok('the cell\'s grass and moisture are dashes, its glow nothing',
+ok('the cell\'s grass and moisture are dashes, and no glow is no row',
    (els.cardRows.innerHTML.match(/<span>—<\/span>/g) || []).length === 2 &&
-   els.cardRows.innerHTML.indexOf('<span>no glow</span>') >= 0 &&
+   els.cardRows.innerHTML.indexOf('glow') < 0 &&
    els.cardRows.innerHTML.indexOf('NaN') < 0,
    els.cardRows.innerHTML);
 step('a cell picked with its coordinates as strings',
@@ -397,13 +401,13 @@ step('a named owl', () => H.card(plain, { kind: 'animal', id: 2 }));
 ok('a named animal keeps its name',
    els.cardName.textContent === '🦉 Hoot · owl', els.cardName.textContent);
 step('an old pine', () => H.card(plain, { kind: 'plant', id: 3 }));
-ok('a plant: its stage as a phrase',
-   els.cardName.textContent === 'an old pine' &&
-   els.cardState.innerHTML === 'old · one of the grove\'s oldest', cardText());
+ok('a plant: its glyph and stage in the heading, not again in the state',
+   els.cardName.textContent === '🌲 an old pine' &&
+   els.cardState.innerHTML === 'one of the grove\'s oldest', cardText());
 step('a log', () => H.card(plain, { kind: 'plant', id: 5 }));
 ok('a log is a fallen tree',
-   els.cardName.textContent === 'a fallen oak' &&
-   els.cardState.innerHTML === 'fallen, now a log', cardText());
+   els.cardName.textContent === '🌳 a fallen oak' &&
+   els.cardState.innerHTML === 'now a log', cardText());
 step('a busy cell', () => H.card(plain, { kind: 'cell', x: 0, y: 0 }));
 ok('a cell says what stands and walks on it, counted',
    els.cardState.innerHTML ===
@@ -427,6 +431,23 @@ ok('rock: low, a log, remains, a faint glow',
    els.cardState.innerHTML === 'low, by the water · an oak' &&
    els.cardRows.innerHTML.indexOf('remains</span><span>here') >= 0 &&
    els.cardRows.innerHTML.indexOf('glows faintly at night') >= 0, cardText());
+ok('rock has no grass or moisture rows',
+   els.cardRows.innerHTML.indexOf('grass') < 0 &&
+   els.cardRows.innerHTML.indexOf('moisture') < 0, cardText());
+step('a census', () => H.tab('census', Object.assign({}, plain, { series: [
+  { emo: '🦉', name: 'owl', values: [9, 2] },
+  { emo: '🐇', name: 'rabbit', values: Array.from({ length: 36 }, (_, i) => 1000 + i) },
+  { emo: '🦊', name: 'fox', values: [1, 40] }] })));
+ok('the census runs most first, by the latest count',
+   (function () {
+     const n = (els.chron.innerHTML.match(/<b>[^<]*<\/b>/g) || [])
+       .map(x => Number(x.replace(/<\/?b>|,/g, '')));
+     return n.length === 3 && n.every((v, i) => !i || n[i - 1] >= v);
+   })(), els.chron.innerHTML);
+ok('the census spark is at most 24 weeks',
+   (els.chron.innerHTML.match(/<span class="spark">([^<]*)<\/span>/g) || [])
+     .every(x => x.replace(/<[^>]+>/g, '').length <= 24), els.chron.innerHTML);
+step('back to the feed', () => H.tab('chron', plain));
 
 step('a busy cell picked with its place as text', () =>
   H.card(plain, { kind: 'cell', x: '0', y: '0' }));

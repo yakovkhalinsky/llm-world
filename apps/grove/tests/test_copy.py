@@ -46,6 +46,15 @@ class CopyTest(unittest.TestCase):
         for s in lines("recolonize", "wolf", n=3):
             self.assertIn("3 wolves", s)
 
+    def test_plurals_of_y_words(self):
+        from grove.chronicler import _plural
+        self.assertEqual(_plural("berry", 2), "berries")
+        self.assertEqual(_plural("berry", 1), "berry")
+        self.assertEqual(_plural("jay", 2), "jays")
+        self.assertEqual(_plural("fox", 3), "foxes")
+        for s in lines("oldage", "fox", n=3):
+            self.assertNotIn("foxs", s)
+
     def test_zero_counts_are_not_news(self):
         evs = [{"kind": "birth", "sp": "deer", "n": 0, "tick": 1},
                {"kind": "robins_left", "n": 0, "tick": 1},
