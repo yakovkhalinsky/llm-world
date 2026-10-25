@@ -157,6 +157,9 @@ export function createWorld(ground, canvas, opts) {
   controls.minPolarAngle = 0.08;
   /* the camera may look down at the estate but never from below it */
   controls.maxPolarAngle = Math.PI / 2 - 0.04;
+  /* OrbitControls implements arrow-key panning but only wires the listener
+   * when it is asked; connect() installs the pointer and the wheel only. */
+  controls.listenToKeyEvents(window);
   controls.update();
 
   /* -------------------------------------------------------------- lights */
