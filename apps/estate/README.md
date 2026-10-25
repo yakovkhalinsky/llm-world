@@ -373,6 +373,10 @@ The gate's fingerprint moved `010d3b9656ef8a9d` → `9a968319c0c5f992`
 because this is a deliberate chooser change. Every law holds, with friction
 between 1.33 and 1.44 and distinctness between 8.00 and 8.13.
 
+The gate's current fingerprint is `d5ddd81da91d9e58`. The single 3D view
+changed the server's routes and the page, not the engine or the simulation,
+so the estate's behaviour — and its fingerprint — is unchanged.
+
 Nineteen faults are recorded in `docs/BUGS.md` under Grove's sixteen
 classes. Almost none of them crashed anything. They were found by asking
 the estate's own design questions and checking the answers — *do the needs
