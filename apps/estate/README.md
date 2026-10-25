@@ -69,7 +69,7 @@ reason.
 ./estate.sh map                # draw the plan
 ./estate.sh status             # census history
 ./estate.sh rules              # the live ruleset
-./estate.sh web                # the dashboard on :8787, drawn with PixiJS
+./estate.sh web                # dashboard on :8787 — plan / , 3D /3d
 python3 tools/balance.py       # the gate: 8 estates, years, every law
 ```
 
@@ -87,6 +87,37 @@ page (`estate/page/vendor/pixi.min.js`), so the file is never fetched from
 a CDN at runtime and the whole thing works offline. If PixiJS will not
 load, the page falls back to the plain glyph map rather than showing a
 blank rectangle.
+
+## The 3D view
+
+There is a second view at <http://localhost:8787/3d> (follow **3d ↗** on
+the plan page, and **← plan** to come back). It is the same estate, the
+same poll and the same five phases seen through a real camera: solid
+blocks with their floors, doors and windows, the fixtures in their cells,
+and the residents gliding between them. The windows of lived-in flats warm
+at dusk while empty ones stay dark, lamps lay pools of light on the
+ground, seasons turn the grass and the trees, and rain falls as streaks.
+
+Drag to orbit, wheel to zoom, right-drag to pan (arrow keys pan too), and
+click or hover a resident or a block for its card. Pause, **+ day** and
+the three paces work exactly as they do on the plan page.
+
+For screenshots and headless checks:
+
+- `?phase=night` freezes the light at a phase (`dawn`, `morning`,
+  `afternoon`, `evening`, `night`; `day`, `dusk` and `sunrise` are
+  accepted). Without it the light turns with the tick.
+- `?static=1` draws the first state and stops — afternoon if no phase was
+  named — so a screenshot does not depend on when the browser was ready.
+- `?view=top` starts overhead, for looking at the whole plan at once.
+- once the first state is drawn the page publishes
+  `window.__estate3d = {ready, residents, buildings, phase}`.
+
+Three.js **r170** (MIT) is vendored in `estate/page3d/vendor/` together
+with `OrbitControls` and the licence; the page's import map resolves
+`three` locally. Nothing is fetched from a CDN at runtime and there is no
+build step, so the 3D view works offline like the plan. If WebGL is not
+available the page says so and links back to the plan at `/`.
 
 Check the page without a browser — it is the page's own scripts against a
 stub PixiJS, asserting the layer order (the tint under the lamplight, or
@@ -152,6 +183,7 @@ A world of met needs is a dead world. Three loops prevent it:
 | `estate/engine/households.py` | ageing, births, deaths, emigration, the letting office |
 | `estate/engine/effects.py` | the watcher's fates: what lands, what lasts, what ages |
 | `estate/page/` | the dashboard: PixiJS scene, panels, and the vendored engine |
+| `estate/page3d/` | the second view: Three.js scene, HUD, vendored r170 engine |
 | `tools/pixi_check.js` | the page's headless check: the layer order, a warm frame, the weather's box |
 | `estate/db.py` | SQLite: the estate as one blob, plus its census |
 | `tools/balance.py` | the gate: seeded estates × years, every law must hold |
