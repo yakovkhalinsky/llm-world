@@ -410,11 +410,17 @@ the curfew and the evening range hard took it on to `93a0834b294b4e16`:
 an under-10 is never out at night and never beyond the evening range of
 home, a household is home by night, the walk home is uncapped and goes
 round walls on a held breadth-first detour (the old greedy step could
-trap a resident at a wall corner), and a resident's needs are ranked once
+trap a resident at a wall corner) — that detour is in `_walk` itself, so
+it changed every resident's walks, not only a family's: on a seed-42
+probe of 4,000 walks, 3,227 arrived before and all 4,000 after — and a
+resident's needs are ranked once
 a phase rather than twice, which had counted friction double. Across 8
 seeds × 3 years `tools/family_check.py` counts 0 young out at night, 0
 households out at night and 0 evenings beyond range (2,431, 6,081 and
 1,823 before). Every law holds, with friction between 1.33 and 1.39.
+A minder's evening choice asks which places the walk can reach this
+phase; that search now stops at the phase's steps, which left the
+fingerprint where it was.
 
 Nineteen faults are recorded in `docs/BUGS.md` under Grove's sixteen
 classes. Almost none of them crashed anything. They were found by asking
