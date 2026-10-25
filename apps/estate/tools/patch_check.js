@@ -295,6 +295,22 @@ P.write(listA, rows(5));
 ok('and its next write lands whole, even the same html', listA.writes === wD + 1,
    listA.writes - wD);
 
+/* --- a new pick: Patch.fresh lets go of the selection and the card --- */
+let removed = 0;
+selection = { isCollapsed: false, anchorNode: listA, focusNode: listA,
+              removeAllRanges() { removed += 1; selection = null; } };
+handlers.selectionchange();
+P.write(listA, rows(7, 'old'));
+panelA.fire('scroll');
+P.fresh([listA, null]);
+ok('fresh lets go of the selection', removed === 1 && selection === null, removed);
+const wF = listA.writes;
+P.write(listA, rows(5));
+ok('fresh: the held write is gone and the next one lands at once, mid-fling',
+   listA.writes === wF + 1 && listA.innerHTML === rows(5), [listA.writes - wF, listA.innerHTML]);
+P.flush();
+ok('fresh: nothing old lands after it', listA.innerHTML === rows(5), listA.innerHTML);
+
 /* --- every way a pointer lets go lands the write --- */
 ['pointerleave', 'pointercancel'].forEach((ev, i) => {
   panelB.fire('pointerdown');

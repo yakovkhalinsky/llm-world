@@ -24,7 +24,8 @@
  *     where it was. Only when that row and every one after it are gone
  *     does it fall back to the height added above.
  *   - `Patch.drop(el)` forgets a list: what it showed and any write it
- *     was holding, so the next write lands whole (a card for a new pick);
+ *     was holding, so the next write lands whole; `Patch.fresh(lists)`
+ *     does that for a card on a new pick and lets go of the selection;
  *   - `opts.reset`: a different list (a tab change) starts at the top;
  *   - otherwise the position is kept as it was.
  *
@@ -116,6 +117,19 @@
     el._opts = undefined;
     var i = waiting.indexOf(el);
     if (i >= 0) waiting.splice(i, 1);
+  }
+
+  /* a new pick: let go of any selected text (it belongs to what was
+   * shown) and forget `lists` and their panels' motion, so the card's next
+   * writes land whole and at once, never the new name over the old state */
+  function fresh(lists) {
+    var s = root.getSelection && root.getSelection();
+    if (s && !s.isCollapsed && s.removeAllRanges) s.removeAllRanges();
+    (lists || []).forEach(function (el) {
+      if (!el) return;
+      drop(el);
+      scroller(el)._scrolledAt = undefined;
+    });
   }
 
   /* the rows of a list, as an array */
@@ -267,5 +281,6 @@
   }
 
   root.Patch = { write: write, hold: hold, fmt: fmt, flush: flush, drop: drop,
+                 fresh: fresh,
                  SETTLE_MS: SETTLE_MS, SELECT_MS: SELECT_MS };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
