@@ -153,17 +153,49 @@ with `OrbitControls` and the licence; the page's import map resolves
 build step, so the 3D view works offline like the plan. If WebGL is not
 available the page says so and links back to the plan at `/`.
 
-Check the page without a browser — it is the page's own scripts against a
-stub PixiJS, asserting the layer order (the tint under the lamplight, or
-a lamp the night darkens is not a lamp), that a warm frame draws nothing,
-and that the weather falls in the plan's box and not the window's:
+### Headless checks
+
+The pages are checked without a browser. Each check takes the server's own
+two payloads — the static ground and the day's state — either as files or
+from a running server. They need Node; the Python suite skips the wrappers
+when `node` is not on `PATH`.
 
 ```sh
 python3 -m estate web &            # in one shell
 curl -s localhost:8787/api/ground > /tmp/g.json
 curl -s localhost:8787/api/state  > /tmp/s.json
+
 node tools/pixi_check.js /tmp/g.json /tmp/s.json
+node tools/walk_check.js /tmp/g.json /tmp/s.json
+node tools/walk_check.js http://localhost:8787
+node tools/clock_check.js
 ```
+
+- **`pixi_check.js`** runs the plan page's own scripts against a stub
+  PixiJS: the layer order (the tint under the lamplight, or a lamp the
+  night darkens is not a lamp), that a warm frame draws nothing, and that
+  the weather falls in the plan's box and not the window's. It also checks
+  the day feed has at least five rows, so the estate must have been
+  **ticked by the web runner for five or more days**, not merely stepped:
+  `estate step` leaves the feed with one day. On a step-only estate the
+  feed check fails; start the server and let it run (or press **+ day**
+  five times) before dumping the state.
+- **`walk_check.js`** is the router's test (`page/walk.js`): every door
+  reaches every fixture with no nulls, no string-pulled segment crosses a
+  building, the water or a solid fixture, an enclosed target returns null
+  and terminates, endpoints off the plan or in a wall return null, a route
+  sampled at its total lands on the target and stops, and a walk never
+  outlasts the tick. It also reports 2000 uncached random routes as a
+  timing line. Pass it a live URL to read `/api/ground` and `/api/state`
+  over HTTP.
+- **`clock_check.js`** runs `page3d/clock.js`, the pure day clock and light
+  table the 3D page draws from: `light(0) == light(1)`, the pinned
+  `?clock=`/`?phase=` fractions, a frozen paused day, and no
+  frame-to-frame jump in any light channel at 60s, 20s and 5s a day with
+  700ms polls over many days (including the day's turn and a pace change).
+
+`python3 -m unittest discover -s tests` runs these wrappers too when Node
+is present, planting a fresh seed-42 estate for them.
 
 ## The world
 
@@ -195,11 +227,15 @@ node tools/pixi_check.js /tmp/g.json /tmp/s.json
   rather than skirting it. The edge's benches carry a `perimeter_bonus` in
   the pack — the quiet and green of the margin, and the stroll for its own
   sake — which is enough for a resident with rest, company or quiet to
-  spend to walk out, sit, and come back. In both views a resident on a
-  bench's cell sits on it, up to its capacity — a bench beside a path turns
-  to face it. A lamp affords nothing by itself — it *lights*, and what it
-  lights is worth more in the evening, which is the whole reason a
-  courtyard has them.
+  spend to walk out, sit, and come back. The bonus is part of the bench's
+  own base, so wear and crowding scale it exactly as they scale the bench;
+  it is no larger than the bench's afford for each need, so a full edge
+  seat is worth no more than an empty courtyard one. A bench's capacity is
+  a hard seat count: two residents sit, and anyone else on the cell stands
+  clearly beside it rather than on the slats. In both views a bench beside
+  a path turns to face it. A lamp affords nothing by itself — it *lights*,
+  and what it lights is worth more in the evening, which is the whole
+  reason a courtyard has them.
 - **A need is chosen before a place.** The resident picks what presses
   hardest and *then* the best place for it, falling to the next need down
   when the first has nowhere to go. Scored the other way round, the nearest
@@ -238,7 +274,10 @@ A world of met needs is a dead world. Three loops prevent it:
 | `estate/engine/effects.py` | the watcher's fates: what lands, what lasts, what ages |
 | `estate/page/` | the dashboard: PixiJS scene, panels, and the vendored engine |
 | `estate/page3d/` | the second view: Three.js scene, HUD, vendored r170 engine |
+| `estate/page3d/clock.js` | the day's clock and light table, pure (no THREE), shared with the Node check |
 | `tools/pixi_check.js` | the page's headless check: the layer order, a warm frame, the weather's box |
+| `tools/walk_check.js` | the router's check: doors to fixtures, no crossing, nulls, sample and duration |
+| `tools/clock_check.js` | the day clock's check: no jump at the turn or on a poll, the pins, a frozen day |
 | `estate/db.py` | SQLite: the estate as one blob, plus its census |
 | `tools/balance.py` | the gate: seeded estates × years, every law must hold |
 
@@ -292,6 +331,33 @@ move because the open ground changed.
 The gate's fingerprint moved `0a687daff322d77a` → `010d3b9656ef8a9d`
 because this is a deliberate generation change. Every law holds, with
 friction between 1.40 and 1.50 and distinctness between 8.88 and 8.94.
+
+The perimeter bonus then moved into the bench's base. It used to be added
+after `places.effective()`, so a worn or crowded edge seat kept all of it,
+and for quiet it was four times the bench's own 0.18; `_satisfy` restored
+only the bare afford, so a resident drawn out by the bonus found almost
+none of it on arrival. The bonus now sits inside the base that both the
+chooser and the restore use, and it is no larger than the bench's own
+afford for each need, so condition and congestion scale it and a full edge
+seat is worth no more than an empty courtyard one. A one-third bonus left
+the edge unvisited, so the values were tuned to that ceiling rather than
+abandoning the change. Over the same 60 days at seed 42 the perimeter now
+carries 0.52 / 0.98 / 1.38 / 1.10 / 1.35 residents at the end of dawn /
+morning / afternoon / evening / night, 0.28 / 0.72 / 0.95 / 0.73 / 1.13 of
+them on a perimeter bench, with 17 / 43 / 57 / 44 / 68 bench visits by
+phase and 62 distinct walkers; outdoors at night is 5.6 rather than 9.0.
+
+A bench's capacity also became hard: the congestion term had allowed up to
+six residents on a two-seat bench at a phase end (46 of 300 phase ends at
+seed 42), which both views could only draw as people on the slats. The
+chooser now refuses a full bench, and the views seat only residents whose
+chosen fixture is that bench and stand anyone else clearly beside it. No
+phase end in the same 60 days puts more than two people on a two-seat
+bench.
+
+The gate's fingerprint moved `010d3b9656ef8a9d` → `9a968319c0c5f992`
+because this is a deliberate chooser change. Every law holds, with friction
+between 1.33 and 1.44 and distinctness between 8.00 and 8.13.
 
 Nineteen faults are recorded in `docs/BUGS.md` under Grove's sixteen
 classes. Almost none of them crashed anything. They were found by asking
