@@ -29,6 +29,11 @@ import { OrbitControls } from '/3d/vendor/OrbitControls.js';
 const Walk = (typeof globalThis !== 'undefined' && globalThis.EstateWalk) ||
              null;
 
+/* Who stands where on a shared tile (`/3d/crowd.js`, a classic script
+ * like the router): one figure per seat, the rest spread over the tile. */
+const Crowd = (typeof globalThis !== 'undefined' && globalThis.EstateCrowd) ||
+              null;
+
 /* The day's clock and the light table are `clock.js`, loaded as a classic
  * script before this module: pure functions with no THREE, so the property
  * that matters — the light never jumps at the turn — is testable in Node
@@ -45,6 +50,9 @@ const Field = (typeof globalThis !== 'undefined' && globalThis.Page3DField) ||
 const FLOOR_H = 1.35;          // world units per storey
 const TILE_TOP = 0.12;         // the walking surface: top of a ground tile
 const WALK_Y = TILE_TOP + 0.005;
+/* A door's step and the shop's stall are one step high (crowd.js), and a
+ * figure over either stands on it, never in it. */
+const STEP_H = Crowd ? Crowd.STEP_H : 0.06;
 
 /* A season shifts the living ground and the trees; the road, the paving and
  * the buildings are the same in every season, because they are not alive. */
@@ -506,17 +514,22 @@ export function createWorld(ground, canvas, opts) {
     if (face.axis === 'z') {
       addBox(g, doorMat, doorW, doorH, 0.08,
              along, TILE_TOP + doorH / 2, out).castShadow = false;
-      addBox(g, stepMat, doorW + 0.24, 0.07, 0.34,
-             along, TILE_TOP + 0.035, face.at + face.sign * 0.21);
       addBox(g, roofMat, doorW + 0.34, 0.06, 0.36,
              along, TILE_TOP + doorH + 0.2, face.at + face.sign * 0.16);
     } else {
       addBox(g, doorMat, 0.08, doorH, doorW,
              out, TILE_TOP + doorH / 2, along).castShadow = false;
-      addBox(g, stepMat, 0.34, 0.07, doorW + 0.24,
-             face.at + face.sign * 0.21, TILE_TOP + 0.035, along);
+
       addBox(g, roofMat, 0.36, 0.06, doorW + 0.34,
              face.at + face.sign * 0.16, TILE_TOP + doorH + 0.2, along);
+    }
+
+    /* the step is the one people are lifted onto (Crowd.steps), drawn
+     * from the same rectangle so the two cannot drift apart */
+    const st = Crowd ? Crowd.doorStep(b) : null;
+    if (st) {
+      addBox(g, stepMat, st.x1 - st.x0, STEP_H, st.z1 - st.z0,
+             (st.x0 + st.x1) / 2, TILE_TOP + STEP_H / 2, (st.z0 + st.z1) / 2);
     }
 
     /* a small lamp over the door, part of the same night as the street */
@@ -783,7 +796,7 @@ export function createWorld(ground, canvas, opts) {
   let people = [];
   let personAt = [];
   const toX = [], toZ = [];
-  const offX = [], offZ = [], roleScale = [];
+  const roleScale = [];
   /* 0 stands, 1 sits on the bench, 2 stands beside it because it is full */
   const sitMode = [], seatFx = [], seatFz = [];
   /* Each walker's route (from walk.js beside this file) and when its walk
@@ -796,6 +809,11 @@ export function createWorld(ground, canvas, opts) {
   let routeFallbacks = 0;     // straight lines used because no path was found
   let routeMaxPoints = 0;
   const routeSample = { x: 0, z: 0, dx: 0, dz: 0, moving: false };
+  /* the figures handed to Walk.separate each frame (see updateResidents),
+   * and the smallest gap it left, for the HUD and the checks */
+  let crowdF = null, crowdIdx = [];
+  let crowdFix = null;
+  let stepList = null;
 
   /* ----------------------------------------------------------- trace */
   /* `?trace=1` draws every current route; `?trace=<id>` draws one. It is a
@@ -839,10 +857,11 @@ export function createWorld(ground, canvas, opts) {
     traceMesh.visible = n > 0;
   }
 
-  /* last state's seat positions: somebody already on a bench starts their
-   * next walk from the seat rather than the cell's centre, and somebody who
-   * stays on the same bench is not sent walking at all */
-  let prevSeat = {};
+  /* where everyone outdoors stood last state: a walk starts from that spot
+   * (the seat they get up from, their place in the crowd) rather than the
+   * cell's centre, and somebody whose spot did not move is not sent
+   * walking at all */
+  let prevSpot = {};
   /* The day is the clock, not the poll: `clock` (clock.js) owns the anchor
    * and the pins. The page is polled several times per day, and resetting
    * on every state made the light restart toward dawn and the walk restart
@@ -890,7 +909,6 @@ export function createWorld(ground, canvas, opts) {
       for (let i = personAt.length; i < capacity; i++) {
         personAt[i] = null;
         toX[i] = toZ[i] = 0;
-        offX[i] = offZ[i] = 0;
         roleScale[i] = 1;
         sitMode[i] = 0;
         seatFx[i] = 0;
@@ -906,15 +924,15 @@ export function createWorld(ground, canvas, opts) {
      * alone in between: rebuilding it on every poll restarted the walk from
      * its beginning before it had arrived. */
     const fresh = !routesBuilt || st.day !== clock.daySeen;
-    const seatWas = prevSeat;
+    const spotWas = prevSpot;
+    /* the fixtures first: where a crowd may stand depends on them */
+    if (fresh && grid) Walk.setFixtures(grid, st.fixtures || []);
 
     for (let i = 0; i < people.length; i++) {
       const p = people[i];
       personAt[i] = p;
       toX[i] = p.x + 0.5;
       toZ[i] = p.y + 0.5;
-      offX[i] = (hash01(p.id, 11) * 2 - 1) * 0.17;
-      offZ[i] = (hash01(p.id, 12) * 2 - 1) * 0.17;
       roleScale[i] = p.role === 'child' ? 0.78 : p.role === 'elder' ? 0.92 : 1;
       sitMode[i] = 0;
 
@@ -925,63 +943,29 @@ export function createWorld(ground, canvas, opts) {
       headMesh.setColorAt(i, _c1);
     }
 
-    /* Who is on a bench. A resident is seated only when the bench is the
-     * fixture they chose last phase; someone whose walk merely ended on
-     * that cell is standing there, not sitting. Seats go to those users
-     * first, side by side (lowest ids first, so the picture does not
-     * shuffle between polls); anyone else stands clearly beside the bench. */
-    seatedCount = 0;
-    const onBench = {};
+    /* Where on their tile each resident stands (crowd.js): one figure per
+     * seat on a bench and the rest standing clear of it, everyone else on a
+     * shared tile packed round its middle, never inside a table or a stall.
+     * A function of the snapshot alone, so a poll that repeats the state
+     * repeats the picture. */
+    crowdFix = Crowd ? Crowd.fixtureMap(st.fixtures) : null;
+    stepList = Crowd ? Crowd.steps(ground, st.fixtures) : null;
+    const spots = Crowd ? Crowd.place(Walk, grid, people, benchByCell,
+                                      crowdFix)
+                        : null;
+    seatedCount = spots ? spots.seated : 0;
+    const spotNow = {};
     for (let i = 0; i < people.length; i++) {
+      if (!spots) break;
+      toX[i] = spots.x[i];
+      toZ[i] = spots.z[i];
+      sitMode[i] = spots.sit[i];
+      seatFx[i] = spots.fx[i];
+      seatFz[i] = spots.fz[i];
       const p = people[i];
-      if (p.in) continue;
-      const key = p.x + ',' + p.y;
-      if (!benchByCell[key]) continue;
-      (onBench[key] = onBench[key] || []).push(i);
+      if (!p.in) spotNow[p.id] = { cell: p.x + ',' + p.y, x: toX[i], z: toZ[i] };
     }
-    const seatNow = {};
-    for (const key in onBench) {
-      const b = benchByCell[key];
-      const idx = onBench[key].sort((a, c) => {
-        const ua = people[a].fixture != null &&
-                   Number(people[a].fixture) === b.id ? 0 : 1;
-        const uc = people[c].fixture != null &&
-                   Number(people[c].fixture) === b.id ? 0 : 1;
-        return ua - uc || people[a].id - people[c].id;
-      });
-      /* local +x, which runs along the seat, in world coordinates */
-      const ax = Math.cos(b.yaw), az = -Math.sin(b.yaw);
-      for (let rank = 0; rank < idx.length; rank++) {
-        const i = idx[rank];
-        const p = people[i];
-        if (rank < b.cap) {
-          const off = b.cap > 1 ? (rank - (b.cap - 1) / 2) * 0.42 : 0;
-          toX[i] = b.x + ax * off;
-          toZ[i] = b.z + az * off;
-          offX[i] = offZ[i] = 0;
-          sitMode[i] = 1;
-          seatFx[i] = b.fx;
-          seatFz[i] = b.fz;
-          seatNow[p.id] = { cell: key, x: toX[i], z: toZ[i] };
-          seatedCount++;
-        } else {
-          /* No room on the seat: stand clearly past the end of it, not on
-           * top. The seat is 0.9 long (±0.45) and a body is 0.32 wide, so
-           * a centre nearer than 0.61 overlaps the slats and reads as a
-           * third sitter — which is exactly how a two-seat bench came to
-           * be reported as seating three. */
-          const side = (p.id & 1) ? 1 : -1;
-          const off = side * (0.74 + hash01(p.id, 41) * 0.10);
-          toX[i] = b.x + ax * off;
-          toZ[i] = b.z + az * off;
-          offX[i] = offZ[i] = 0;
-          sitMode[i] = 2;
-          seatFx[i] = b.fx;
-          seatFz[i] = b.fz;
-        }
-      }
-    }
-    prevSeat = seatNow;
+    prevSpot = spotNow;
     if (bodyMesh.instanceColor) bodyMesh.instanceColor.needsUpdate = true;
     if (headMesh.instanceColor) headMesh.instanceColor.needsUpdate = true;
 
@@ -1003,45 +987,23 @@ export function createWorld(ground, canvas, opts) {
      * bench starts at the seat. Anyone whose cell did not change keeps the
      * route they had — which is what lets a walk finish. */
     if (fresh) {
-      if (grid) Walk.setFixtures(grid, st.fixtures || []);
       routeMaxPoints = 0;
       for (let i = 0; i < people.length; i++) {
         const p = people[i];
         routes[i] = null;
         if (p.in) continue;                // indoors is not drawn walking
-        const gx = p.x, gy = p.y;
-        const tx = toX[i], tz = toZ[i];
-
-        let scx, scy, sx, sz;
+        /* from the door when leaving a block, else from where they stood;
+         * to their own place on the tile. Somebody whose place did not
+         * move stays put. */
         const door = p.pin ? doorSpot(p.punit) : null;
-        if (door) {
-          scx = door.x; scy = door.y;
-          sx = scx + 0.5; sz = scy + 0.5;
-        } else {
-          scx = p.px == null ? gx : p.px;
-          scy = p.py == null ? gy : p.py;
-          sx = scx + 0.5; sz = scy + 0.5;
-          const was = seatWas[p.id];
-          if (was && was.cell === scx + ',' + scy) {
-            sx = was.x; sz = was.z;        // get up from where you sat
-          }
-        }
-        if (scx === gx && scy === gy) continue;   // same cell: no walk
-
-        let route = null;
-        if (grid) {
-          const cells = Walk.findPath(grid, scx, scy, gx, gy);
-          if (cells) route = Walk.routePoints(cells, sx, sz, tx, tz);
-        }
-        if (!route) {
-          /* no path (or no router): the straight line the page used to
-           * draw, counted so a broken grid is visible rather than silent */
-          routeFallbacks++;
-          route = Walk ? Walk.straight(sx, sz, tx, tz)
-                       : { xs: [sx, tx], zs: [sz, tz],
-                           cum: [0, 1], n: 2,
-                           total: Math.hypot(tx - sx, tz - sz) };
-        }
+        const got = Crowd ? Crowd.route(Walk, grid, p, toX[i], toZ[i],
+                                        spotWas, door, crowdFix)
+                          : null;
+        if (!got) continue;
+        /* no path (or no router): the straight line the page used to draw,
+         * counted so a broken grid is visible rather than silent */
+        if (got.fallback) routeFallbacks++;
+        const route = got.route;
         routes[i] = route;
         routeT0[i] = now;
         routeDur[i] = Walk ? Walk.duration(route.total, clock.dayMs)
@@ -1055,6 +1017,23 @@ export function createWorld(ground, canvas, opts) {
           if (dx || dz) facing[i] = Math.atan2(dx, dz);
         }
       }
+      /* walkers setting off from one point go in turn, not as one body:
+       * six out of a door file out of it (crowd.js) */
+      if (Crowd) {
+        const qi = [], starts = [];
+        for (let i = 0; i < people.length; i++) {
+          const r = routes[i];
+          if (!r || r.total <= 1e-6) continue;
+          qi.push(i);
+          starts.push({ id: people[i].id, x: r.xs[0], z: r.zs[0] });
+        }
+        const delays = Crowd.queue(starts);
+        for (let k = 0; k < qi.length; k++) {
+          const f = Crowd.fit(delays[k], routeDur[qi[k]], clock.dayMs);
+          routeT0[qi[k]] = now + f.delay;
+          routeDur[qi[k]] = f.dur;
+        }
+      }
       routesBuilt = true;
       if (traceMesh) rebuildTrace();
     }
@@ -1064,11 +1043,80 @@ export function createWorld(ground, canvas, opts) {
     Clock.onState(clock, now, st);
   }
 
+  /* Somebody queued behind others at a door is still indoors. */
+  function waiting(i, now) {
+    return !staticMode && !!routes[i] && people[i].pin && now < routeT0[i];
+  }
+
+  /* Where each figure is drawn this frame, before spacing: on its route
+   * if it has one, else at its place. */
+  function rawResident(i, now, out) {
+    const r = routes[i];
+    out.hidden = waiting(i, now);
+    out.x = toX[i]; out.z = toZ[i];
+    out.dx = out.dz = 0;
+    out.moving = false;
+    if (Walk && r && r.total > 1e-6) {
+      const t = staticMode ? r.total
+                           : (now - routeT0[i]) / (routeDur[i] || 1) * r.total;
+      Walk.sample(r, t, routeSample);
+      out.x = routeSample.x;
+      out.z = routeSample.z;
+      out.dx = routeSample.dx;
+      out.dz = routeSample.dz;
+      out.moving = routeSample.moving;
+    }
+    return out;
+  }
+
+  /* Keep figures from walking into each other: every outdoor figure is
+   * handed to Walk.separate, which pushes apart any two closer than their
+   * bodies and passes oncoming walkers side by side. Seated figures do not
+   * move; walkers give way more readily than those standing. No push takes
+   * a body onto a wall, a solid or the water, or out of the cell its route
+   * has it in other than onto open ground (Walk.clearAt), nor into the
+   * lamp post, tree or table in its own cell (the fixture's keep,
+   * Crowd.space) — the walk's own guarantee holds after spacing too. Stateless, so a frame depends on
+   * nothing but its own time. */
+  const crowdDx = [], crowdDz = [];
+  const crowdRaw = { x: 0, z: 0, dx: 0, dz: 0, moving: false };
+  function spaceResidents(now) {
+    let n = 0;
+    crowdF = Walk ? Walk.figures(crowdF, people.length) : null;
+    for (let i = 0; i < people.length; i++) {
+      crowdDx[i] = crowdDz[i] = 0;
+      if (!crowdF || people[i].in) continue;
+      rawResident(i, now, crowdRaw);
+      if (crowdRaw.hidden) continue;
+      const F = crowdF;
+      F.rx[n] = crowdRaw.x; F.rz[n] = crowdRaw.z;
+      F.r[n] = Crowd.R * roleScale[i];
+      const seated = sitMode[i] === 1 && !crowdRaw.moving;
+      F.w[n] = seated ? 0 : crowdRaw.moving ? 1 : 0.5;
+      F.hx[n] = crowdRaw.moving ? crowdRaw.dx : 0;
+      F.hz[n] = crowdRaw.moving ? crowdRaw.dz : 0;
+      F.layer[n] = 0;
+      F.id[n] = people[i].id;
+      crowdIdx[n] = i;
+      n++;
+    }
+    if (!crowdF || n === 0) return;
+    /* pushed only to open ground, and never into the lamp post, tree or
+     * table in a body's own cell (crowd.js space) */
+    Crowd.space(Walk, grid, crowdFix, crowdF, n);
+    for (let k = 0; k < n; k++) {
+      const i = crowdIdx[k];
+      crowdDx[i] = crowdF.x[k] - crowdF.rx[k];
+      crowdDz[i] = crowdF.z[k] - crowdF.rz[k];
+    }
+  }
+
   function updateResidents(now) {
     if (!bodyMesh) return;
+    spaceResidents(now);
     for (let i = 0; i < people.length; i++) {
       const p = people[i];
-      if (p.in) {
+      if (p.in || waiting(i, now)) {
         dummy.position.set(0, -50, 0);
         dummy.rotation.set(0, 0, 0);
         dummy.scale.set(0, 0, 0);
@@ -1092,8 +1140,13 @@ export function createWorld(ground, canvas, opts) {
           facing[i] = Math.atan2(routeSample.dx, routeSample.dz);
         }
       }
-      x += offX[i];
-      z += offZ[i];
+      x += crowdDx[i] || 0;
+      z += crowdDz[i] || 0;
+      /* at a table and not walking: beside it, facing it (crowd.js) */
+      if (!moving && Crowd) {
+        const yaw = Crowd.faceTable(crowdFix, p.x, p.y, x, z);
+        if (yaw !== null) facing[i] = yaw;
+      }
 
       /* somebody who has arrived at their bench sits; somebody still
        * walking there is still walking */
@@ -1119,14 +1172,18 @@ export function createWorld(ground, canvas, opts) {
       /* a small gait while walking, still otherwise; and a body turned the
        * way it is going */
       const bob = moving
-        ? Math.sin(now * 0.009 + i * 1.7) * 0.02 * s
+        ? (1 + Math.sin(now * 0.009 + i * 1.7)) * 0.02 * s
         : 0;
+      /* standing on a step when over one, and rising onto it smoothly on
+       * the way in (crowd.js `lift`); the gait only ever lifts a foot,
+       * never sinks it into the ground */
+      const footY = WALK_Y + (Crowd ? Crowd.lift(stepList, x, z) : 0);
       dummy.rotation.set(0, facing[i], 0);
       dummy.scale.set(s, s, s);
-      dummy.position.set(x, WALK_Y + 0.36 * s + bob, z);
+      dummy.position.set(x, footY + 0.36 * s + bob, z);
       dummy.updateMatrix();
       bodyMesh.setMatrixAt(i, dummy.matrix);
-      dummy.position.set(x, WALK_Y + 0.82 * s + bob, z);
+      dummy.position.set(x, footY + 0.82 * s + bob, z);
       dummy.updateMatrix();
       headMesh.setMatrixAt(i, dummy.matrix);
     }
@@ -1200,17 +1257,6 @@ export function createWorld(ground, canvas, opts) {
    * the ground (`codes` and `rows`), never a second map in the page. A bench
    * with no path beside it — the courtyard's own — keeps the default pose,
    * which is the one both views have always drawn. */
-  function benchFacing(f) {
-    for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
-      const x = f.x + dx, y = f.y + dy;
-      if (x < 0 || y < 0 || x >= W || y >= H) continue;
-      if (ground.codes[ground.rows[y][x]] === 'path') {
-        return { fx: dx, fz: dy, yaw: Math.atan2(dx, dy) };
-      }
-    }
-    return { fx: 0, fz: 1, yaw: 0 };
-  }
-
   function buildFixture(f, season) {
     const g = new THREE.Group();
     g.position.set(f.x + 0.5, TILE_TOP, f.y + 0.5);
@@ -1221,7 +1267,12 @@ export function createWorld(ground, canvas, opts) {
     if (f.kind === 'tree') {
       treeMesh(g, mats, season, f.id);
     } else if (f.kind === 'bench') {
-      const face = benchFacing(f);
+      bench = Crowd ? Crowd.bench(ground, f)
+                    : { key: f.x + ',' + f.y, id: Number(f.id), cx: f.x,
+                        cy: f.y, x: f.x + 0.5, z: f.y + 0.5, fx: 0, fz: 1,
+                        yaw: 0, perimeter: !!f.perimeter,
+                        cap: Math.max(0, Number(f.cap) || 0) };
+      const face = bench;
       g.rotation.y = face.yaw;
       const wood = fixtureMaterial(0x8a6a3f, 0.9);
       const metal = fixtureMaterial(0x454c54, 0.7);
@@ -1231,12 +1282,6 @@ export function createWorld(ground, canvas, opts) {
       addBox(g, metal.mat, 0.07, 0.42, 0.3, -0.34, 0.21, 0);
       addBox(g, metal.mat, 0.07, 0.42, 0.3, 0.34, 0.21, 0);
       /* local +z is the way it faces; local +x runs along the seat */
-      bench = { key: f.x + ',' + f.y, id: Number(f.id),
-                cx: f.x, cy: f.y,
-                x: f.x + 0.5, z: f.y + 0.5,
-                fx: face.fx, fz: face.fz, yaw: face.yaw,
-                perimeter: !!f.perimeter,
-                cap: Math.max(0, Number(f.cap) || 0) };
     } else if (f.kind === 'table') {
       const wood = fixtureMaterial(0x9c7f52, 0.9);
       const metal = fixtureMaterial(0x454c54, 0.7);
@@ -1276,8 +1321,10 @@ export function createWorld(ground, canvas, opts) {
     } else if (f.kind === 'shop') {
       const wood = fixtureMaterial(0xcf9f60, 0.8);
       mats.push(wood);
-      addBox(g, wood.mat, 0.9, 0.08, 0.9, 0, 0.55, 0);
-      addBox(g, wood.mat, 0.85, 0.5, 0.85, 0, 0.27, 0);
+      /* the shop's front: a low wooden plinth before its door, one step
+       * high, that its customers step up onto (it was a waist-high
+       * counter they walked through) */
+      addBox(g, wood.mat, 0.9, STEP_H, 0.9, 0, STEP_H / 2, 0);
     } else {
       /* a kind the page has never seen: a small plinth in its own colour,
        * so the estate still shows that something is there */
