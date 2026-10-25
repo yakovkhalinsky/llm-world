@@ -22,14 +22,24 @@ def _rect(cells, x0, y0, x1, y1, site):
                 cells[y][x] = W.new_cell(site)
 
 
+# the largest side a plan may have (#14 review: a sane upper limit)
+MAX_SIDE = 200
+
+
 def generate(seed: int, width: int = None, height: int = None,
              biome: str = None) -> dict:
     if biome:
         rules.select_biome(biome)
     rng = W.rng_for(seed, 0, "gen")
     g = rules.R["gen"]
-    w = width or rules.R["world"]["width"]
-    h = height or rules.R["world"]["height"]
+    # 0 is a size (a wrong one), not "the default": only None is
+    w = rules.R["world"]["width"] if width is None else width
+    h = rules.R["world"]["height"] if height is None else height
+    if w <= 0 or h <= 0:
+        raise ValueError("sizes must be positive")
+    if w > MAX_SIDE or h > MAX_SIDE:
+        raise ValueError(f"at most {MAX_SIDE}×{MAX_SIDE}: the page and the "
+                         f"search are sized for a neighbourhood, not a city")
     st = W.new_state(seed, w, h)
     st["biome"] = rules.active_biome()
     cells = [[W.new_cell("lawn") for _ in range(w)] for _ in range(h)]
