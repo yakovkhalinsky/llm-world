@@ -535,8 +535,15 @@ export function createWorld(first, canvas, opts) {
    * in the dark — the swap happens by day, when no ring is glowing */
   let nightKey = null;
   let dayNow = 0;
-  function buildGlow(st) {
-    const ch = Glow.choose(st.cells, N, nightKey | 0);
+  /* the last choice, carried into the next week's rebuild while it is
+   * dark: a week's growth can rekey a ring, and without the carry a ring
+   * that survived the week would flip on or off mid-night */
+  let glowChoice = null;
+  function buildGlow(st, fresh) {
+    const ch = fresh ? Glow.choose(st.cells, N, nightKey | 0)
+                     : Glow.rebuild(glowChoice, st.cells, N, nightKey | 0,
+                                    darkNow);
+    glowChoice = ch;
     litCell = ch.litCell;
     ringCount = ch.rings.length;
     ringsLit = ch.lit.length;
@@ -1171,13 +1178,13 @@ export function createWorld(first, canvas, opts) {
     updateSky(f);
     const dark = darkNow;
     /* a new night's rings, chosen while it is light */
-    if (dark <= 0.02 && nightKey !== dayNow && builtTick >= 0) {
+    if (dark <= Glow.DARK_ON && nightKey !== dayNow && builtTick >= 0) {
       nightKey = dayNow;
-      buildGlow(st0);
+      buildGlow(st0, true);
       buildCells(st0);
     }
     glowMat.opacity = dark * GLOW_OPACITY;
-    glow.visible = glowCount > 0 && dark > 0.02;
+    glow.visible = glowCount > 0 && dark > Glow.DARK_ON;
     mushMat.emissiveIntensity = 0.15 + dark * 1.6;
     mushDimMat.emissiveIntensity = 0.15 - dark * 0.13;
     updateBeasts(now, dark);

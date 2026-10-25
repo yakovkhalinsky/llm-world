@@ -11,8 +11,11 @@
  * and nothing else: the same snapshot on the same night lights the same
  * rings on every page load, a different night lights others, and if no ring
  * passes the hash the one closest to passing glows, so a grove with
- * mushrooms is never quite dark. It is a view-only choice — the sim never
- * sees it, and every mushroom still stands; only its light is withheld.
+ * mushrooms is never quite dark at nightfall. Through the night the
+ * choice is carried from week to week (see `choose`), so a ring that
+ * survives a week never switches on or off in the dark. It is a
+ * view-only choice — the sim never sees it, and every mushroom still
+ * stands; only its light is withheld.
  *
  * Pure: no THREE, no DOM, no randomness. A classic script, loaded before the
  * module and published as GroveGlow; `tools/glow_check.js` requires it in
@@ -28,12 +31,20 @@
   var STEPS = 9;
 
   function hash(n, salt) {
-    var x = ((n | 0) * 374761393 + (salt | 0) * 668265263) | 0;
+    /* exact 32-bit products: a plain multiply passes 2^53 for large
+     * nights and rounds its low bits away before the `| 0` */
+    var x = (Math.imul(n | 0, 374761393) +
+             Math.imul(salt | 0, 668265263)) | 0;
     x = Math.imul(x ^ (x >>> 13), 1274126177) | 0;
     x = x ^ (x >>> 16);
     return x >>> 0;
   }
   function hash01(n, salt) { return hash(n, salt) / 4294967295; }
+
+  /* a ring's draw on a night, 0..1: it glows if this is under SHARE */
+  function score(key, night) {
+    return hash01(key, Math.imul(night | 0, 7919) + 4241);
+  }
 
   function isMush(cells, i) {
     var c = cells[i];
@@ -70,23 +81,60 @@
   }
 
   /* The rings that glow on `night` (any integer the page counts nights
-   * by). Returns {rings, lit: [ring], litCell: Uint8Array(N*N)}. */
-  function choose(cells, N, night, share) {
+   * by). Returns {rings, lit: [ring], litCell, mushCell} — the last two
+   * Uint8Array(N*N), the lit rings' cells and every mushroom cell.
+   *
+   * `carry` is the choice made for the week before, on the same night
+   * (an earlier result of this function). A week's growth can move a
+   * ring's first cell, and with it the ring's draw, so a ring that
+   * survived the week would flip on or off in the dark. With a carry:
+   *   - a ring touching a cell lit the week before stays lit;
+   *   - a ring that stood the week before (it touches one of its
+   *     mushroom cells) but was dark stays dark;
+   *   - only a new ring is drawn, as on a fresh night.
+   * The fallback (the ring closest to passing glows when none passes)
+   * applies to a fresh night only, or among new rings: a surviving dark
+   * ring never lights up mid-night to stand in for one that died. */
+  function choose(cells, N, night, share, carry) {
     var s = share == null ? SHARE : share;
     var all = rings(cells, N);
     var lit = [];
     var best = null, bestH = 2;
     for (var r = 0; r < all.length; r++) {
-      var h = hash01(all[r].key, (night | 0) * 7919 + 4241);
-      if (h < s) lit.push(all[r]);
-      if (h < bestH) { bestH = h; best = all[r]; }
+      var ring = all[r];
+      if (carry) {
+        var wasLit = false, stood = false;
+        for (var c = 0; c < ring.cells.length; c++) {
+          var k = ring.cells[c];
+          if (carry.litCell[k]) wasLit = true;
+          if (carry.mushCell[k]) stood = true;
+        }
+        if (wasLit) { lit.push(ring); continue; }
+        if (stood) continue;
+      }
+      var h = score(ring.key, night);
+      if (h < s) lit.push(ring);
+      if (h < bestH) { bestH = h; best = ring; }
     }
     if (!lit.length && best) lit.push(best);
+    lit.sort(function (a, b) { return a.key - b.key; });
     var litCell = new Uint8Array(N * N);
     for (var q = 0; q < lit.length; q++) {
-      for (var c = 0; c < lit[q].cells.length; c++) litCell[lit[q].cells[c]] = 1;
+      for (var j = 0; j < lit[q].cells.length; j++) litCell[lit[q].cells[j]] = 1;
     }
-    return { rings: all, lit: lit, litCell: litCell };
+    var mushCell = new Uint8Array(N * N);
+    for (var i = 0; i < N * N; i++) if (isMush(cells, i)) mushCell[i] = 1;
+    return { rings: all, lit: lit, litCell: litCell, mushCell: mushCell };
+  }
+
+  /* The page's weekly rebuild: a fresh choice while it is light (or with
+   * nothing to carry), and the week before carried through the dark, so
+   * the lit set is chosen by day and holds all night. `dark` is the
+   * clock's 0..1; the glow shows above DARK_ON. */
+  var DARK_ON = 0.02;
+  function rebuild(prev, cells, N, night, dark) {
+    var carry = prev && dark > DARK_ON ? prev : null;
+    return choose(cells, N, night, null, carry);
   }
 
   /* The light field of the lit cells: one step 0..STEPS per cell,
@@ -114,8 +162,9 @@
     return out;
   }
 
-  var api = { SHARE: SHARE, REACH: REACH, STEPS: STEPS, hash: hash,
-              rings: rings, choose: choose, field: field };
+  var api = { SHARE: SHARE, REACH: REACH, STEPS: STEPS, DARK_ON: DARK_ON,
+              hash: hash, score: score, rings: rings, choose: choose,
+              rebuild: rebuild, field: field };
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
   }
