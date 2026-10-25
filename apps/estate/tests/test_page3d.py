@@ -11,9 +11,13 @@ Run from `apps/estate`:
     python3 -m unittest discover -s tests
 """
 
+import http.client
 import io
+import os
+import threading
 import types
 import unittest
+from http.server import ThreadingHTTPServer
 
 from estate import gen, rules, web
 
@@ -86,6 +90,7 @@ class Page3dTest(unittest.TestCase):
             "%2e%2e/web.py",
             "%2e%2e%2fweb.py",
             "..%2f..%2fREADME.md",
+            "..\\web.py",           # a Windows separator, as a literal
             "/etc/passwd",
             "//etc/passwd",
             "vendor/../../web.py",
@@ -96,6 +101,153 @@ class Page3dTest(unittest.TestCase):
         for rel in paths:
             with self.subTest(rel=rel):
                 self.assertIsNone(web._page3d(rel))
+
+    def test_symlinks_out_of_page3d_are_refused(self):
+        """A link's *real* path is what must stay under page3d/, file or
+        directory; `realpath` plus `commonpath` is what refuses both."""
+        link_file = os.path.join(web.PAGE3D, ".test-link-file")
+        link_dir = os.path.join(web.PAGE3D, ".test-link-dir")
+        try:
+            os.symlink(os.path.join(web.PAGE3D, "..", "web.py"), link_file)
+        except (OSError, NotImplementedError):
+            self.skipTest("symlinks are not supported here")
+        self.addCleanup(_unlink_quiet, link_file)
+        try:
+            os.symlink(os.path.dirname(web.PAGE3D), link_dir)
+        except (OSError, NotImplementedError):
+            self.skipTest("symlinks are not supported here")
+        self.addCleanup(_unlink_quiet, link_dir)
+        self.assertIsNone(web._page3d(".test-link-file"))
+        self.assertIsNone(web._page3d(".test-link-dir/web.py"))
+        # the link itself resolves, so the refusal is about where it points
+        self.assertEqual(os.path.realpath(os.path.join(
+            web.PAGE3D, ".test-link-dir")),
+            os.path.realpath(os.path.dirname(web.PAGE3D)))
+
+
+def _unlink_quiet(path):
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+class _LiveServer:
+    """A real `ThreadingHTTPServer` on port 0 with the page's own handler.
+
+    The static tests above call `_page3d` directly; these go through
+    `do_GET` and the stdlib's error paths, which is where the header and
+    the traversal prefix strip actually run.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.httpd = ThreadingHTTPServer(
+            ("127.0.0.1", 0),
+            web.make_handler("<html>the plan</html>", None,
+                             threading.Lock(), None))
+        cls.httpd.daemon_threads = True
+        cls.port = cls.httpd.server_address[1]
+        cls.thread = threading.Thread(target=cls.httpd.serve_forever,
+                                      daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+        cls.thread.join(timeout=5)
+
+    def request(self, method, path):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        try:
+            conn.request(method, path)
+            resp = conn.getresponse()
+            body = resp.read()
+            return resp, body
+        finally:
+            conn.close()
+
+
+class LiveTraversalTest(_LiveServer, unittest.TestCase):
+    """The traversal boundary over the real HTTP path.
+
+    `http.client` sends the path as given — no normalisation on the client
+    side — so these are the bytes the server's `urlparse` and its `/3d/`
+    prefix strip actually see.
+    """
+
+    def test_traversals_are_404(self):
+        paths = [
+            "/3d/../web.py",
+            "/3d/%2e%2e/web.py",
+            "/3d/..%5cweb.py",
+            "/3d/%252e%252e/web.py",
+            "//etc/passwd",
+            "/3d/%2fetc%2fpasswd",
+            "/3d/vendor/..%2f..%2fweb.py",
+            "/3d/a%00b",
+            "/3d/vendor",
+        ]
+        for path in paths:
+            with self.subTest(path=path):
+                resp, _ = self.request("GET", path)
+                self.assertEqual(resp.status, 404, path)
+
+    def test_the_real_page_still_serves(self):
+        for path, ctype in (("/3d/", "text/html; charset=utf-8"),
+                            ("/3d/viewer.js",
+                             "application/javascript; charset=utf-8")):
+            with self.subTest(path=path):
+                resp, body = self.request("GET", path)
+                self.assertEqual(resp.status, 200, path)
+                self.assertEqual(resp.getheader("Content-Type"), ctype)
+                self.assertTrue(body)
+
+    def test_a_backslash_symlink_through_http_is_404(self):
+        link = os.path.join(web.PAGE3D, ".test-http-link")
+        try:
+            os.symlink(os.path.join(web.PAGE3D, "..", "web.py"), link)
+        except (OSError, NotImplementedError):
+            self.skipTest("symlinks are not supported here")
+        self.addCleanup(_unlink_quiet, link)
+        resp, _ = self.request("GET", "/3d/.test-http-link")
+        self.assertEqual(resp.status, 404)
+
+
+class ResponseHeaderLiveTest(_LiveServer, unittest.TestCase):
+    """`nosniff` is on every response, including the stdlib's own errors.
+
+    `BaseHTTPRequestHandler.send_error` writes the 501 for an unsupported
+    method (PUT, HEAD) and the 400 for a malformed request line without
+    passing through `_respond`, so the handler adds the header in
+    `end_headers` and marks `_respond`'s own copy to avoid sending it twice.
+    """
+
+    def assert_nosniff_once(self, resp):
+        values = resp.headers.get_all("X-Content-Type-Options") or []
+        self.assertEqual(values, ["nosniff"],
+                         "expected exactly one nosniff, got " + repr(values))
+
+    def test_nosniff_on_200(self):
+        resp, _ = self.request("GET", "/")
+        self.assertEqual(resp.status, 200)
+        self.assert_nosniff_once(resp)
+
+    def test_nosniff_on_404(self):
+        resp, _ = self.request("GET", "/nope")
+        self.assertEqual(resp.status, 404)
+        self.assert_nosniff_once(resp)
+
+    def test_nosniff_on_501_for_put(self):
+        resp, _ = self.request("PUT", "/api/control")
+        self.assertEqual(resp.status, 501)
+        self.assert_nosniff_once(resp)
+
+    def test_nosniff_on_501_for_head(self):
+        resp, _ = self.request("HEAD", "/")
+        self.assertEqual(resp.status, 501)
+        self.assert_nosniff_once(resp)
 
 
 class _Handler:

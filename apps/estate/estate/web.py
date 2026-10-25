@@ -310,6 +310,10 @@ def snapshot(est, runner, lock):
                 "kind": hh.get("kind"), "age": r["age"],
                 "x": wh["x"], "y": wh["y"], "in": wh["mode"] == "in",
                 "unit": wh.get("unit"),
+                # the fixture this resident last used, so a view can seat
+                # them only where they chose to sit rather than wherever a
+                # walk happened to end
+                "fixture": wh.get("fixture"),
                 "px": px, "py": py, "pin": pmode == "in", "punit": punit,
                 "habit": r["habit"], "stress": round(r["stress"], 1),
                 "needs": {k: round(v, 2) for k, v in r["needs"].items()},
@@ -332,7 +336,8 @@ def snapshot(est, runner, lock):
             live = [u for u in b["units"]
                     if w["units"][str(u)]["household"] is not None]
             buildings.append({
-                "id": int(bid), "units": len(b["units"]), "lived": len(live),
+                "id": int(bid), "kind": b["kind"],
+                "units": len(b["units"]), "lived": len(live),
                 "power": b["power"], "water": b["water"],
             })
         shade, light = [], []
@@ -485,6 +490,7 @@ def _respond(handler, code, body, ctype):
     handler.send_header("Content-Type", ctype)
     handler.send_header("Content-Length", str(len(data)))
     handler.send_header("X-Content-Type-Options", "nosniff")
+    handler._nosniff_sent = True      # `end_headers` adds it only if unset
     handler.send_header("Cache-Control", "no-store")
     handler.end_headers()
     handler.wfile.write(data)
@@ -506,21 +512,13 @@ def _ip_hint(host):
         return "lan ip undetectable — check hostname -I"
 
 
-def cmd_web(args):
-    page = _load_page()          # loaded once, so a broken script fails here
-    est = Estate(args)
-    lock = threading.Lock()
-    runner = SimRunner(est, lock, args.tick_seconds, est.llm)
-    # the record the estate already has. Without this the dashboard showed
-    # an empty chronicle on every restart while the database held a year of
-    # it — the write path and the read path each worked, and nothing joined
-    # them. (The patch that was supposed to add this line silently matched
-    # nothing, which is why it is asserted now.)
-    runner.chronicle = list(est.history)
-    runner.past_lines = {d["day"]: d["line"] for d in est.past_days}
-    runner.past_news = {d["day"]: d["says"] for d in est.past_days if d["says"]}
-    runner.daybooks = {d["day"]: d["book"] for d in est.past_days if d["book"]}
-    runner.start()
+def make_handler(page, est, lock, runner):
+    """Build the request handler around a planted estate.
+
+    A factory rather than a closure inside `cmd_web`: the tests start a
+    real `ThreadingHTTPServer` on port 0 with this handler, and a test that
+    built its own would pin a server nobody serves.
+    """
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code, body, ctype):
@@ -528,6 +526,23 @@ def cmd_web(args):
 
         def log_message(self, *_a):   # keep the terminal readable
             pass
+
+        def send_response(self, code, message=None):
+            # a fresh response per request, including on a keep-alive
+            # connection: the flag below must not leak across requests
+            self._nosniff_sent = False
+            super().send_response(code, message)
+
+        def end_headers(self):
+            # `send_error` writes the stdlib's own HTML for a 501 (PUT,
+            # HEAD) or a 400 (a malformed request line) and never passes
+            # through `_respond`, so those responses had no nosniff. The
+            # header belongs to every response, not to one route's writer;
+            # `_respond` marks its own so nothing is sent twice.
+            if not getattr(self, "_nosniff_sent", False):
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self._nosniff_sent = True
+            super().end_headers()
 
         def do_GET(self):
             path = urlparse(self.path).path
@@ -596,6 +611,27 @@ def cmd_web(args):
                            "application/json")
             else:
                 self._send(404, "no such thing", "text/plain")
+
+    return Handler
+
+
+def cmd_web(args):
+    page = _load_page()          # loaded once, so a broken script fails here
+    est = Estate(args)
+    lock = threading.Lock()
+    runner = SimRunner(est, lock, args.tick_seconds, est.llm)
+    # the record the estate already has. Without this the dashboard showed
+    # an empty chronicle on every restart while the database held a year of
+    # it — the write path and the read path each worked, and nothing joined
+    # them. (The patch that was supposed to add this line silently matched
+    # nothing, which is why it is asserted now.)
+    runner.chronicle = list(est.history)
+    runner.past_lines = {d["day"]: d["line"] for d in est.past_days}
+    runner.past_news = {d["day"]: d["says"] for d in est.past_days if d["says"]}
+    runner.daybooks = {d["day"]: d["book"] for d in est.past_days if d["book"]}
+    runner.start()
+
+    Handler = make_handler(page, est, lock, runner)
 
     host = "0.0.0.0" if args.public else "127.0.0.1"
     httpd = ThreadingHTTPServer((host, args.port), Handler)
