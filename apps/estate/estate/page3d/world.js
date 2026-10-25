@@ -804,6 +804,9 @@ export function createWorld(ground, canvas, opts) {
    * and not once a poll: the state repeats between days, and rebuilding on
    * every poll restarted the walk before it had got anywhere. */
   const routes = [], routeT0 = [], routeDur = [];
+  /* the cell each route set off from; and, for a young child walking with
+   * their guardian, the guardian's index (Crowd.place's `with`), else -1 */
+  const routeFrom = [], walksWith = [];
   const facing = [];
   let routesBuilt = false;
   let routeFallbacks = 0;     // straight lines used because no path was found
@@ -991,6 +994,8 @@ export function createWorld(ground, canvas, opts) {
       for (let i = 0; i < people.length; i++) {
         const p = people[i];
         routes[i] = null;
+        routeFrom[i] = null;
+        walksWith[i] = -1;
         if (p.in) continue;                // indoors is not drawn walking
         /* from the door when leaving a block, else from where they stood;
          * to their own place on the tile. Somebody whose place did not
@@ -1005,6 +1010,7 @@ export function createWorld(ground, canvas, opts) {
         if (got.fallback) routeFallbacks++;
         const route = got.route;
         routes[i] = route;
+        routeFrom[i] = got.from;
         routeT0[i] = now;
         routeDur[i] = Walk ? Walk.duration(route.total, clock.dayMs)
                            : Math.max(120, clock.dayMs * 0.9);
@@ -1017,13 +1023,31 @@ export function createWorld(ground, canvas, opts) {
           if (dx || dz) facing[i] = Math.atan2(dx, dz);
         }
       }
+      /* A young child out with a guardian walks the guardian's own way,
+       * from where they stood to their place beside them (Crowd.place puts
+       * it clear of walls, fixtures, table tops and everyone else on the
+       * tile), a step behind: the pair set off, go round every wall and
+       * arrive as one, and the child is never drawn off on a way of their
+       * own. */
+      if (Crowd && spots) {
+        for (let i = 0; i < people.length; i++) {
+          const g = spots.with[i];
+          if (g == null || g < 0 || !routes[i] || !routes[g]) continue;
+          const r = Crowd.follow(routes[g], routeFrom[g], routes[i],
+                                 routeFrom[i], Walk, grid, crowdFix);
+          if (r === routes[i]) continue;
+          routes[i] = r;
+          walksWith[i] = g;
+          if (r.n > routeMaxPoints) routeMaxPoints = r.n;
+        }
+      }
       /* walkers setting off from one point go in turn, not as one body:
        * six out of a door file out of it (crowd.js) */
       if (Crowd) {
         const qi = [], starts = [];
         for (let i = 0; i < people.length; i++) {
           const r = routes[i];
-          if (!r || r.total <= 1e-6) continue;
+          if (!r || r.total <= 1e-6 || walksWith[i] >= 0) continue;
           qi.push(i);
           starts.push({ id: people[i].id, x: r.xs[0], z: r.zs[0] });
         }
@@ -1032,6 +1056,21 @@ export function createWorld(ground, canvas, opts) {
           const f = Crowd.fit(delays[k], routeDur[qi[k]], clock.dayMs);
           routeT0[qi[k]] = now + f.delay;
           routeDur[qi[k]] = f.dur;
+        }
+        /* a child a step behind their guardian, at the guardian's pace,
+         * still inside the day */
+        for (let i = 0; i < people.length; i++) {
+          const g = walksWith[i];
+          if (g < 0) continue;
+          const f = Crowd.fit(routeT0[g] - now + Crowd.QUEUE_MS,
+                              routeDur[g], clock.dayMs);
+          routeT0[i] = now + f.delay;
+          routeDur[i] = f.dur;
+          const r = routes[i];
+          if (r.n > 1) {
+            const dx = r.xs[1] - r.xs[0], dz = r.zs[1] - r.zs[0];
+            if (dx || dz) facing[i] = Math.atan2(dx, dz);
+          }
         }
       }
       routesBuilt = true;

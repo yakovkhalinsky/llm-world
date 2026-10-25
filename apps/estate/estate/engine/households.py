@@ -19,6 +19,7 @@ unit is years rather than hours.
 
 from .. import rules
 from .. import world as W
+from . import families
 
 
 # ------------------------------------------------------------ the mechanics
@@ -301,3 +302,7 @@ def update_households(w, evs):
     turnover(w, evs)
     arrivals(w)
     letting_office(w, evs)
+    # last: whatever the slow layer did today — a birth, a death, a
+    # household gone — the day ends with every young child beside a
+    # guardian, and no child-headed household left on the estate
+    families.settle(w, evs)

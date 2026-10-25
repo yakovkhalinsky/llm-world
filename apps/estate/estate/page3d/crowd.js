@@ -97,20 +97,82 @@
                         keepAt(fixAt, hx, hy));
   }
 
+  /* A young child out with a guardian (the snapshot's `with`, the id of
+   * the guardian the engine keeps them with) stands beside them: a body's
+   * width and a gap from the guardian's place, the first of these that the
+   * tile's own rules allow — clear of walls, the water and the keep of the
+   * table, stall, lamp or tree on the cell (`okAt`), and clear of everyone
+   * else placed on the tile. Beside a seated guardian, in front of the
+   * bench first. A child who has a seat of their own keeps it. */
+  var BESIDE = 2 * R + GAP;
+  function besideSpots(gx, gz, seated, fx, fz) {
+    var d = BESIDE, e = BESIDE * Math.SQRT1_2, out = [];
+    if (seated) {
+      out.push([gx + fx * d, gz + fz * d],
+               [gx + fx * d - fz * e, gz + fz * d + fx * e],
+               [gx + fx * d + fz * e, gz + fz * d - fx * e]);
+    }
+    out.push([gx + d, gz], [gx - d, gz], [gx, gz + d], [gx, gz - d],
+             [gx + e, gz + e], [gx - e, gz + e], [gx + e, gz - e],
+             [gx - e, gz - e]);
+    return out;
+  }
+
+  function placeBeside(Walk, grid, fixAt, people, groups, keys, out) {
+    var at = {};
+    for (var i = 0; i < people.length; i++) at[people[i].id] = i;
+    for (var g = 0; g < keys.length; g++) {
+      var idx = groups[keys[g]].slice().sort(function (a, c) {
+        return people[a].id - people[c].id;
+      });
+      for (var k = 0; k < idx.length; k++) {
+        var ci = idx[k], p = people[ci];
+        if (p.with == null) continue;
+        var gi = at[p.with];
+        /* the guardian on another tile (a view between polls) or indoors:
+         * nothing to stand beside */
+        if (gi === undefined || people[gi].in || people[gi].x !== p.x ||
+            people[gi].y !== p.y) continue;
+        out.with[ci] = gi;
+        if (out.sit[ci] === 1) continue;
+        var spots = besideSpots(out.x[gi], out.z[gi], out.sit[gi] === 1,
+                                out.fx[gi], out.fz[gi]);
+        for (var s = 0; s < spots.length; s++) {
+          var x = spots[s][0], z = spots[s][1];
+          if (!okAt(Walk, grid, fixAt, x, z, p.x, p.y)) continue;
+          var clear = true;
+          for (var o = 0; o < idx.length && clear; o++) {
+            var oi = idx[o];
+            if (oi === ci) continue;
+            if (Math.hypot(out.x[oi] - x, out.z[oi] - z) < BESIDE - 1e-6) {
+              clear = false;
+            }
+          }
+          if (!clear) continue;
+          out.x[ci] = x; out.z[ci] = z;
+          out.sit[ci] = 0;
+          break;
+        }
+      }
+    }
+  }
+
   /* Where everyone outdoors stands. `people` is the snapshot's list;
    * `benchByCell` maps "x,y" to `bench(...)`. Returns parallel arrays by
    * index: x, z, sit (0 standing, 1 seated, 2 standing by a bench), the
    * bench's facing for 1 and 2, and `seats`, by resident id, the seat a
-   * seated resident took (to get up from tomorrow). */
+   * seated resident took (to get up from tomorrow). `with[i]` is the index
+   * of the guardian a young child stands beside (`placeBeside`), else -1. */
   function place(Walk, grid, people, benchByCell, fixAt) {
     var n = people.length;
     var out = { x: new Array(n), z: new Array(n), sit: new Array(n),
-                fx: new Array(n), fz: new Array(n), seated: 0, seats: {} };
+                fx: new Array(n), fz: new Array(n), seated: 0, seats: {},
+                with: new Array(n) };
     var groups = {}, keys = [];
     for (var i = 0; i < n; i++) {
       var p = people[i];
       out.x[i] = p.x + 0.5; out.z[i] = p.y + 0.5;
-      out.sit[i] = 0; out.fx[i] = 0; out.fz[i] = 1;
+      out.sit[i] = 0; out.fx[i] = 0; out.fz[i] = 1; out.with[i] = -1;
       if (p.in) continue;
       var key = p.x + ',' + p.y;
       if (!groups[key]) { groups[key] = []; keys.push(key); }
@@ -123,6 +185,7 @@
       if (b) placeBench(Walk, grid, fixAt, people, idx, b, out);
       else placeTile(Walk, grid, fixAt, people, idx, out);
     }
+    placeBeside(Walk, grid, fixAt, people, groups, keys, out);
     return out;
   }
 
@@ -327,6 +390,105 @@
              fallback: true, from: [scx, scy] };
   }
 
+  /* How deep a body of radius R walking `r` goes, at its deepest, into a
+   * wall or the water (a closed cell other than the one it is in) and
+   * into a solid fixture's drawn body (a pole, a trunk, a table top, a
+   * stall): {wall, into}, <= 0 when clear. Sampled every 0.02 of a cell. */
+  function depthAlong(r, grid, fixAt) {
+    var wall = -Infinity, into = -Infinity;
+    var intoBox = function (x, z, x0, z0, x1, z1) {
+      var dx = Math.max(x0 - x, 0, x - x1), dz = Math.max(z0 - z, 0, z - z1);
+      if (dx === 0 && dz === 0) {
+        return R + Math.min(x - x0, x1 - x, z - z0, z1 - z);
+      }
+      return R - Math.hypot(dx, dz);
+    };
+    for (var i = 1; i < r.n; i++) {
+      var ax = r.xs[i - 1], az = r.zs[i - 1], bx = r.xs[i], bz = r.zs[i];
+      var steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.02));
+      for (var k = 0; k <= steps; k++) {
+        var x = ax + (bx - ax) * k / steps, z = az + (bz - az) * k / steps;
+        var cx = Math.floor(x), cz = Math.floor(z);
+        for (var y = cz - 1; y <= cz + 1; y++) {
+          for (var xx = cx - 1; xx <= cx + 1; xx++) {
+            var out = xx < 0 || y < 0 || xx >= grid.W || y >= grid.H;
+            if ((xx !== cx || y !== cz) && (out || !grid.base[y * grid.W + xx])) {
+              wall = Math.max(wall, intoBox(x, z, xx, y, xx + 1, y + 1));
+            }
+            if (out || !grid.solid[y * grid.W + xx] || !fixAt ||
+                !fixAt[xx + ',' + y]) continue;
+            var b = bodyAt(fixAt, xx, y);
+            if (!b) continue;
+            var mx = xx + 0.5, mz = y + 0.5;
+            into = Math.max(into, b[0] === 1
+              ? R + b[1] - Math.hypot(x - mx, z - mz)
+              : intoBox(x, z, mx - b[1], mz - b[1], mx + b[1], mz + b[1]));
+          }
+        }
+      }
+    }
+    return { wall: wall, into: into };
+  }
+
+  /* A young child's walk with their guardian: the guardian's own route,
+   * from where the child stands to the child's place beside them, so the
+   * pair walk one way round every wall (the guardian's path is the one
+   * that was checked) and arrive together. `own` is the child's own route
+   * (`route`); when it starts on another cell than the guardian's, or the
+   * guardian is not walking, the child keeps their own.
+   *
+   * The two end legs are the child's, not the guardian's — from the
+   * guardian's second point back to where the child stands, and from the
+   * guardian's last bend on to the child's place — so they go round every
+   * pole and trunk beside them by the same detour `route` takes (#12's
+   * Walk.around). And when the page has the ground (`grid`), the follow
+   * is kept only if it goes no deeper into a wall or a fixture than the
+   * child's own route: otherwise the child walks their own way. */
+  var FOLLOW_TOL = 1e-3;
+  function follow(lead, leadFrom, own, ownFrom, Walk, grid, fixAt) {
+    if (!lead || !own || !leadFrom || !ownFrom ||
+        leadFrom[0] !== ownFrom[0] || leadFrom[1] !== ownFrom[1] ||
+        lead.n < 2) return own;
+    var xs = Array.prototype.slice.call(lead.xs);
+    var zs = Array.prototype.slice.call(lead.zs);
+    xs[0] = own.xs[0]; zs[0] = own.zs[0];
+    xs[xs.length - 1] = own.xs[own.n - 1];
+    zs[zs.length - 1] = own.zs[own.n - 1];
+    var cum = new Float64Array(xs.length), total = 0;
+    for (var i = 1; i < xs.length; i++) {
+      total += Math.hypot(xs[i] - xs[i - 1], zs[i] - zs[i - 1]);
+      cum[i] = total;
+    }
+    var r = { xs: new Float64Array(xs), zs: new Float64Array(zs), cum: cum,
+              n: xs.length, total: total };
+    if (!grid) return r;
+    if (Walk && Walk.around && fixAt) {
+      /* every pole or trunk within a cell of either end leg */
+      var seen = {}, legs = [[0, 1], [r.n - 2, r.n - 1]];
+      legs.forEach(function (lg) {
+        var x0 = Math.floor(Math.min(r.xs[lg[0]], r.xs[lg[1]])) - 1;
+        var x1 = Math.floor(Math.max(r.xs[lg[0]], r.xs[lg[1]])) + 1;
+        var z0 = Math.floor(Math.min(r.zs[lg[0]], r.zs[lg[1]])) - 1;
+        var z1 = Math.floor(Math.max(r.zs[lg[0]], r.zs[lg[1]])) + 1;
+        for (var y = z0; y <= z1; y++) {
+          for (var x = x0; x <= x1; x++) {
+            var key = x + ',' + y;
+            if (seen[key] || x < 0 || y < 0 || x >= grid.W || y >= grid.H ||
+                !fixAt[key] || !grid.solid[y * grid.W + x]) continue;
+            seen[key] = true;
+            var b = bodyAt(fixAt, x, y);
+            if (!b || b[0] !== 1) continue;
+            r = Walk.around(r, x + 0.5, y + 0.5, b[1] + R + ROUND_GAP, grid, R);
+          }
+        }
+      });
+    }
+    var got = depthAlong(r, grid, fixAt), mine = depthAlong(own, grid, fixAt);
+    if (got.into > Math.max(mine.into, 0) + FOLLOW_TOL ||
+        got.wall > Math.max(mine.wall, 0) + FOLLOW_TOL) return own;
+    return r;
+  }
+
   /* Walkers who set off from the same point — out of one door, or off one
    * tile when the page has no earlier spot for them — go one after another
    * rather than as one body: lowest id first, each a body and a half behind
@@ -438,6 +600,7 @@
     benchFacing: benchFacing, bench: bench, fixtureMap: fixtureMap,
     BODY: BODY, BODY_GAP: BODY_GAP,
     okAt: okAt, keepAt: keepAt, place: place, route: route, space: space,
+    BESIDE: BESIDE, follow: follow, depthAlong: depthAlong,
     queue: queue, fit: fit, QUEUE_MS: QUEUE_MS,
     STEP_H: STEP_H, FOOT: FOOT, RAMP: RAMP, doorFace: doorFace,
     steps: steps, doorStep: doorStep, lift: lift, faceTable: faceTable,

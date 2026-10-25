@@ -77,6 +77,46 @@ R = {
         "quiet_gain": 0.09,      # how fast noise fills the need for quiet
     },
 
+    # Who minds the children (engine/families.py). These are society, not
+    # the world's nature, so the engine owns them rather than a pack; the
+    # ages sit beside the pack's own `people.ages` (adult 18, elder 68).
+    "families": {
+        # A child under this age is never out on the estate without a
+        # guardian beside them and never in the flat without one indoors.
+        # The age model makes children 0-17 (born at 0 on the year turn,
+        # arriving aged 2-16), so ten splits them into the little ones who
+        # are walked everywhere and the 10-15s who may go a short way alone.
+        "young_under": 10,
+        # A household member this old may mind the young ones: a parent, a
+        # grandparent, or an older brother or sister of sixteen or more.
+        "guardian_from": 16,
+        # "Beside": a guardian out on the plan within this many cells
+        # (Chebyshev). The engine walks a child on the guardian's own cell;
+        # the slack is for a view's small offset, not for wandering off.
+        "near": 1,
+        # The 10-15s: only these places, only within this walk of their own
+        # door, and only in these phases. Otherwise they go home.
+        "older_places": ["playground", "shop"],
+        "older_range": 14,
+        # daylight: dawn is breakfast at the shop. With morning and
+        # afternoon alone, three needs (food, company, play) shared two
+        # outings a day, company sat near 2.9 and the 10-15s frayed until
+        # their families emigrated (37 families gone in a year on seed 42,
+        # against 5 before the rule)
+        "older_daytime": ["dawn", "morning", "afternoon"],
+        # Whoever is minding stays this close to home in the evening (an
+        # errand round the corner, not a trip across the estate): Manhattan
+        # from the door, and counted where the party ends the evening, so an
+        # outing is allowed only if the party can actually get there in the
+        # phase, and a party already further out walks home ...
+        "evening_range": 10,
+        # ... and every member of a household with young children is home
+        # in these phases: nobody leaves the little ones for a night out.
+        # Enforced, not preferred: the walk home then is the shortest way
+        # with no step cap (`residents._go_to(sure=True)`), so it arrives.
+        "home_by": ["night"],
+    },
+
     "pacing": {
         # The paces the estate may be watched at, slowest first: how many
         # wall seconds one day takes. A day is five phases, so at 60 s a

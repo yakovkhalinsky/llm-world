@@ -7,7 +7,9 @@
  * has: nine on the playground, three on a two-seat bench, four at a
  * table, five standing on one path tile, six leaving the same door
  * together for the same place, and two groups walking head-on along one
- * straight run of path. Everyone else is put indoors. The same inputs
+ * straight run of path. Four of those groups have a young child out with
+ * a guardian (`with`): at the table, on the bench's overflow, on the path
+ * tile and out of the door. Everyone else is put indoors. The same inputs
  * give the same scene, so the check is deterministic.
  *
  *   node tools/crowd_scene.js ground.json state.json > crowded.json
@@ -75,17 +77,36 @@ function scene(Walk, ground, state) {
   const take = n => people.slice(k, (k += n));
   people.forEach(p => {           // indoors by default, at home, not walking
     p.in = true; p.pin = true; p.fixture = null;
-    p.px = p.x; p.py = p.y; p.punit = p.unit;
+    p.px = p.x; p.py = p.y; p.punit = p.unit; p.with = null;
   });
+  /* the last of a group is a young child out with the first */
+  const family = g => {
+    if (g.length < 2) return;
+    const kid = g[g.length - 1];
+    kid.role = 'child'; kid.with = g[0].id;
+  };
   const outdoor = (p, x, y, fixture) => {
     p.x = x; p.y = y; p.px = x; p.py = y; p.in = false; p.pin = false;
     p.fixture = fixture == null ? null : fixture;
   };
   const tiles = {};
   if (play) take(9).forEach(p => outdoor(p, play.x, play.y, play.id));
-  if (bench) take(3).forEach(p => outdoor(p, bench.x, bench.y, bench.id));
-  if (table) take(4).forEach(p => outdoor(p, table.x, table.y, table.id));
-  if (standTile) take(5).forEach(p => outdoor(p, standTile[0], standTile[1]));
+  if (bench) {
+    const g = take(3);
+    g.forEach(p => outdoor(p, bench.x, bench.y, bench.id));
+    g[2].fixture = null;               // the child came with, not to sit
+    family(g);
+  }
+  if (table) {
+    const g = take(4);
+    g.forEach(p => outdoor(p, table.x, table.y, table.id));
+    family(g);
+  }
+  if (standTile) {
+    const g = take(5);
+    g.forEach(p => outdoor(p, standTile[0], standTile[1]));
+    family(g);
+  }
   tiles.play = play && [play.x, play.y];
   tiles.bench = bench && [bench.x, bench.y];
   tiles.table = table && [table.x, table.y];
@@ -94,10 +115,12 @@ function scene(Walk, ground, state) {
   /* six out of the same door at once, all to the same far tile */
   if (doorB) {
     const far = paths[Math.min(paths.length - 1, Math.floor(paths.length * 0.6))];
-    take(6).forEach(p => {
+    const g = take(6);
+    g.forEach(p => {
       p.x = far[0]; p.y = far[1]; p.in = false; p.fixture = null;
       p.pin = true; p.punit = doorUnit; p.px = doorB.door[0]; p.py = doorB.door[1];
     });
+    family(g);
     tiles.door = doorB.door; tiles.doorTo = far;
   }
   /* three each way along one straight run */

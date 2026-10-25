@@ -21,6 +21,12 @@
  *   tables    nobody's body, standing or walking, ever overlaps a table's
  *             0.82 top — their own table's included — and everyone at a
  *             table stands beside it facing its middle.
+ *   families  a young child out with a guardian (`with`) stands beside
+ *             them: nearer than anyone else standing on the tile and within
+ *             FAMILY_REST, centre to centre — clear of the
+ *             table, the walls and everyone else, by the checks above —
+ *             and walks the guardian's way a step behind, never more than
+ *             FAMILY_WALK cells from them, frame by frame.
  *   scenes    small made-up places the day may never produce: a passer-by
  *             at a lamp from every side (the lamp-post case), and at a
  *             café table and a shop's stall (whose resident stands off its
@@ -63,6 +69,11 @@ const WALK = process.env.PAGE3D_WALK ||
 const CROWD = process.env.PAGE3D_CROWD ||
   path.join(HERE, 'estate', 'page3d', 'crowd.js');
 
+/* how far a child walking with a guardian may be from them, centre to
+ * centre, in cells: inside the engine's `near` (1, Chebyshev) */
+const FAMILY_WALK = 0.9;
+/* ... and at rest, centre to centre: a body and a half */
+const FAMILY_REST = 0.5;
 /* allowed overlap at rest: none beyond rounding */
 const TOL = 1e-6;
 /* how far a body may sink into a wall or a fixture beyond where its walk
@@ -448,6 +459,94 @@ function scenes(Walk, Crowd, fails) {
     ran.push(`pole-walk ${routes}`);
   }
 
+  /* a child following a guardian (Crowd.follow, world.js's walk with a
+   * guardian): the pair stand together on a cell and walk onto a tile
+   * with a lamp, a tree, a café table or a bench and its lamp beside it,
+   * with 0 or 5 others already standing there, from anywhere on every
+   * cell within two of it. The child's walk is the guardian's route with the child's own two
+   * ends, and those end legs must go round every pole and trunk as the
+   * child's own route does: the followed walk is never deeper into a
+   * fixture or a wall than the child's own, and never into a fixture
+   * beyond rounding at all. */
+  {
+    const st = { x: 0, z: 0, dx: 0, dz: 0, moving: false };
+    const deepest = (S, r) => {
+      let into = -Infinity, wall = -Infinity, at = null, what = null;
+      for (let t = 0; t <= r.total + 1e-9; t += 0.005) {
+        Walk.sample(r, Math.min(t, r.total), st);
+        const pe = S.orc.pen(st.x, st.z, R_BODY, Math.floor(st.x), Math.floor(st.z));
+        if (pe.into > into) { into = pe.into; at = [st.x, st.z]; what = pe.what; }
+        wall = Math.max(wall, pe.wall);
+      }
+      return { into, wall, at, what };
+    };
+    const layouts = [
+      ['lamp', [{ id: 1, kind: 'lamp', x: 3, y: 3 }]],
+      ['tree', [{ id: 1, kind: 'tree', x: 3, y: 3 }]],
+      ['table', [{ id: 1, kind: 'table', x: 3, y: 3 }]],
+      ['bench-lamp', [{ id: 1, kind: 'bench', x: 3, y: 3 },
+                      { id: 2, kind: 'lamp', x: 2, y: 3 },
+                      { id: 3, kind: 'tree', x: 4, y: 2 }]],
+      ['lamp-row', [{ id: 1, kind: 'lamp', x: 3, y: 3 },
+                    { id: 2, kind: 'lamp', x: 2, y: 2 },
+                    { id: 3, kind: 'tree', x: 4, y: 4 }]],
+    ];
+    const room = ['#######', '#.....#', '#.....#', '#.....#', '#.....#',
+                  '#.....#', '#######'];
+    let worst = { d: -Infinity }, worse = { d: -Infinity }, cases = 0, followed = 0;
+    for (const [name, fixtures] of layouts) {
+      const S = setup(room, fixtures);
+      const benchByCell = {};
+      fixtures.forEach(f => {
+        if (f.kind === 'bench') benchByCell[f.x + ',' + f.y] = Crowd.bench(S.ground, f);
+      });
+      for (const N of [0, 5]) {
+        for (let dy = -2; dy <= 2; dy++) {
+          for (let dx = -2; dx <= 2; dx++) {
+            const fx = 3 + dx, fy = 3 + dy;
+            if ((!dx && !dy) || S.orc.blocked(fx, fy) ||
+                S.grid.solid[fy * S.grid.W + fx]) continue;
+            /* where they go: the tile, with N others on it */
+            const people = [{ id: 50, x: 3, y: 3, px: fx, py: fy, in: false },
+                            { id: 51, x: 3, y: 3, px: fx, py: fy, in: false, with: 50 }];
+            for (let k = 0; k < N; k++) people.push({ id: 60 + k, x: 3, y: 3, in: false });
+            const s = Crowd.place(Walk, S.grid, people, benchByCell, S.fixAt);
+            const g = Crowd.route(Walk, S.grid, people[0], s.x[0], s.z[0], {}, null, S.fixAt);
+            /* where the child stood on (fx, fy): anywhere a body fits */
+            for (let oz = 0.2; oz <= 0.8001; oz += 0.2) {
+              for (let ox = 0.2; ox <= 0.8001; ox += 0.2) {
+            const prev = { 51: { cell: fx + ',' + fy, x: fx + ox, z: fy + oz } };
+            const c = Crowd.route(Walk, S.grid, people[1], s.x[1], s.z[1], prev, null, S.fixAt);
+            if (!g || !c) continue;
+            const r = Crowd.follow(g.route, g.from, c.route, c.from, Walk, S.grid, S.fixAt);
+            cases++;
+            if (r !== c.route) followed++;
+            const got = deepest(S, r), own = deepest(S, c.route);
+            const what = `${name} N=${N} from ${(fx + ox).toFixed(2)},${(fy + oz).toFixed(2)}`;
+            if (got.into > worst.d) worst = { d: got.into, at: got.at, what, into: got.what };
+            const extra = Math.max(got.into - Math.max(own.into, 0),
+                                   got.wall - Math.max(own.wall, 0));
+            if (extra > worse.d) worse = { d: extra, what, at: got.at };
+              }
+            }
+          }
+        }
+      }
+    }
+    if (!followed) fails.push('follow-walk: no child followed a guardian');
+    if (worst.d > TOL_IN) {
+      fails.push(`follow-walk: a child following ${worst.what} runs ` +
+                 `${worst.d.toFixed(3)} into the ${worst.into} at ` +
+                 worst.at.map(v => v.toFixed(3)).join(','));
+    }
+    if (worse.d > TOL_IN) {
+      fails.push(`follow-walk: a child following ${worse.what} goes ` +
+                 `${worse.d.toFixed(3)} deeper than their own route at ` +
+                 worse.at.map(v => v.toFixed(3)).join(','));
+    }
+    ran.push(`follow-walk ${cases} (${followed} followed)`);
+  }
+
   /* head-on, each a twentieth of a cell to the wrong side: they must
    * still pass on their own right (the estate keeps to the right) */
   {
@@ -619,6 +718,43 @@ function check(ground, state) {
       }
     }
   }
+  /* families: beside their guardian */
+  let pairs = 0, farthest = 0;
+  for (const i of out) {
+    const g = spots.with ? spots.with[i] : -1;
+    if (people[i].with == null) continue;
+    const gi = people.findIndex(q => q.id === people[i].with);
+    if (gi < 0 || people[gi].in || people[gi].x !== people[i].x ||
+        people[gi].y !== people[i].y) continue;
+    pairs++;
+    if (g !== gi) {
+      fails.push(`families: child ${people[i].id} is not placed with ` +
+                 `guardian ${people[gi].id}`);
+      continue;
+    }
+    if (spots.sit[i] === 1) continue;
+    const d = Math.hypot(spots.x[i] - spots.x[gi], spots.z[i] - spots.z[gi]);
+    farthest = Math.max(farthest, d);
+    /* beside: nearer the guardian than anyone else standing on the tile,
+     * and within a body and a half (a crowded tile may have no clear
+     * place at exactly Crowd.BESIDE, and the child keeps the packed place
+     * nearest) */
+    let nearer = null;
+    for (const j of out) {
+      if (j === i || j === gi || spots.sit[j] === 1) continue;
+      if (people[j].x !== people[i].x || people[j].y !== people[i].y) continue;
+      const e = Math.hypot(spots.x[j] - spots.x[gi], spots.z[j] - spots.z[gi]);
+      if (e < d - 1e-6) { nearer = people[j].id; break; }
+    }
+    if (d > FAMILY_REST || nearer !== null) {
+      fails.push(`families: child ${people[i].id} stands ${d.toFixed(2)} ` +
+                 `from guardian ${people[gi].id}, not beside them` +
+                 (nearer !== null ? ` (${nearer} is nearer)` : ''));
+    }
+  }
+  if (!pairs) fails.push('families: no child out with a guardian, so the ' +
+                         'families check proves nothing');
+
   for (const cell in seatedAt) {
     const b = benchByCell[cell];
     if (seatedAt[cell] > b.cap) fails.push(`bench ${cell} seats ${seatedAt[cell]} > ${b.cap}`);
@@ -636,19 +772,30 @@ function check(ground, state) {
     const b = u && (ground.buildings || []).find(bb => bb.id === u.b);
     return b && b.door ? { x: b.door[0], y: b.door[1] } : null;
   };
-  const routes = [], durs = [];
+  const routes = [], durs = [], froms = [], follows = [];
   let longest = 0, fallbacks = 0;
   for (const i of out) {
     const p = people[i];
     const got = Crowd.route(Walk, grid, p, spots.x[i], spots.z[i], {},
                             p.pin ? doorOf(p.punit) : null, fixAt);
     routes[i] = got ? got.route : null;
+    froms[i] = got ? got.from : null;
     durs[i] = got ? Walk.duration(got.route.total, dayMs) : 0;
     if (got && got.fallback) fallbacks++;
     longest = Math.max(longest, durs[i]);
   }
+  /* the page's walk with a guardian (world.js): their route, a step behind */
+  for (const i of out) {
+    const g = spots.with ? spots.with[i] : -1;
+    follows[i] = -1;
+    if (g == null || g < 0 || !routes[i] || !routes[g]) continue;
+    const r = Crowd.follow(routes[g], froms[g], routes[i], froms[i],
+                             Walk, grid, fixAt);
+    if (r !== routes[i]) { routes[i] = r; follows[i] = g; }
+  }
   /* the page's queue: walkers leaving one point go in turn */
-  const qi = out.filter(i => routes[i] && routes[i].total > 1e-6);
+  const qi = out.filter(i => routes[i] && routes[i].total > 1e-6 &&
+                             follows[i] < 0);
   const delays = Crowd.queue ? Crowd.queue(qi.map(i => ({
     id: people[i].id, x: routes[i].xs[0], z: routes[i].zs[0] }))) : [];
   const t0 = [];
@@ -658,6 +805,22 @@ function check(ground, state) {
     t0[i] = f.delay; durs[i] = f.dur;
     longest = Math.max(longest, f.delay + f.dur);
   });
+  let walkingPairs = 0;
+  for (const i of out) {
+    const g = follows[i];
+    if (g < 0) continue;
+    walkingPairs++;
+    const f = Crowd.fit((t0[g] || 0) + Crowd.QUEUE_MS, durs[g], dayMs);
+    t0[i] = f.delay; durs[i] = f.dur;
+    longest = Math.max(longest, f.delay + f.dur);
+  }
+  if (!walkingPairs) fails.push('families: no child walking with a guardian');
+  const kidAt = [];
+  out.forEach((i, k) => {
+    const g = spots.with ? spots.with[i] : -1;
+    if (g != null && g >= 0) kidAt.push([k, out.indexOf(g), people[i].id]);
+  });
+  let walkFar = { d: 0 };
   if (fallbacks) fails.push(`${fallbacks} walks found no path`);
   const F = Walk.figures(null, out.length);
   const s = { x: 0, z: 0, dx: 0, dz: 0, moving: false };
@@ -693,6 +856,11 @@ function check(ground, state) {
     /* the page's own per-frame spacing (world.js spaceResidents) */
     Crowd.space(Walk, grid, fixAt, F, n);
     judgeFrame(orc, F, n, pushed);
+    for (const [a, b, id] of kidAt) {
+      if (b < 0 || F.layer[a] < 0 || F.layer[b] < 0) continue;
+      const d = Math.max(Math.abs(F.x[a] - F.x[b]), Math.abs(F.z[a] - F.z[b]));
+      if (d > walkFar.d) walkFar = { d, id, ms: Math.round(ms) };
+    }
     for (let a = 0; a < n; a++) {
       if (F.layer[a] < 0) continue;
       const t = orc.inTable(F.x[a], F.z[a], F.r[a]);
@@ -718,6 +886,10 @@ function check(ground, state) {
                `${(walkGap * 100).toFixed(0)}% of a body apart, ${walkWorst[2]} ms in`);
   }
   worstFails('walking', pushed, fails);
+  if (walkFar.d > FAMILY_WALK) {
+    fails.push(`families: child ${walkFar.id} ${walkFar.d.toFixed(2)} cells ` +
+               `from their guardian, ${walkFar.ms} ms in`);
+  }
   if (tableWorst.d > TOL_IN) {
     fails.push(`table: resident ${tableWorst.id} walks ${tableWorst.d.toFixed(3)} ` +
                `inside the ${tableWorst.what} at ` +
@@ -728,6 +900,7 @@ function check(ground, state) {
   return {
     tiles: built.tiles, outdoor: out.length, seated: spots.seated, scenes: ran,
     atTable,
+    families: { pairs, walking: walkingPairs, farthest, walkFar: walkFar.d },
     snapshot: { before: staticRaw, after: staticGap },
     walking: { frames, before: walkRaw, after: walkGap },
     fails,
@@ -748,6 +921,10 @@ if (require.main === module) {
   console.log(`walking: ${r.walking.frames} frames, closest pair ` +
               `${(r.walking.before * 100).toFixed(0)}% -> ` +
               `${(r.walking.after * 100).toFixed(0)}% of a body apart`);
+  console.log(`families: ${r.families.pairs} children beside a guardian ` +
+              `(farthest ${r.families.farthest.toFixed(2)}), ` +
+              `${r.families.walking} walking with one ` +
+              `(at most ${r.families.walkFar.toFixed(2)} cells apart)`);
   console.log(`scenes: ${r.scenes.join('; ')}`);
   if (r.fails.length) {
     r.fails.forEach(f => console.log('FAIL ' + f));
