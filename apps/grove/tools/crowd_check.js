@@ -23,7 +23,9 @@
  *             into the water or a trunk than its walk had it.
  *   scenes    a creature beside a trunk, one in a trunk's quarter (where
  *             a walk may end), and one on a bank, brushed by a
- *             walker from every side; two meeting head-on a little to the
+ *             walker from every side; a file of two to eight walkers
+ *             pressing past one on the bank (pushes that reach past the
+ *             next cell); two meeting head-on a little to the
  *             wrong side (each must pass on its own right).
  *
  * It reports the closest pair before spacing (each creature on its own
@@ -176,6 +178,26 @@ function scenes(Walk, Forest, fails) {
     /* on a bank: water to the west */
     const S = setup(['wsss', 'wsss', 'wsss', 'wsss'], []);
     brush('bank', S, 1 + 0.15 + 0.01, 2.0);
+    /* and a crowd shoving one creature towards the bank from the east: a
+     * push of up to half a cell, from a raw point two quarters from the
+     * water, so the water it is pushed at is two quarters off its own */
+    const F = Walk.figures(null, 9), worst = freshWorst();
+    let cases = 0;
+    for (const sx of [1.52, 1.6, 1.7, 1.8]) {
+      for (let m = 2; m <= 8; m++) {
+        for (const dz of [-0.06, 0, 0.06]) {
+          fig(F, 0, sx, 2.0, 0.15, 0.5, 0, 0, 1);
+          for (let k = 1; k <= m; k++) {
+            fig(F, k, sx + 0.06 * k, 2.0 + dz * (k & 1 ? 1 : -1), 0.15, 1, -1, 0, 1 + k);
+          }
+          Forest.space(Walk, S.grid, F, m + 1, S.N);
+          judgeFrame(S.orc, S.N, F, m + 1, worst);
+          cases++;
+        }
+      }
+    }
+    worstFails('bank-crowd', worst, fails);
+    ran.push(`bank-crowd ${cases}`);
   }
   {
     const S = setup(Array(7).fill('sssssss'), []);

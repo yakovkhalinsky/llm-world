@@ -7,7 +7,8 @@ bench, four at a table, five on one path tile, six out of one door at
 once, and two groups meeting head-on — and on made-up scenes (a passer-by
 at a lamp from every side, a head-on pair a little to the wrong side, a
 one-wide corridor, ten at a bench in a nook, fifteen at a lamp in a dead
-end). It judges them with an oracle of its own — the walls from the
+end, a resident by a shop's stall or a wall's corner, centres on a wall's
+edge, the walk to a lamp or a tree and back by walls and water). It judges them with an oracle of its own — the walls from the
 ground, each fixture's drawn body where the state puts it — never with
 the clearAt or okAt it is checking. It needs Node, so this skips without
 it.
@@ -15,7 +16,9 @@ it.
 The other tests prove the check can fail, each on a mutant of the page:
 spacing taken out; keeping right taken out; the fixture keep-out taken
 out of clearAt, or only out of the per-frame push; and a push that
-ignores what the ground allows.
+ignores what the ground allows; a walk round a pole that ignores the walls,
+or goes round only on the way back; a stall with no body; a box's corner
+measured square; an edge guard that says yes to everything.
 
 Run from `apps/estate`:
 
@@ -108,6 +111,42 @@ def _no_round_pole(src):
     return _swap(src, "      if (Walk.around && fixAt) {", "      if (false) {")
 
 
+def _around_no_walls(src):
+    """walk.js whose bend round a pole takes the first way round, however
+    deep it runs into a wall or the water."""
+    return _swap(src, "  function around(route, cx, cz, rho, grid, m) {\n",
+                 "  function around(route, cx, cz, rho, grid, m) {\n"
+                 "    grid = null;\n")
+
+
+def _round_end_only(src):
+    """crowd.js whose walk goes round the pole only at the place it walks
+    to, not at the one it leaves (out from a lamp, through the pole)."""
+    return _swap(src, "[[scx, scy], [tcx, tcy]].forEach",
+                 "[[tcx, tcy]].forEach")
+
+
+def _no_frame_shop(src):
+    """crowd.js whose per-frame push has no body for a shop's stall."""
+    return _swap(src, "shop: [0, 0.45]", "shop: [0, 0]")
+
+
+def _box_square(src):
+    """walk.js measuring the way out of a box square (the larger of the two
+    offsets), not round: a body off a corner is let in nearer."""
+    return _swap(src, "    return Math.sqrt(ox * ox + oz * oz);\n  }",
+                 "    return Math.max(ox, oz);\n  }")
+
+
+def _cell_open_always(src):
+    """walk.js whose edge guard says every centre is on open ground."""
+    return _swap(src, "    var cx = Math.floor(x), cz = Math.floor(z);\n"
+                 "    if (cx < 0",
+                 "    return true;\n"
+                 "    var cx = Math.floor(x), cz = Math.floor(z);\n"
+                 "    if (cx < 0")
+
+
 def _no_overflow_ok(src):
     """crowd.js whose standers past a full bench's places go wherever
     the packing puts them, walls or no walls."""
@@ -171,8 +210,9 @@ class CrowdCheckTest(unittest.TestCase):
 
     def test_the_scenes_ran(self):
         out = self._run().stdout
-        for tag in ("lamp", "table-passer", "pole-walk", "head-on",
-                    "corridor", "bench-nook 20", "lamp-dead-end 15"):
+        for tag in ("lamp", "table-passer", "shop-passer", "box-corner",
+                    "wall-edge", "pole-walk", "head-on", "corridor",
+                    "bench-nook 20", "lamp-dead-end 15", "shop-door 8"):
             self.assertIn(tag, out)
 
     def test_without_spacing_the_check_fails(self):
@@ -222,6 +262,30 @@ class CrowdCheckTest(unittest.TestCase):
         out = self._mutant(_no_round_pole, CROWD, "PAGE3D_CROWD")
         self.assertIn("FAIL lamp-walk", out)
         self.assertIn("FAIL tree-walk", out)
+
+    def test_a_walk_round_the_pole_into_a_wall_fails(self):
+        out = self._mutant(_around_no_walls, WALK, "PAGE3D_WALK")
+        self.assertIn("FAIL pole-walk: the walk round the", out)
+        self.assertIn("deeper into a wall than the plain leg", out)
+
+    def test_a_walk_out_through_the_pole_fails(self):
+        out = self._mutant(_round_end_only, CROWD, "PAGE3D_CROWD")
+        self.assertIn("FAIL lamp-walk: a walk from", out)
+        self.assertIn("FAIL tree-walk: a walk from", out)
+
+    def test_a_push_into_the_stall_fails(self):
+        out = self._mutant(_no_frame_shop, CROWD, "PAGE3D_CROWD")
+        self.assertIn("FAIL shop-passer: 7 pushed", out)
+        self.assertIn("into the shop@3,2", out)
+
+    def test_a_push_in_at_a_corner_fails(self):
+        out = self._mutant(_box_square, WALK, "PAGE3D_WALK")
+        self.assertIn("FAIL box-corner: ", out)
+
+    def test_an_edge_guard_that_says_yes_fails(self):
+        out = self._mutant(_cell_open_always, WALK, "PAGE3D_WALK")
+        self.assertIn("FAIL wall-edge: a centre at 2,2.5 is on open ground", out)
+        self.assertIn("FAIL wall-edge: a centre off the map", out)
 
     def test_bench_overflow_in_the_wall_fails(self):
         out = self._mutant(_no_overflow_ok, CROWD, "PAGE3D_CROWD")
