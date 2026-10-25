@@ -86,8 +86,8 @@ html, body {
 .watchline.phase { border-top: 0; padding-top: 0; margin-top: 5px; }
 .voiceline { font-size: 11px; color: var(--dim); margin-top: 3px; }
 
-/* the bottom-left corner holds the feed and the controls, stacked, as the
-   plan page held them; the estate itself stays clear above them */
+/* the bottom-left corner holds the feed and the controls, stacked; the
+   estate itself stays clear above them */
 .bl {
   position: absolute;
   bottom: 14px; left: 16px;
