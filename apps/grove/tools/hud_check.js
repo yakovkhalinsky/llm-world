@@ -223,9 +223,18 @@ ok('the row is read as a number too, and written as one',
 ok('a cell off the map gets no card',
    H.card(state, { kind: 'cell', x: 5, y: 0 }) === false);
 
-step('a biography', () => H.bio({ id: 7, sp: TAG, name: TAG, alive: true,
-                                   events: [{ tick: TAG, text: TAG },
-                                            { tick: 4, text: TAG }] }));
+/* The ledger's answer rides in with every redraw of the card: a frame poll
+ * redraws it every 0.7 s, and an answer written once would be wiped by the
+ * next poll back to "consulting the ledger…" for good. */
+const BIO = { id: 7, sp: TAG, name: TAG, alive: true, hunger: TAG,
+              energy: TAG, events: [{ tick: TAG, text: TAG },
+                                    { tick: 4, text: TAG }] };
+step('a card waiting on the ledger', () =>
+  H.card(state, { kind: 'animal', id: 7 }, { id: 7, state: 'wait' }));
+ok('the waiting card says so', els.cardRows.innerHTML.indexOf(
+  'consulting the ledger') >= 0, els.cardRows.innerHTML);
+step('a biography', () =>
+  H.card(state, { kind: 'animal', id: 7 }, { id: 7, state: 'ok', b: BIO }));
 clean('biography');
 ok('the biography carries its events, escaped',
    els.cardRows.innerHTML.split(ESCAPED).length - 1 === 2,
@@ -233,7 +242,62 @@ ok('the biography carries its events, escaped',
 ok('the biography\'s weeks are numbers',
    els.cardRows.innerHTML.indexOf('wkNaN') >= 0 &&
    els.cardRows.innerHTML.indexOf('wk4') >= 0, els.cardRows.innerHTML);
-ok('the biography\'s name is text', els.cardName.textContent.indexOf(TAG) === 0);
+ok('the needs are numbers',
+   els.cardRows.innerHTML.indexOf('<span>hunger</span><span>NaN<') >= 0 &&
+   els.cardRows.innerHTML.indexOf('<span>energy</span><span>NaN / 10') >= 0,
+   els.cardRows.innerHTML);
+ok('the card is not left consulting',
+   els.cardRows.innerHTML.indexOf('consulting') < 0, els.cardRows.innerHTML);
+ok('the frame\'s facts stay on the card',
+   els.cardState.innerHTML.indexOf('age NaNwk') === 0, els.cardState.innerHTML);
+/* hunger has no cap in the sim (the seed-42 run reaches 27.4), so the card
+ * never puts it over 10 */
+[[27.4, '27.4 · starving'], [6.2, '6.2 · hungry'], [1.1, '1.1 · fed']]
+  .forEach(([h, want]) => {
+    step('hunger ' + h, () =>
+      H.card(state, { kind: 'animal', id: 7 },
+             { id: 7, state: 'ok', b: { id: 7, alive: true, hunger: h,
+                                        energy: 10, events: [] } }));
+    ok('hunger ' + h + ' reads "' + want + '", not out of 10',
+       els.cardRows.innerHTML.indexOf('<span>hunger</span><span>' + want +
+                                      '</span>') >= 0, els.cardRows.innerHTML);
+  });
+step('the next poll redraws the card', () =>
+  H.card(state, { kind: 'animal', id: 7 }, { id: 7, state: 'ok', b: BIO }));
+ok('the redraw keeps the biography',
+   els.cardRows.innerHTML.split(ESCAPED).length - 1 === 2 &&
+   els.cardRows.innerHTML.indexOf('consulting') < 0, els.cardRows.innerHTML);
+step('another creature\'s answer', () =>
+  H.card(state, { kind: 'animal', id: 7 }, { id: 8, state: 'ok', b: BIO }));
+ok('an answer for another id is not shown',
+   els.cardRows.innerHTML.indexOf('consulting') >= 0, els.cardRows.innerHTML);
+step('an answer whose id came as text', () =>
+  H.card(state, { kind: 'animal', id: 7 }, { id: '7', state: 'ok', b: BIO }));
+ok('the ids are compared as numbers',
+   els.cardRows.innerHTML.indexOf('consulting') < 0, els.cardRows.innerHTML);
+step('a selection whose id came as text', () =>
+  H.card(state, { kind: 'animal', id: '70' },
+         { id: 70, state: 'ok', b: { id: 70, gone: true, events: [] } }));
+ok('the selection\'s id is compared as a number',
+   els.cardState.innerHTML === 'remembered in the chronicle',
+   els.cardState.innerHTML);
+step('a ledger that did not answer', () =>
+  H.card(state, { kind: 'animal', id: 7 }, { id: 7, state: 'fail' }));
+ok('a failed ask ends in a plain line',
+   els.cardRows.innerHTML.indexOf('did not answer') >= 0 &&
+   els.cardRows.innerHTML.indexOf('consulting') < 0, els.cardRows.innerHTML);
+step('a soul that is gone', () =>
+  H.card(state, { kind: 'animal', id: 70 },
+         { id: 70, state: 'ok', b: { id: 70, gone: true, sp: TAG,
+                                     events: [{ tick: 1, text: TAG }] } }));
+clean('gone');
+ok('the gone soul is remembered, its name text',
+   els.cardState.innerHTML === 'remembered in the chronicle' &&
+   els.cardName.textContent.indexOf('a wild ' + TAG) === 0,
+   els.cardName.textContent);
+ok('the gone soul\'s events are there, escaped',
+   els.cardRows.innerHTML.split(ESCAPED).length - 1 === 1,
+   els.cardRows.innerHTML);
 
 console.log('\n' + (fails.length ? fails.length + ' FAILED' : 'all ok'));
 process.exit(fails.length ? 1 : 0);

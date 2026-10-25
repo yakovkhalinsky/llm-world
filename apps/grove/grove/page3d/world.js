@@ -28,6 +28,7 @@ const Clock = G.Page3DClock || null;
 const Field = G.Page3DField || null;
 const Forest = G.GroveForest || null;
 const Glow = G.GroveGlow || null;
+const SUB = (Forest && Forest.SUB) || 2;
 
 /* the floor: a cell is a world unit; the engine's elevation is lifted by
  * ELEV, the water's bed sunk below its surface */
@@ -206,20 +207,9 @@ const PARTS = {
     ['box', 0.07, 0.08, 0.07, -0.14, 0.04, -0.13, 'pale'],
   ],
 };
-/* the visitors and the pack's others take a resident's frame */
-const BODY_OF = { stag: 'deer', wolf: 'fox', deer: 'deer' };
-const SCALE_OF = { stag: 1.15, wolf: 1.3 };
 const FIXED = {
   white: 0xf3efe6, red: 0xc8502e, horn: 0xeee3c8, eye: 0xf0c040,
 };
-
-function frameOf(sp, shape) {
-  const s = shape || sp;
-  if (PARTS[s]) return s;
-  if (BODY_OF[s]) return BODY_OF[s];
-  if (String(sp).indexOf('fox') >= 0) return 'fox';
-  return 'fox';                // a creature with no frame of its own
-}
 
 export function createWorld(first, canvas, opts) {
   opts = opts || {};
@@ -818,7 +808,6 @@ export function createWorld(first, canvas, opts) {
   }
 
   function syncBeasts(st, now) {
-    const shapesMap = (st.biome && st.biome.shapes) || {};
     flyers = new Set((st.biome && st.biome.flyers) || []);
     const newTick = Number(st.tick) !== lastTick;
     lastTick = Number(st.tick);
@@ -829,22 +818,31 @@ export function createWorld(first, canvas, opts) {
                            0.45) * 1000;
     const next = {};
     const list = [];
+    /* everyone's resting place this week and last, shared out where a
+     * cell holds more than one (forest.js) */
+    const spots = Forest.restSpots(Walk, grid, st, trunkTaken, 'now');
+    let spotsWas = null;
+    /* walkers sharing a road go in file (forest.js) */
+    let file = null;
     (st.animals || []).forEach(a => {
       if (!(a.x >= 0 && a.y >= 0 && a.x < N && a.y < N)) return;
       let b = beastById[a.id];
       const fly = flyers.has(a.sp);
-      const to = Forest.restSpot(a.id, a.x, a.y, st, trunkTaken);
+      const to = spots[a.id];
       if (!b) {
-        const frame = frameOf(a.sp, shapesMap[a.sp]);
+        const fig = Forest.figure(st, a.sp);
+        const frame = fig.frame;
         const base = bodyColour(st, a.sp);
-        b = { id: a.id, frame, scale: SCALE_OF[a.sp] || 1,
+        b = { id: a.id, frame, scale: fig.scale, r: fig.r,
               colours: PARTS[frame].map(p => partColour(base, p[7])),
               x: to.x, z: to.z, yaw: h01(a.id, 30) * 6.28,
               route: null, t0: 0, dur: 0, tx: to.x, tz: to.z };
         /* a creature that arrives already walking starts last week's spot */
         if (!staticMode && (a.px !== a.x || a.py !== a.y) &&
             a.px >= 0 && a.py >= 0) {
-          const from = Forest.restSpot(a.id, a.px, a.py, st, trunkTaken);
+          spotsWas = spotsWas ||
+            Forest.restSpots(Walk, grid, st, trunkTaken, 'prev');
+          const from = spotsWas[a.id];
           b.tx = from.x; b.tz = from.z; b.x = from.x; b.z = from.z;
         }
       }
@@ -866,8 +864,14 @@ export function createWorld(first, canvas, opts) {
           b.route = null; b.x = to.x; b.z = to.z;
         } else {
           b.route = r.route;
-          b.t0 = now;
-          b.dur = glide;
+          if (newTick && !file) {
+            spotsWas = spotsWas ||
+              Forest.restSpots(Walk, grid, st, trunkTaken, 'prev');
+            file = Forest.stagger(st, spotsWas);
+          }
+          const f = newTick ? file[a.id] : null;
+          b.t0 = now + (f ? f.lag * glide : 0);
+          b.dur = f ? f.span * glide : glide;
         }
         b.tx = to.x; b.tz = to.z;
       }
@@ -880,22 +884,37 @@ export function createWorld(first, canvas, opts) {
 
   const sampleOut = { x: 0, z: 0, dx: 0, dz: 0, moving: false };
 
+  /* Creatures sharing a cell, or passing on one line, are kept apart as
+   * they are drawn: every creature goes to Walk.separate with the radius
+   * its body keeps clear (forest.js), flyers in a layer of their own, and
+   * any two closer than their bodies are pushed apart — oncoming walkers
+   * to their own right, so they pass side by side. No push takes a body
+   * into the water or another trunk's quarter (Walk.clearAt on the
+   * router's grid), nor nearer any trunk than its body allows, and no
+   * flyer off the map (Forest.space). `b.x`/`b.z` stay where the walk
+   * has them; only the drawing moves. Stateless: a frame depends on nothing but its own time. */
+  let crowdF = null;
+  const crowdMove = [];
+
   function updateBeasts(now, dark) {
     let n = 0;
     for (let i = 0; i < beasts.length; i++) n += PARTS[beasts[i].frame].length;
     partBox.begin(n); partBall.begin(n);
     const t = now / 1000;
+    if (Walk) crowdF = Walk.figures(crowdF, beasts.length);
     for (let i = 0; i < beasts.length; i++) {
       const b = beasts[i];
       let moving = false;
       if (b.route) {
-        const f = b.dur > 0 ? Math.min(1, (now - b.t0) / b.dur) : 1;
+        const f = b.dur > 0 ? Math.max(0, Math.min(1, (now - b.t0) / b.dur))
+                            : 1;
         /* eased like the plan view's glide: a start and a stop, not a
          * slide at constant speed */
         const e = f * f * (3 - 2 * f);
         Walk.sample(b.route, e * b.route.total, sampleOut);
         b.x = sampleOut.x; b.z = sampleOut.z;
-        if (Math.abs(sampleOut.dx) + Math.abs(sampleOut.dz) > 1e-6 && f < 1) {
+        if (Math.abs(sampleOut.dx) + Math.abs(sampleOut.dz) > 1e-6 &&
+            f > 0 && f < 1) {
           const want = Math.atan2(-sampleOut.dz, sampleOut.dx);
           let d = want - b.yaw;
           d = Math.atan2(Math.sin(d), Math.cos(d));
@@ -904,18 +923,36 @@ export function createWorld(first, canvas, opts) {
         }
         if (f >= 1) { b.route = null; b.x = b.tx; b.z = b.tz; }
       }
-      const gy = heightAt(b.x, b.z);
+      const ph = h01(b.id, 31) * 6.28;
+      let px = b.x, pz = b.z;
+      if (b.fly && !moving && !staticMode) {
+        /* a flyer hovers over its cell in a slow loop */
+        px += Math.cos(t * 0.6 + ph) * 0.3;
+        pz += Math.sin(t * 0.6 + ph) * 0.3;
+        b.yaw = -(t * 0.6 + ph) - Math.PI / 2;
+      }
+      crowdMove[i] = moving;
+      if (!crowdF) continue;
+      const F = crowdF;
+      F.rx[i] = px; F.rz[i] = pz;
+      F.r[i] = b.r;
+      F.w[i] = moving ? 1 : 0.5;
+      F.hx[i] = moving ? sampleOut.dx : 0;
+      F.hz[i] = moving ? sampleOut.dz : 0;
+      F.layer[i] = b.fly ? 1 : 0;
+      F.id[i] = b.id;
+    }
+    if (crowdF) Forest.space(Walk, grid, crowdF, beasts.length, N);
+    for (let i = 0; i < beasts.length; i++) {
+      const b = beasts[i];
+      const moving = crowdMove[i];
+      const px = crowdF ? crowdF.x[i] : b.x, pz = crowdF ? crowdF.z[i] : b.z;
+      const gy = heightAt(px, pz);
       const ph = h01(b.id, 31) * 6.28;
       let y = gy, wing = 0;
-      let px = b.x, pz = b.z;
       if (b.fly) {
-        /* a flyer hovers over its cell in a slow loop and flaps */
+        /* and flaps */
         y = gy + 1.5 + Math.sin(t * 1.3 + ph) * 0.18;
-        if (!moving && !staticMode) {
-          px += Math.cos(t * 0.6 + ph) * 0.3;
-          pz += Math.sin(t * 0.6 + ph) * 0.3;
-          b.yaw = -(t * 0.6 + ph) - Math.PI / 2;
-        }
         wing = Math.sin(t * 14 + ph) * 0.9;
       } else if (moving) {
         y += Math.abs(Math.sin(t * 9 + ph)) * 0.04;

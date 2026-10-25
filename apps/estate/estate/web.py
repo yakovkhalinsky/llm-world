@@ -480,17 +480,18 @@ def _respond(handler, code, body, ctype):
 
 
 def _ip_hint(host):
+    """The startup line; `{0}` is the port, filled in by the caller."""
     if host != "0.0.0.0":
-        return ("local only: http://localhost:{}"
+        return ("local only: http://localhost:{0}"
                 "\n  (LAN view: add --public, or tunnel: "
-                "ssh -L 8787:localhost:8787 user@this-host)")
+                "ssh -L {0}:localhost:{0} user@this-host)")
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
-        return (f"LAN: http://{ip}:{{}}  (any device on this network)\n"
-                "  off-network: ssh -L 8787:localhost:8787 user@this-host")
+        return (f"LAN: http://{ip}:{{0}}  (any device on this network)\n"
+                "  off-network: ssh -L {0}:localhost:{0} user@this-host")
     except OSError:
         return "lan ip undetectable — check hostname -I"
 

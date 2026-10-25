@@ -334,17 +334,18 @@ def plain(grove, lock):
 
 
 def _ip_hint(host):
+    """The startup line; `{0}` is the port, filled in by the caller."""
     if host != "0.0.0.0":
-        return (f"local only: http://localhost:{{}}"
+        return ("local only: http://localhost:{0}"
                 "\n  (LAN view: add --public, or tunnel: "
-                "ssh -L 8787:localhost:8787 user@this-host)")
+                "ssh -L {0}:localhost:{0} user@this-host)")
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
-        return (f"LAN: http://{ip}:{{}}  (any device on this network)\n"
-                "  off-network: ssh -L 8787:localhost:8787 user@this-host")
+        return (f"LAN: http://{ip}:{{0}}  (any device on this network)\n"
+                "  off-network: ssh -L {0}:localhost:{0} user@this-host")
     except OSError:
         return "lan ip undetectable — check hostname -I"
 
@@ -435,6 +436,8 @@ def make_handler(g, lock, runner, data_dir, emb=None, hosts=None):
                     oid = int((qs.get("id") or ["0"])[0])
                 except ValueError:
                     oid = 0
+                if not -2 ** 63 <= oid < 2 ** 63:
+                    oid = 0         # past sqlite's integers: simply gone
                 with lock:
                     world_w = g.world
                     if world_w is None:
@@ -449,7 +452,7 @@ def make_handler(g, lock, runner, data_dir, emb=None, hosts=None):
                             {"id": oid, "gone": True,
                              "events": g.db.bio(oid)}), "application/json")
                         return
-                    self._send(200, json.dumps({
+                    out = {
                         "id": oid,
                         "kind": "animal" if animal else "plant",
                         "sp": ent["sp"],
@@ -457,7 +460,16 @@ def make_handler(g, lock, runner, data_dir, emb=None, hosts=None):
                         "alive": True,
                         "x": ent["x"], "y": ent["y"],
                         "events": g.db.bio(oid),
-                    }), "application/json")
+                    }
+                    # the sim's own numbers, for the card's needs rows:
+                    # read from the world, never asked of a model
+                    if animal:
+                        out["age"] = round(animal.get("age", 0))
+                        out["hunger"] = round(animal.get("hunger", 0), 1)
+                        out["energy"] = round(animal.get("energy", 0), 1)
+                    else:
+                        out["stage"] = plant.get("stage")
+                    self._send(200, json.dumps(out), "application/json")
             elif path == "/api/tuning":
                 with lock:
                     props = reviewer.pending(g.db, (g.world or {}).get(

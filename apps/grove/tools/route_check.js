@@ -62,10 +62,15 @@ t.fixtures.forEach(f => {
   }
 });
 
+/* where the page rests each creature, last week and this: its own
+ * quarter alone, a share of the cell when it has company */
+const restNow = Forest.restSpots(Walk, grid, st, t.taken, 'now');
+const restWas = Forest.restSpots(Walk, grid, st, t.taken, 'prev');
+
 (st.animals || []).forEach(a => {
   if (flyers.has(a.sp)) return;
-  const from = Forest.restSpot(a.id, a.px, a.py, st, t.taken);
-  const to = Forest.restSpot(a.id, a.x, a.y, st, t.taken);
+  const from = restWas[a.id];
+  const to = restNow[a.id];
   /* a resting spot is open ground unless the whole cell is water */
   const c = st.cells[a.y * N + a.x];
   if (c[0] !== 'w' &&
