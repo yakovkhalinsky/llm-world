@@ -404,6 +404,18 @@ The gate's current fingerprint is `d5ddd81da91d9e58`. The single 3D view
 changed the server's routes and the page, not the engine or the simulation,
 so the estate's behaviour — and its fingerprint — is unchanged.
 
+Families moved it twice. Households with children, guardians and the
+young-child rule took it `d5ddd81da91d9e58` → `750994343a5f044d`. Making
+the curfew and the evening range hard took it on to `93a0834b294b4e16`:
+an under-10 is never out at night and never beyond the evening range of
+home, a household is home by night, the walk home is uncapped and goes
+round walls on a held breadth-first detour (the old greedy step could
+trap a resident at a wall corner), and a resident's needs are ranked once
+a phase rather than twice, which had counted friction double. Across 8
+seeds × 3 years `tools/family_check.py` counts 0 young out at night, 0
+households out at night and 0 evenings beyond range (2,431, 6,081 and
+1,823 before). Every law holds, with friction between 1.33 and 1.39.
+
 Nineteen faults are recorded in `docs/BUGS.md` under Grove's sixteen
 classes. Almost none of them crashed anything. They were found by asking
 the estate's own design questions and checking the answers — *do the needs
