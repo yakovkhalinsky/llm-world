@@ -46,6 +46,9 @@ def notable(events):
     scored = []
     for i, e in enumerate(_fold(events)):
         kind = e["kind"]
+        # a count of nothing is not news ("Newborn deer — 0 appeared")
+        if e.get("n", 1) == 0:
+            continue
         # understory lives short; only a pack's own trees falling are news
         if kind == "fell" and W.PLANT_SPECIES.get(
                 e.get("sp"), {}).get("kind") != "tree":
