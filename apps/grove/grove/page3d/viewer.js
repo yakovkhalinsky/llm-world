@@ -145,8 +145,17 @@ function drawCard() {
   const open = HUD ? HUD.card(S.state, S.selected, S.ledger) : false;
   if (!HUD) $('card').classList.remove('on');
   $('followBtn').hidden = !(S.selected && S.selected.kind === 'animal');
-  $('followBtn').classList.toggle('on', S.follow);
+  markFollow();
+  /* on a phone the card takes the bottom sheet's place (style.css) */
+  if (document.body) document.body.classList.toggle('carded', !!open);
   return open;
+}
+
+function markFollow() {
+  const b = $('followBtn');
+  b.classList.toggle('on', S.follow);
+  const word = S.follow ? '◉ following' : '◎ follow';
+  if (b.textContent !== word) b.textContent = word;
 }
 
 /* The biography is the ledger's: asked when a creature or a plant is
@@ -209,6 +218,8 @@ function askBio(sel, quiet) {
 function select(sel) {
   S.selected = sel;
   S.ledger = null;
+  /* a new pick starts its card at the top */
+  $('card').scrollTop = 0;
   if (!sel || sel.kind !== 'animal') S.follow = false;
   if (drawCard()) askBio(sel);
   if (S.world) S.world.follow(S.follow && sel ? sel.id : null);
@@ -392,7 +403,7 @@ function wire() {
   $('cardClose').onclick = () => select(null);
   $('followBtn').onclick = () => {
     S.follow = !S.follow;
-    $('followBtn').classList.toggle('on', S.follow);
+    markFollow();
     if (S.world) S.world.follow(S.follow && S.selected ? S.selected.id : null);
   };
   $('tabChron').onclick = () => HUD && HUD.tab('chron', S.state);
@@ -409,8 +420,19 @@ function wire() {
     if (!b) return;
     const a = b.dataset.a === 'accept' ? 'accept' : 'dismiss';
     b.disabled = true;
-    post('/api/tuning/' + a, { id: Number(b.dataset.id) }).then(loadTuning);
+    post('/api/tuning/' + a, { id: Number(b.dataset.id) }).then(r => {
+      /* a POST that failed leaves the proposal as it was: press again */
+      if (!r) b.disabled = false;
+      return loadTuning();
+    });
   });
+  /* a list under a finger, or with text selected in it, is not rewritten
+   * until it is let go (shared patch.js); the steward's buttons are in
+   * #chron, so a press is never lost to a poll's write */
+  if (window.Patch) {
+    window.Patch.hold($('chron'));
+    window.Patch.hold($('card'), [$('cardState'), $('cardRows')]);
+  }
 
   window.addEventListener('keydown', ev => {
     if (ev.target && (ev.target.tagName === 'INPUT' ||

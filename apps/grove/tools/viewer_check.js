@@ -14,6 +14,9 @@
  *   timeout   a hung ask is aborted through its signal, and fails plainly
  *   weekly    one quiet re-ask per week, not one per poll
  *   short     a hung ask with weeks shorter than the timeout still fails
+ *   follow    '◎ follow' is offered on a creature's card only, and a
+ *             press follows it; an open card hides the phone's bottom
+ *             sheet (body.carded)
  *
  *   node tools/viewer_check.js
  *   GROVE_VIEWER=/path/to/mutant/viewer.js node tools/viewer_check.js
@@ -138,8 +141,10 @@ function page() {
       return !!sel;
     },
   };
+  const follows = [];
   const world = {
-    resize() {}, setState() {}, follow() {}, focusCell() {},
+    resize() {}, setState() {}, follow(id) { follows.push(id); },
+    focusCell() {},
     frame: () => ({ index: 2, name: 'afternoon', dayFrac: 0.5 }),
     stateSummary: () => ({}), phaseName: () => 'afternoon',
     dayFraction: () => 0.5, routeStats: () => ({}), pick: () => null,
@@ -171,7 +176,7 @@ function page() {
 
   const V = ctx.__viewer;
   return {
-    P, cards, advance, settle, V,
+    P, cards, advance, settle, V, els, document, follows,
     lastCard: () => cards[cards.length - 1],
     bioAsks: () => P.asks.length,
   };
@@ -278,8 +283,37 @@ async function short() {
      led(p.V.S.ledger) + ' / ' + led(p.lastCard().ledger));
 }
 
+async function follow() {
+  const p = page();
+  await p.settle();
+  const btn = p.els.followBtn;
+  p.V.select({ kind: 'cell', x: 1, y: 1 });
+  ok('follow: a cell\'s card offers no follow', btn && btn.hidden === true,
+     btn && btn.hidden);
+  ok('follow: an open card hides the bottom sheet (body.carded)',
+     p.document.body.classList.contains('carded'));
+  p.V.select({ kind: 'animal', id: 7 });
+  ok('follow: a creature\'s card offers "◎ follow"',
+     btn.hidden === false && btn.textContent === '◎ follow',
+     btn.hidden + ' ' + btn.textContent);
+  ok('follow: not following until pressed', p.V.S.follow === false,
+     p.V.S.follow);
+  btn.onclick();
+  ok('follow: a press follows the creature',
+     p.V.S.follow === true && p.follows[p.follows.length - 1] === 7 &&
+     btn.textContent === '◉ following' && btn.classList.contains('on'),
+     p.V.S.follow + ' ' + p.follows.join(',') + ' ' + btn.textContent);
+  btn.onclick();
+  ok('follow: a second press lets it go',
+     p.V.S.follow === false && p.follows[p.follows.length - 1] === null &&
+     btn.textContent === '◎ follow', p.follows.join(','));
+  p.V.select(null);
+  ok('follow: closing the card brings the sheet back',
+     !p.document.body.classList.contains('carded') && btn.hidden === true);
+}
+
 (async () => {
-  for (const scene of [kept, race, timeout, weekly, short]) {
+  for (const scene of [kept, race, timeout, weekly, short, follow]) {
     try { await scene(); } catch (e) {
       ok(scene.name + ' runs', false, e.stack);
     }

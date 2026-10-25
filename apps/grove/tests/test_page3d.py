@@ -42,7 +42,7 @@ class StaticFilesTest(unittest.TestCase):
 
     def test_shared_files_come_from_the_shared_folder(self):
         shared = os.path.realpath(web.SHARED3D)
-        for rel in ("clock.js", "walk.js", "field.js",
+        for rel in ("clock.js", "walk.js", "field.js", "patch.js",
                     "vendor/three.module.min.js", "vendor/OrbitControls.js"):
             with self.subTest(rel=rel):
                 got = web._page3d(rel)
@@ -63,11 +63,13 @@ class StaticFilesTest(unittest.TestCase):
         page = web._page3d("index.html")[0].decode()
         at = page.index("/3d/viewer.js")
         for rel in ("walk.js", "clock.js", "field.js", "forest.js", "glow.js",
-                    "hud.js"):
+                    "patch.js", "hud.js"):
             with self.subTest(rel=rel):
                 self.assertIn('src="/3d/' + rel + '"', page)
                 self.assertLess(page.index("/3d/" + rel), at)
         self.assertIn('type="module"', page)
+        # hud.js reads the shared Patch as it loads
+        self.assertLess(page.index("/3d/patch.js"), page.index("/3d/hud.js"))
 
     def test_no_traversal_leaves_either_folder(self):
         for rel in ("../web.py", "..%2Fweb.py", "%2e%2e/web.py",

@@ -48,6 +48,18 @@ MUTANTS = [
      "    if (ctl) ctl.abort();\n    fail();\n",
      "",
      "FAIL timeout:"),
+    ("the follow button is offered on every card",
+     "$('followBtn').hidden = !(S.selected && S.selected.kind === 'animal');",
+     "$('followBtn').hidden = !S.selected;",
+     "FAIL follow:"),
+    ("the follow button does not say it is following",
+     "const word = S.follow ? '◉ following' : '◎ follow';",
+     "const word = '◎ follow';",
+     "FAIL follow:"),
+    ("an open card leaves the phone's sheet under it",
+     "document.body.classList.toggle('carded', !!open);",
+     "document.body.classList.toggle('carded', false);",
+     "FAIL follow:"),
 ]
 
 
