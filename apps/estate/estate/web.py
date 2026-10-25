@@ -24,7 +24,7 @@ import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from . import chronicler
 from . import db as dbm
@@ -383,6 +383,57 @@ def _pixi_bytes():
     return _PIXI_CACHE
 
 
+PAGE3D = os.path.join(os.path.dirname(__file__), "page3d")
+
+# one suffix, one content type. A module served as text/plain is a module
+# the browser refuses to execute, which looks exactly like a broken page.
+_STATIC_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".mjs": "application/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+    ".txt": "text/plain; charset=utf-8",
+}
+
+
+def _page3d(rel):
+    """A file under `page3d/`, as (bytes, content type), or None.
+
+    The 3D view is a folder of ES modules and a vendored engine, so it is
+    served as static files rather than folded into one inline script. The
+    handler is confined to page3d's *real* path after unquoting, so no
+    traversal — plain, encoded, or through a symlink — can reach a file
+    outside it.
+    """
+    root = os.path.realpath(PAGE3D)
+    rel = unquote(rel)
+    if "\x00" in rel:
+        return None
+    full = os.path.realpath(os.path.join(root, rel.lstrip("/")))
+    try:
+        if os.path.commonpath((root, full)) != root:
+            return None
+    except ValueError:
+        return None
+    if not os.path.isfile(full):
+        return None
+    try:
+        with open(full, "rb") as f:
+            data = f.read()
+    except OSError:
+        return None
+    name = os.path.basename(full)
+    if name.startswith("LICENSE"):
+        return data, "text/plain; charset=utf-8"
+    ctype = _STATIC_TYPES.get(os.path.splitext(full)[1].lower(),
+                              "application/octet-stream")
+    return data, ctype
+
+
 def _ip_hint(host):
     if host != "0.0.0.0":
         return ("local only: http://localhost:{}"
@@ -438,6 +489,18 @@ def cmd_web(args):
                     self._send(200, b, "application/javascript; charset=utf-8")
                 else:
                     self._send(404, "the engine's file is missing", "text/plain")
+            elif path in ("/3d", "/3d/"):
+                f = _page3d("index.html")
+                if f:
+                    self._send(200, f[0], f[1])
+                else:
+                    self._send(404, "the 3d view is missing", "text/plain")
+            elif path.startswith("/3d/"):
+                f = _page3d(path[len("/3d/"):])
+                if f:
+                    self._send(200, f[0], f[1])
+                else:
+                    self._send(404, "no such thing", "text/plain")
             elif path == "/api/ground":
                 with lock:
                     self._send(200, json.dumps(ground(est)),
