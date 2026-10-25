@@ -89,8 +89,9 @@ their door and back; at the fastest the phases blur into a timelapse.
 It is one hand-written page and no build step: a background
 thread ticks the estate and the page draws it, walking each resident from
 where they were yesterday to where they are today, and turning the light
-across the estate as the five phases pass. Three.js is **vendored** beside
-the page (`estate/page3d/vendor/`), so the file is never fetched from a CDN
+across the estate as the five phases pass. Three.js is **vendored** in the
+folder both apps' 3D views share (`../shared/page3d/vendor/`), so the file
+is never fetched from a CDN
 at runtime and the whole thing works offline. If WebGL will not start, the
 page shows the server's glyph map (`/api/plain`) rather than a blank
 rectangle.
@@ -158,7 +159,7 @@ For screenshots and headless checks:
   walking between cells, and `perimeter` how many are out on the estate's
   edge.
 
-Three.js **r170** (MIT) is vendored in `estate/page3d/vendor/` together
+Three.js **r170** (MIT) is vendored in `../shared/page3d/vendor/` together
 with `OrbitControls` and the licence; the page's import map resolves
 `three` locally. Nothing is fetched from a CDN at runtime and there is no
 build step, so the view works fully offline. If WebGL is not available the
@@ -191,7 +192,7 @@ node tools/clock_check.js
   must have more than a day in it, so pass it a state from a server that
   has been running (or press **+ day** five times); the Python wrapper
   ticks six days itself.
-- **`walk_check.js`** is the router's test (`page3d/walk.js`): every door
+- **`walk_check.js`** is the router's test (`../shared/page3d/walk.js`): every door
   reaches every fixture with no nulls, no string-pulled segment crosses a
   building, the water or a solid fixture, an enclosed target returns null
   and terminates, endpoints off the plan or in a wall return null, a route
@@ -199,7 +200,7 @@ node tools/clock_check.js
   outlasts the tick. It also reports 2000 uncached random routes as a
   timing line. Pass it a live URL to read `/api/ground` and `/api/state`
   over HTTP.
-- **`clock_check.js`** runs `page3d/clock.js`, the pure day clock and light
+- **`clock_check.js`** runs `../shared/page3d/clock.js`, the pure day clock and light
   table the 3D page draws from: `light(0) == light(1)`, the pinned
   `?clock=`/`?phase=` fractions, a frozen paused day, and no
   frame-to-frame jump in any light channel at 60s, 20s and 5s a day with
@@ -283,12 +284,13 @@ A world of met needs is a dead world. Three loops prevent it:
 | `estate/chronicler.py` | the estate's record of its own days, with and without a model |
 | `estate/engine/households.py` | ageing, births, deaths, emigration, the letting office |
 | `estate/engine/effects.py` | the watcher's fates: what lands, what lasts, what ages |
-| `estate/page3d/` | the view: Three.js scene, HUD, vendored r170 engine |
+| `estate/page3d/` | the view: Three.js scene and HUD (served under `/3d/`, falling back to `../shared/page3d/`) |
 | `estate/page3d/viewer.js` | the page's spine: fetch, poll, pick and the camera's controls |
 | `estate/page3d/world.js` | the solid estate: ground, blocks, fixtures, people, weather and light |
 | `estate/page3d/hud.js` | the panels and cards, pure DOM (no THREE), shared with the Node check |
-| `estate/page3d/walk.js` | the router, pure (no THREE), served as a classic script and shared with its check |
-| `estate/page3d/clock.js` | the day's clock and light table, pure (no THREE), shared with the Node check |
+| `../shared/page3d/walk.js` | the router, pure (no THREE), shared with the grove's view and with its check |
+| `../shared/page3d/clock.js` | the day's clock and light table, pure (no THREE), shared with the grove's view and the Node check |
+| `../shared/page3d/vendor/` | Three.js r170, OrbitControls and the licence, vendored once for both views |
 | `tools/hud_check.js` | the HUD's check: the feed, the census, the watcher, the cards and escaping |
 | `tools/walk_check.js` | the router's check: doors to fixtures, no crossing, nulls, sample and duration |
 | `tools/clock_check.js` | the day clock's check: no jump at the turn or on a poll, the pins, a frozen day |

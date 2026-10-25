@@ -369,6 +369,9 @@ def snapshot(est, runner, lock):
 
 
 PAGE3D = os.path.join(os.path.dirname(__file__), "page3d")
+# what the estate's and the grove's 3D views share: apps/shared/page3d
+SHARED3D = os.path.join(os.path.dirname(__file__), "..", "..", "shared",
+                        "page3d")
 
 # one suffix, one content type. A module served as text/plain is a module
 # the browser refuses to execute, which looks exactly like a broken page.
@@ -390,14 +393,27 @@ def _page3d(rel):
 
     The 3D view is a folder of ES modules and a vendored engine, so it is
     served as static files rather than folded into one inline script. The
-    handler is confined to page3d's *real* path after unquoting, so no
-    traversal — plain, encoded, or through a symlink — can reach a file
-    outside it.
+    estate's own `page3d/` is looked in first, then the folder both apps'
+    3D views share (`apps/shared/page3d/`: the vendored engine, the day
+    clock and the walk router), so the page names every file as `/3d/...`
+    whichever folder holds it. Each lookup is confined to its own folder's
+    *real* path after unquoting, so no traversal — plain, encoded, or
+    through a symlink — can reach a file outside either of them.
     """
-    root = os.path.realpath(PAGE3D)
     rel = unquote(rel)
     if "\x00" in rel:
         return None
+    for base in (PAGE3D, SHARED3D):
+        got = _static_under(base, rel)
+        if got is not None:
+            return got
+    return None
+
+
+def _static_under(base, rel):
+    """One folder's half of `_page3d`: the file, or None if it is not
+    there or its real path leaves `base`."""
+    root = os.path.realpath(base)
     full = os.path.realpath(os.path.join(root, rel.lstrip("/")))
     try:
         if os.path.commonpath((root, full)) != root:

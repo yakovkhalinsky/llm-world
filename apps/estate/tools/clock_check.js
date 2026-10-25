@@ -19,8 +19,8 @@
 
 const path = require('path');
 
-const Clock = require(path.join(__dirname, '..', 'estate', 'page3d',
-                                  'clock.js'));
+const Clock = require(path.join(__dirname, '..', '..', 'shared', 'page3d',
+                               'clock.js'));
 
 const fails = [];
 function ok(name, cond, detail) {

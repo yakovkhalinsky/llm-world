@@ -117,6 +117,35 @@ class Page3dTest(unittest.TestCase):
             with self.subTest(rel=rel):
                 self.assertIsNone(web._page3d(rel))
 
+    def test_shared_files_come_from_the_shared_folder(self):
+        """The engine, the clock and the router live in apps/shared/page3d
+        (the grove's 3D view reads the same files); they are still served
+        under the estate's `/3d/`, and only from that folder."""
+        shared = os.path.realpath(web.SHARED3D)
+        for rel in ("clock.js", "walk.js", "vendor/three.module.min.js",
+                    "vendor/OrbitControls.js"):
+            with self.subTest(rel=rel):
+                got = web._page3d(rel)
+                self.assertIsNotNone(got)
+                with open(os.path.join(shared, rel), "rb") as f:
+                    self.assertEqual(got[0], f.read())
+        # nothing of the estate's own is duplicated in the shared folder
+        for name in os.listdir(web.PAGE3D):
+            with self.subTest(own=name):
+                self.assertFalse(os.path.exists(os.path.join(shared, name)),
+                                 name + " is in both folders")
+
+    def test_traversal_out_of_the_shared_folder_is_refused(self):
+        """The second root is confined like the first: its parent is the
+        other apps, and none of them is reachable through it."""
+        for rel in ("../../estate/estate/web.py",
+                    "../../grove/grove/web.py",
+                    "%2e%2e/%2e%2e/estate/estate/web.py",
+                    "vendor/../../../estate/estate/web.py",
+                    "../page3d/../../estate/estate/web.py"):
+            with self.subTest(rel=rel):
+                self.assertIsNone(web._page3d(rel))
+
     def test_symlinks_out_of_page3d_are_refused(self):
         """A link's *real* path is what must stay under page3d/, file or
         directory; `realpath` plus `commonpath` is what refuses both."""

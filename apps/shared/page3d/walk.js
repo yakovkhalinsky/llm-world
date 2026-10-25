@@ -1,4 +1,9 @@
-/* walk — the route a resident takes across the plan.
+/* walk — the route a walker takes across the plan.
+ *
+ * Shared by both 3D views (apps/shared/page3d/): Highfield's residents and
+ * the grove's creatures are routed by this one search. Each app's server
+ * serves this folder under its own `/3d/` after its own page3d/, so the
+ * page names it as `/3d/walk.js` either way.
  *
  * The engine walks its people cell by cell, around walls, and then saves only
  * where each of them ended the day. The view used to draw that as a straight
@@ -33,6 +38,10 @@
    * still enterable as a route's *endpoint* — a destination is where you
    * were going, not an obstacle on the way. */
   var SOLID = { tree: 1, lamp: 1, table: 1, playground: 1, shop: 1 };
+  /* The list above is the estate's, and the default. Another world names
+   * its own solids when it builds its grid (`buildGrid(ground, {solid:
+   * {...}})`) — the grove's are its standing trunks — so the search has no
+   * opinion about what a place is made of. */
 
   /* A walk is searched to at most this many nodes per route. The plans are
    * a few hundred cells; the cap is a backstop against a pathological grid,
@@ -46,7 +55,8 @@
    * state arrives. */
   var WALK_CPS = 4.0;
 
-  function buildGrid(ground) {
+  function buildGrid(ground, opts) {
+    var solidKinds = (opts && opts.solid) || SOLID;
     var W = ground.width | 0, H = ground.height | 0;
     var n = W * H;
     var walkMap = ground.walk || {};
@@ -84,7 +94,7 @@
     return {
       W: W, H: H, n: n,
       base: base, cost: cost, minCost: minCost,
-      solid: new Uint8Array(n), fixturesKey: null,
+      solid: new Uint8Array(n), fixturesKey: null, solidKinds: solidKinds,
       cache: new Map(), cacheLimit: 512,
       gScore: new Float32Array(n), came: new Int32Array(n),
       stamp: new Int32Array(n), closed: new Int32Array(n), call: 0,
@@ -107,7 +117,7 @@
     g.solid.fill(0);
     for (var j = 0; j < fixtures.length; j++) {
       var f = fixtures[j];
-      if (SOLID[f.kind] && f.x >= 0 && f.y >= 0 &&
+      if (g.solidKinds[f.kind] && f.x >= 0 && f.y >= 0 &&
           f.x < g.W && f.y < g.H) {
         g.solid[f.y * g.W + f.x] = 1;
       }
@@ -395,7 +405,8 @@
     return out;
   }
 
-  root.EstateWalk = {
+  var api = {
+    SOLID: SOLID,
     buildGrid: buildGrid,
     setFixtures: setFixtures,
     findPath: findPath,
@@ -405,4 +416,8 @@
     sample: sample,
     WALK_CPS: WALK_CPS,
   };
+  /* `Page3DWalk` is the shared name; `EstateWalk` is kept because the
+   * estate's module and its check were written against it. */
+  root.Page3DWalk = api;
+  root.EstateWalk = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
