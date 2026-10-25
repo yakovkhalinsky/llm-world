@@ -176,6 +176,9 @@ def snapshot(grove, runner, lock):
             # which job stumbled, and what it actually sent back — a
             # voice that cannot be read must not look like silence
             "fail": getattr(g.llm, "last_fail", None),
+            # which model each job is on, and what is not installed —
+            # None with --offline
+            "models": g.llm.model_status() if g.llm else None,
         }
         if g.worker is not None:
             llm_bits["jobs"] = dict(g.jobs)
@@ -541,7 +544,10 @@ def make_handler(g, lock, runner, data_dir, emb=None, hosts=None):
 
         def _soul(self, _body):
             invited = False
-            if g.llm and g.llm.enabled and g.worker:
+            # with --decide rules the soul chooses without a model, so the
+            # button works whenever there is a worker
+            if g.llm and g.worker and (g.llm.decide == "rules" or
+                                       g.llm.ready()):
                 with lock:
                     if not g.worker.busy:
                         g._invite_operator()
@@ -562,18 +568,21 @@ def make_handler(g, lock, runner, data_dir, emb=None, hosts=None):
                 time.sleep(0.5)
                 waited += 0.5
             t0 = time.time()
+            alive = g.llm is not None and g.llm.ready()
             # index newer chronicle lines through the embedder's own
             # sqlite connection — never the sim's; the forest does
             # not stall (and no half-written week can be sealed)
-            if g.llm is not None and g.llm.enabled:
+            if alive:
                 try:
                     memory.ensure_index(emb, g.llm)
                 except Exception:
                     pass
             with lock:                       # brief reads only
-                if g.world is None or g.llm is None or not g.llm.enabled:
+                if g.world is None or not alive:
+                    why = "LLM off" if g.llm is None else \
+                        llmm.status_line(g.llm)
                     return 200, {"answer": "the grove is wordless just now "
-                                           "(LLM off)", "excerpts": []}
+                                           f"({why})", "excerpts": []}
                 rows = g.db.con.execute(
                     "SELECT key, tick, text, vec FROM vec").fetchall()
                 digest_text = operator.digest(g.world, [])
@@ -647,7 +656,7 @@ def cmd_web(args):
     runner = SimRunner(g, lock, args.tick_seconds)
     runner.start()
 
-    if g.llm and g.llm.enabled:
+    if g.llm is not None:
         # the embedding threads (the indexer and the ask's pre-index)
         # get their OWN sqlite connection: a commit of theirs can then
         # never seal a week that the sim is still writing. Created with
@@ -669,7 +678,7 @@ def cmd_web(args):
     hosts = webguard.allowed_hosts(bind, port, args.public,
                                    getattr(args, "allow_host", None) or ())
     Handler = make_handler(g, lock, runner, args.data,
-                           emb if g.llm and g.llm.enabled else None,
+                           emb if g.llm is not None else None,
                            hosts=hosts)
 
     print(f"grove web · world tick {g.world['tick']} "
@@ -686,5 +695,5 @@ def cmd_web(args):
     finally:
         runner.stopping.set()
         g.db.close()
-        if g.llm and g.llm.enabled:
+        if g.llm is not None:
             emb.close()
