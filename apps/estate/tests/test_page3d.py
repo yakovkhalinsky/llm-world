@@ -147,6 +147,21 @@ def _unlink_quiet(path):
         pass
 
 
+class StartupTest(unittest.TestCase):
+    """The page is files on disk, so a missing page has to stop the server
+    when it starts, not wait to be a 404 on `/`."""
+
+    def test_the_server_refuses_to_start_without_its_page(self):
+        real = web._page3d
+        web._page3d = lambda rel: None
+        try:
+            with self.assertRaises(SystemExit) as cm:
+                web.cmd_web(types.SimpleNamespace())
+        finally:
+            web._page3d = real
+        self.assertIn("index.html", str(cm.exception))
+
+
 class _LiveServer:
     """A real `ThreadingHTTPServer` on port 0 with the page's own handler.
 

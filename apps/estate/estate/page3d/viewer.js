@@ -103,11 +103,9 @@ function fetchJSON(url) {
   });
 }
 
-function esc(s) {
-  return String(s == null ? '' : s)
-    .replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;',
-                                '"': '&quot;' })[c]);
-}
+/* one escaper for the page, and it lives in hud.js (which loads first);
+ * without the HUD there is nothing safe to write, so nothing is written */
+const esc = HUD ? HUD.esc : () => '';
 
 function webglAvailable() {
   try {

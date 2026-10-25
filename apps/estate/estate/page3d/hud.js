@@ -28,10 +28,14 @@
 
   function $(id) { return document.getElementById(id); }
 
+  /* the page's one escaper: viewer.js borrows it as `EstateHUD.esc`.
+   * Both quotes are escaped, so a string is safe in an attribute whichever
+   * quote the attribute uses. */
   var esc = function (s) {
     return String(s === null || s === undefined ? '' : s)
-      .replace(/[&<>"]/g, function (c) {
-        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+      .replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
+                 "'": '&#39;' }[c];
       });
   };
 

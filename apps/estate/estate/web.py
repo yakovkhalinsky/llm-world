@@ -554,6 +554,10 @@ def make_handler(est, lock, runner):
 
 
 def cmd_web(args):
+    # the page is files now, not a string loaded at import, so a missing
+    # page would only show up as a 404 on `/`. Fail at startup instead.
+    if _page3d("index.html") is None:
+        raise SystemExit("estate web: page3d/index.html is missing")
     est = Estate(args)
     lock = threading.Lock()
     runner = SimRunner(est, lock, args.tick_seconds, est.llm)

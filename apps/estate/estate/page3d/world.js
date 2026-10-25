@@ -796,10 +796,9 @@ export function createWorld(ground, canvas, opts) {
   /* 0 stands, 1 sits on the bench, 2 stands beside it because it is full */
   const sitMode = [], seatFx = [], seatFz = [];
   /* Each walker's route (from walk.js beside this file) and when its walk
-   * began. A route
-   * is built when a person's cell changes, not once a frame and not once a
-   * poll: the state repeats between days, and rebuilding on every poll
-   * restarted the walk before it had got anywhere. */
+   * began. A route is built when a person's cell changes, not once a frame
+   * and not once a poll: the state repeats between days, and rebuilding on
+   * every poll restarted the walk before it had got anywhere. */
   const routes = [], routeT0 = [], routeDur = [];
   const facing = [];
   let routesBuilt = false;
