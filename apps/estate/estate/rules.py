@@ -146,7 +146,8 @@ R = {
         "meets": {"food": 0.6, "company": 0.7, "play": 0.6},
         # How many pupils one cell of the yard holds (`daytime.yard_spots`):
         # the 6×4 yard so holds 48, and the most ever in at once across 8
-        # seeds × 3 years is 27 (tests/test_school.py holds it to that).
+        # seeds × 3 years is 28 (`tools/family_check.py` max_in_school, and
+        # its yard_over counts any cell over its share).
         "per_yard_cell": 2,
     },
 

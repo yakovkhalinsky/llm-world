@@ -299,8 +299,9 @@ class YardTest(unittest.TestCase):
         spots = daytime.yard_spots(w)
         cells = set(spots)
         self.assertEqual(len(spots), len(cells) * per)
-        # 27 is the most in at once across 8 seeds x 3 years
-        self.assertGreaterEqual(len(spots), 27)
+        # 28 is the most in at once across 8 seeds x 3 years
+        # (family_check's max_in_school); the yard holds that with room
+        self.assertGreaterEqual(len(spots), 28)
         for r in w["residents"].values():
             r["where"]["mode"] = "in"
         for k in self._pupils(w, len(spots)):

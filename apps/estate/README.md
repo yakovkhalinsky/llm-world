@@ -466,6 +466,18 @@ seed. Every law holds, with friction between 1.49 and 1.59 — higher than
 before, because a school day and a work day take hours the needs used to
 have — and distinctness between 8.30 and 8.88.
 
+The review of the school run took it `ff8474c5d01f960d` →
+`f5d9ea5e95da827c`. The yard holds two pupils a cell (48; the most in at
+once over 8 seeds × 3 years is 28) and a pupil goes in to its emptiest
+cell, and the bus queue waits on the open cells round the stop, spread
+evenly, instead of on the shelter's one cell. `estate new --size` plants
+plans at least 28 high again, 36×28 up to 64×44 (the courtyard is
+anchored under the block doors; the tests sweep 40–64 × 28–44), and a
+plan too small for the school, such as 34×26, says so in one line. Across
+8 seeds × 3 years `tools/family_check.py` still counts 0 on every
+failure line, with 0 yard cells over their share. Every law holds, with
+friction between 1.51 and 1.60 and distinctness between 8.43 and 8.88.
+
 Nineteen faults are recorded in `docs/BUGS.md` under Grove's sixteen
 classes. Almost none of them crashed anything. They were found by asking
 the estate's own design questions and checking the answers — *do the needs
