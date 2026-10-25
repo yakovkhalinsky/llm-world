@@ -70,8 +70,17 @@ def _ignore_ok(src):
 
 def _no_trunk_keep(src):
     """forest.js whose per-frame push forgets the trunks."""
-    return _swap(src, "      if (dx * dx + dz * dz < T[i + 2] * T[i + 2]) "
-                 "return false;\n", "")
+    return _swap(src, "          t = Walk.keepOut(K, t, Walk.KEEP_DISK, "
+                 "sx + 0.5, sz + 0.5, 0,\n"
+                 "                           TRUNK_KEEP * SUB + r, gx, gz);\n",
+                 "")
+
+
+def _centre_only(src):
+    """forest.js whose per-frame push keeps only a body's centre out of
+    the water, not its edge (a creature grazing the bank pushed in)."""
+    return _swap(src, "Walk.groundKeepOuts(grid, K, t, gx, gz, r, home, NEAR)",
+                 "Walk.groundKeepOuts(grid, K, t, gx, gz, 0, home, NEAR)")
 
 
 @unittest.skipUnless(NODE, "node is not installed")
@@ -137,6 +146,10 @@ class CrowdCheckTest(unittest.TestCase):
         out = self._mutant(_no_trunk_keep, FOREST, "GROVE_FOREST")
         self.assertIn("FAIL trunk: ", out)
         self.assertIn("FAIL in-trunk: ", out)
+
+    def test_a_push_of_an_edge_into_the_water_fails(self):
+        out = self._mutant(_centre_only, FOREST, "GROVE_FOREST")
+        self.assertIn("into the water", out)
 
     def test_a_push_that_ignores_the_ground_fails(self):
         out = self._mutant(_ignore_ok, WALK, "PAGE3D_WALK")

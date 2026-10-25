@@ -214,34 +214,62 @@
     });
   }
 
+  /* What world.js draws on a solid fixture's cell, about its middle, for
+   * the per-frame push: a box's half-size or a disk's radius (Walk's
+   * KEEP_BOX / KEEP_DISK) — a table top 0.82 square, a stall 0.9, a lamp's
+   * pole, a tree's trunk at its foot. The playground is for climbing on: no
+   * body. A solid kind the page has never seen is a small plinth. A body's
+   * edge keeps BODY_GAP clear of any of them. */
+  var BODY = { table: [0, 0.41], shop: [0, 0.45], lamp: [1, 0.045],
+               tree: [1, 0.13], playground: null };
+  var BODY_OTHER = [0, 0.25];
+  var BODY_GAP = 0.01;
+  function bodyAt(fixAt, x, y) {
+    var f = fixAt && fixAt[x + ',' + y];
+    if (!f) return BODY_OTHER;
+    return Object.prototype.hasOwnProperty.call(BODY, f.kind)
+      ? BODY[f.kind] : BODY_OTHER;
+  }
+
   /* The page's spacing for one frame: `Walk.separate` on F's n figures
-   * (rx/rz their raw points), with the guard every push must pass — the
-   * body stays on open ground (clearAt, at its full radius when its raw
-   * point was clear, else its centre at least) and out of the fixture in
-   * the cell its route has it in (the fixture's keep; a body whose raw
-   * point is already nearer than that is never moved nearer). One place
-   * for the page and the checks. */
-  var SP = { Walk: null, grid: null, F: null, m: [], home: [], keep: [] };
+   * (rx/rz their raw points), with the guard every push must pass: the
+   * body, at its full half-width, against every wall and every solid
+   * fixture's drawn body within a cell of its raw point (Walk's
+   * keep-outs) — so a resident at a café table, whose place is just
+   * outside the table's cell, is still kept out of the table top. A body
+   * clear of something stays clear of it; one already nearer than that is
+   * never moved nearer. The cell the raw point is in counts as open
+   * ground (a door). One place for the page and the checks. */
+  var SP = { Walk: null, grid: null, K: [], t0: [], t1: [], home: [] };
   function spaceOk(k, x, z) {
-    return SP.Walk.clearAt(SP.grid, x, z, SP.m[k], SP.home[k], SP.keep[k]);
+    return SP.Walk.cellOpen(SP.grid, x, z, SP.home[k]) &&
+      SP.Walk.keepClear(SP.K, SP.t0[k], SP.t1[k], x, z);
   }
   function space(Walk, grid, fixAt, F, n) {
     for (var k = n; k < F.layer.length; k++) F.layer[k] = -1;
     if (grid) {
+      var K = SP.K, t = 0;
       for (k = 0; k < n; k++) {
-        var x = F.rx[k], z = F.rz[k];
+        SP.t0[k] = t;
+        if (F.layer[k] < 0) { SP.t1[k] = t; continue; }
+        var x = F.rx[k], z = F.rz[k], m = F.r[k];
         var hx = Math.floor(x), hz = Math.floor(z);
-        var home = hz * grid.W + hx;
-        var m = Walk.clearAt(grid, x, z, F.r[k], home) ? F.r[k] : 0;
-        var keep = 0;
-        if (grid.solid[home] && hx >= 0 && hx < grid.W) {
-          keep = keepAt(fixAt, hx, hz);
-          var box = Math.max(Math.abs(x - hx - 0.5), Math.abs(z - hz - 0.5));
-          keep = Math.max(0, Math.min(keep, box - m));
+        var home = hx >= 0 && hx < grid.W && hz >= 0 && hz < grid.H
+          ? hz * grid.W + hx : -1;
+        SP.home[k] = home;
+        t = Walk.groundKeepOuts(grid, K, t, x, z, m, home, 1);
+        for (var y = hz - 1; y <= hz + 1; y++) {
+          if (y < 0 || y >= grid.H) continue;
+          for (var c = hx - 1; c <= hx + 1; c++) {
+            if (c < 0 || c >= grid.W || !grid.solid[y * grid.W + c]) continue;
+            var b = bodyAt(fixAt, c, y);
+            if (!b) continue;
+            t = Walk.keepOut(K, t, b[0], c + 0.5, y + 0.5, b[1], m + BODY_GAP, x, z);
+          }
         }
-        SP.m[k] = m; SP.home[k] = home; SP.keep[k] = keep;
+        SP.t1[k] = t;
       }
-      SP.Walk = Walk; SP.grid = grid; SP.F = F;
+      SP.Walk = Walk; SP.grid = grid;
     }
     return Walk.separate(F, n, { iters: 8, pad: 0.06, maxOff: 0.5,
                                  ok: grid ? spaceOk : null });
@@ -253,7 +281,8 @@
    * nowhere to go, or they stay on their tile and the page never saw them
    * stand anywhere else on it. `{route, fallback}` otherwise; a missing path falls
    * back to the straight line and says so. */
-  function route(Walk, grid, p, tx, tz, prev, door) {
+  var ROUND_GAP = 0.005;
+  function route(Walk, grid, p, tx, tz, prev, door, fixAt) {
     var scx, scy, sx, sz;
     if (door) {
       scx = door.x; scy = door.y;
@@ -275,8 +304,22 @@
       if (scx === tcx && scy === tcy) cells = [scx, scy];
       else cells = Walk.findPath(grid, scx, scy, tcx, tcy);
     }
-    if (cells) return { route: Walk.routePoints(cells, sx, sz, tx, tz),
-                        fallback: false, from: [scx, scy] };
+    if (cells) {
+      var r = Walk.routePoints(cells, sx, sz, tx, tz);
+      /* a slot at a lamp or a tree is on its own cell, so the first leg
+       * (leaving one) or the last (going to one) may run through the pole
+       * or the trunk: bent round it */
+      if (Walk.around && fixAt) {
+        [[scx, scy], [tcx, tcy]].forEach(function (cc, i) {
+          if (i === 1 && cc[0] === scx && cc[1] === scy) return;
+          var f = fixAt[cc[0] + ',' + cc[1]];
+          var b = f && grid.solid[cc[1] * grid.W + cc[0]] && bodyAt(fixAt, cc[0], cc[1]);
+          if (!b || b[0] !== 1) return;
+          r = Walk.around(r, cc[0] + 0.5, cc[1] + 0.5, b[1] + R + ROUND_GAP);
+        });
+      }
+      return { route: r, fallback: false, from: [scx, scy] };
+    }
     return { route: Walk ? Walk.straight(sx, sz, tx, tz)
                          : { xs: [sx, tx], zs: [sz, tz], cum: [0, 1], n: 2,
                              total: Math.hypot(tx - sx, tz - sz) },
@@ -392,10 +435,11 @@
   var api = {
     R: R, GAP: GAP, KEEP: KEEP, SEAT_STEP: SEAT_STEP, END: END,
     benchFacing: benchFacing, bench: bench, fixtureMap: fixtureMap,
+    BODY: BODY, BODY_GAP: BODY_GAP,
     okAt: okAt, keepAt: keepAt, place: place, route: route, space: space,
     queue: queue, fit: fit, QUEUE_MS: QUEUE_MS,
     STEP_H: STEP_H, FOOT: FOOT, RAMP: RAMP, doorFace: doorFace,
-    steps: steps, lift: lift, faceTable: faceTable,
+    steps: steps, doorStep: doorStep, lift: lift, faceTable: faceTable,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.EstateCrowd = api;

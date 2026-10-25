@@ -547,6 +547,124 @@
     return true;
   }
 
+  /* Keep-outs: the per-frame push's guard as shapes, for `separate`'s
+   * `ok`. A body is checked against every wall, water cell and fixture
+   * near its raw point (the point its walk has it at this frame) at its
+   * full half-width — not just its centre once it touches something, and
+   * not only against the cell its centre happens to be in. Each keep-out
+   * is a box (`h` its half-size about cx, cz; KEEP_BOX) or a disk (`h` its
+   * radius; KEEP_DISK) and `need`, how far the body's centre must stay
+   * from its edge: the body's half-width (with any margin the caller
+   * adds) — or, when its raw point is already nearer than that, no nearer
+   * than its raw point. So a push may slide a body along a wall it grazes,
+   * or away from a pole it stands too close to, but can never take it
+   * further into a wall, the water or a fixture than its walk had it.
+   * Five numbers each in a flat array the caller reuses: no allocation in
+   * the frame. */
+  var KEEP_BOX = 0, KEEP_DISK = 1;
+  /* signed distance from (x, z) to a keep-out's edge (negative inside) */
+  function edgeDist(type, cx, cz, h, x, z) {
+    var dx = Math.abs(x - cx), dz = Math.abs(z - cz);
+    if (type === KEEP_DISK) return Math.sqrt(dx * dx + dz * dz) - h;
+    var ex = dx - h, ez = dz - h;
+    if (ex <= 0 && ez <= 0) return Math.max(ex, ez);
+    var ox = ex > 0 ? ex : 0, oz = ez > 0 ? ez : 0;
+    return Math.sqrt(ox * ox + oz * oz);
+  }
+  /* add one keep-out at K[t..t+4] for a body whose raw point is (rx, rz);
+   * returns the next free index */
+  function keepOut(K, t, type, cx, cz, h, need, rx, rz) {
+    K[t] = type; K[t + 1] = cx; K[t + 2] = cz; K[t + 3] = h;
+    K[t + 4] = Math.min(need, edgeDist(type, cx, cz, h, rx, rz));
+    return t + 5;
+  }
+  /* the ground's keep-outs round raw point (gx, gz), in grid units: every
+   * cell within `near` of the cell it is in that is off the grid or not
+   * walkable, a whole-cell box, other than `home` (the cell its walk has it
+   * in: a door, a cell that is all water). Solid fixtures are the
+   * caller's: it knows their shapes. */
+  function groundKeepOuts(g, K, t, gx, gz, m, home, near) {
+    var hx = Math.floor(gx), hz = Math.floor(gz);
+    for (var z = hz - near; z <= hz + near; z++) {
+      for (var x = hx - near; x <= hx + near; x++) {
+        var off = x < 0 || z < 0 || x >= g.W || z >= g.H;
+        var i = z * g.W + x;
+        if (!off && (i === home || g.base[i])) continue;
+        t = keepOut(K, t, KEEP_BOX, x + 0.5, z + 0.5, 0.5, m, gx, gz);
+      }
+    }
+    return t;
+  }
+  /* is (x, z)'s own cell open ground on the grid, or `home`? (the
+   * keep-outs' edges, exactly: a body whose raw point is on a cell's edge
+   * may be kept no further than the edge, and rounding must not then put
+   * its centre over it) */
+  function cellOpen(g, x, z, home) {
+    var cx = Math.floor(x), cz = Math.floor(z);
+    if (cx < 0 || cz < 0 || cx >= g.W || cz >= g.H) return false;
+    var i = cz * g.W + cx;
+    return i === home || !!g.base[i];
+  }
+  /* is (x, z) clear of the keep-outs K[t0..t1)? */
+  function keepClear(K, t0, t1, x, z) {
+    for (var i = t0; i < t1; i += 5) {
+      if (edgeDist(K[i], K[i + 1], K[i + 2], K[i + 3], x, z) < K[i + 4]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /* A route's first or last leg may end beside a pole or a trunk on the
+   * far side of it (a walk to a lamp's slot, or away from one): the
+   * router ends a route on the slot itself, so the leg from the next cell
+   * runs straight through the fixture. `around` bends every leg of the
+   * route that passes nearer than `rho` to (cx, cz) round it instead:
+   * along the tangent, an arc the shorter way round, and the tangent off
+   * again, each chord short enough to stay `rho` clear. Legs that start
+   * or end inside `rho` are left alone (the router put them there). Pure;
+   * returns the route itself when nothing needs bending. */
+  var ARC_STEP = Math.PI / 6;
+  function segDist(ax, az, bx, bz, cx, cz) {
+    var vx = bx - ax, vz = bz - az, l2 = vx * vx + vz * vz;
+    var t = l2 > 1e-12 ? ((cx - ax) * vx + (cz - az) * vz) / l2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(ax + vx * t - cx, az + vz * t - cz);
+  }
+  function around(route, cx, cz, rho) {
+    var xs = route.xs, zs = route.zs, n = route.n;
+    var rr = rho / Math.cos(ARC_STEP / 2);
+    var ox = [xs[0]], oz = [zs[0]], bent = false;
+    for (var i = 1; i < n; i++) {
+      var ax = xs[i - 1], az = zs[i - 1], bx = xs[i], bz = zs[i];
+      var da = Math.hypot(ax - cx, az - cz), db = Math.hypot(bx - cx, bz - cz);
+      if (da < rho - 1e-9 || db < rho - 1e-9 ||
+          segDist(ax, az, bx, bz, cx, cz) >= rho - 1e-9) {
+        ox.push(bx); oz.push(bz);
+        continue;
+      }
+      var aa = Math.atan2(az - cz, ax - cx), ab = Math.atan2(bz - cz, bx - cx);
+      var ta = Math.acos(Math.min(1, rr / Math.max(da, rr)));
+      var tb = Math.acos(Math.min(1, rr / Math.max(db, rr)));
+      var best = null;
+      for (var s = -1; s <= 1; s += 2) {
+        var from = aa + s * ta, to = ab - s * tb;
+        var sweep = s * (to - from);
+        sweep = ((sweep % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+        if (sweep > 2 * Math.PI - 1e-9) sweep = 0;
+        if (!best || sweep < best.sweep) best = { s: s, from: from, sweep: sweep };
+      }
+      var steps = Math.max(1, Math.ceil(best.sweep / ARC_STEP - 1e-9));
+      for (var k = 0; k <= steps; k++) {
+        var ang = best.from + best.s * best.sweep * (k / steps);
+        ox.push(cx + Math.cos(ang) * rr); oz.push(cz + Math.sin(ang) * rr);
+      }
+      ox.push(bx); oz.push(bz);
+      bent = true;
+    }
+    return bent ? cumulative(ox, oz) : route;
+  }
+
   /* Push overlapping figures apart. `F` holds parallel arrays, `n` long:
    *   rx, rz   where each figure would be drawn alone (read only)
    *   x, z     where it is drawn (written)
@@ -746,6 +864,9 @@
     WALK_CPS: WALK_CPS,
     pack: pack,
     clearAt: clearAt,
+    KEEP_BOX: KEEP_BOX, KEEP_DISK: KEEP_DISK,
+    edgeDist: edgeDist, keepOut: keepOut, groundKeepOuts: groundKeepOuts,
+    cellOpen: cellOpen, keepClear: keepClear, around: around,
     separate: separate,
     minGap: minGap,
     figures: figures,

@@ -21,6 +21,11 @@
  *             a ring of places round it (where a crowd stands), at 60
  *             frames a second at walking pace: feet never below the step
  *             under them, and never rising more than MAX_RISE in a frame.
+ *             That bound is for walking pace (PACE, 4 cells a second) only:
+ *             a walk the page squeezes into a short visit (Walk.duration,
+ *             Crowd.fit) covers more ground a frame, and rises at most
+ *             MAX_SLOPE times that — which is what the scan holds the
+ *             ground to, at any pace.
  *
  * It reports how many of those frames had feet inside a step before the
  * lift, so the gain is visible, not just asserted.
@@ -49,7 +54,10 @@ const MAX_STEP = 0.08;
 const FOOT_O = 0.08;
 /* the ground underfoot rises no faster than this (height per cell) */
 const MAX_SLOPE = 0.5;
-/* walking pace (walk.js: 4 cells a second) at 60 frames a second */
+/* walking pace (walk.js: 4 cells a second) at 60 frames a second, and
+ * the most feet may rise in one such frame (the page's ramp, a step over
+ * 0.22 of a cell, rises under 0.02 a frame at this pace); a faster walk is
+ * held only to MAX_SLOPE, by the scan */
 const PACE = 4.0 / 60;
 const MAX_RISE = 0.03;
 const REACH = 5;

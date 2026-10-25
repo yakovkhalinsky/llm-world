@@ -514,17 +514,22 @@ export function createWorld(ground, canvas, opts) {
     if (face.axis === 'z') {
       addBox(g, doorMat, doorW, doorH, 0.08,
              along, TILE_TOP + doorH / 2, out).castShadow = false;
-      addBox(g, stepMat, doorW + 0.24, STEP_H, 0.34,
-             along, TILE_TOP + STEP_H / 2, face.at + face.sign * 0.21);
       addBox(g, roofMat, doorW + 0.34, 0.06, 0.36,
              along, TILE_TOP + doorH + 0.2, face.at + face.sign * 0.16);
     } else {
       addBox(g, doorMat, 0.08, doorH, doorW,
              out, TILE_TOP + doorH / 2, along).castShadow = false;
-      addBox(g, stepMat, 0.34, STEP_H, doorW + 0.24,
-             face.at + face.sign * 0.21, TILE_TOP + STEP_H / 2, along);
+
       addBox(g, roofMat, 0.36, 0.06, doorW + 0.34,
              face.at + face.sign * 0.16, TILE_TOP + doorH + 0.2, along);
+    }
+
+    /* the step is the one people are lifted onto (Crowd.steps), drawn
+     * from the same rectangle so the two cannot drift apart */
+    const st = Crowd ? Crowd.doorStep(b) : null;
+    if (st) {
+      addBox(g, stepMat, st.x1 - st.x0, STEP_H, st.z1 - st.z0,
+             (st.x0 + st.x1) / 2, TILE_TOP + STEP_H / 2, (st.z0 + st.z1) / 2);
     }
 
     /* a small lamp over the door, part of the same night as the street */
@@ -992,7 +997,7 @@ export function createWorld(ground, canvas, opts) {
          * move stays put. */
         const door = p.pin ? doorSpot(p.punit) : null;
         const got = Crowd ? Crowd.route(Walk, grid, p, toX[i], toZ[i],
-                                        spotWas, door)
+                                        spotWas, door, crowdFix)
                           : null;
         if (!got) continue;
         /* no path (or no router): the straight line the page used to draw,

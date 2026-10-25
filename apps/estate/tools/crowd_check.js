@@ -22,10 +22,16 @@
  *             0.82 top — their own table's included — and everyone at a
  *             table stands beside it facing its middle.
  *   scenes    small made-up places the day may never produce: a passer-by
- *             at a lamp from every side (the lamp-post case), two walkers
- *             meeting head-on a little to the wrong side (each must pass
- *             on its own right), a crowd in a one-wide corridor, ten
- *             people at a bench in a nook, fifteen at a lamp in a dead end.
+ *             at a lamp from every side (the lamp-post case), and at a
+ *             café table (whose resident stands off the table's cell, so
+ *             only a keep-out from the cells round them keeps them out of
+ *             its top); the walk to a lamp's or a tree's places from every
+ *             side (round the pole or the trunk, not through it); two
+ *             walkers meeting head-on a little to the wrong side (each
+ *             must pass on its own right), a crowd in a one-wide corridor,
+ *             twenty people at a two-seat bench in a nook (more standing
+ *             than its packed tile holds, so the overflow places are
+ *             tried), fifteen at a lamp in a dead end.
  *
  * It reports the closest pair before spacing and after, so the gain is
  * visible, not just asserted.
@@ -230,6 +236,82 @@ function scenes(Walk, Crowd, fails) {
     ran.push(`lamp ${cases}`);
   }
 
+  /* the café table: one resident at a table — their place is just off
+   * the table's cell, on the open cell beside it — and a passer-by
+   * brushing them from every side: nobody is pushed into the table top */
+  {
+    const S = setup(['#######', '#.....#', '#.....#', '#.....#', '#######'],
+                    [{ id: 1, kind: 'table', x: 3, y: 2 }]);
+    const s = Crowd.place(Walk, S.grid, [{ id: 7, x: 3, y: 2, in: false }], {}, S.fixAt);
+    const worst = freshWorst();
+    let tw = -Infinity;
+    const F = Walk.figures(null, 2);
+    let cases = 0;
+    for (let a = 0; a < 360; a += 3) {
+      for (let off = 0.15; off <= 0.4001; off += 0.025) {
+        const hx = Math.cos(a * Math.PI / 180), hz = Math.sin(a * Math.PI / 180);
+        const wx = s.x[0] - hz * off, wz = s.z[0] + hx * off;
+        /* a walk never runs through the table */
+        if (S.orc.inTable(wx, wz, R_BODY).d > 0) continue;
+        fig(F, 0, s.x[0], s.z[0], 0.5, 0, 0, 7);
+        fig(F, 1, wx, wz, 1, hx, hz, 8);
+        Crowd.space(Walk, S.grid, S.fixAt, F, 2);
+        judgeFrame(S.orc, F, 2, worst);
+        tw = Math.max(tw, S.orc.inTable(F.x[0], F.z[0], R_BODY).d);
+        cases++;
+      }
+    }
+    worstFails('table-passer', worst, fails);
+    if (tw > TOL_IN) {
+      fails.push(`table-passer: the resident at the table pushed ${tw.toFixed(3)} into its top`);
+    }
+    ran.push(`table-passer ${cases}`);
+  }
+
+  /* the walk to a lamp or a tree: its places are on its own cell, round
+   * the pole or the trunk, so the last leg from a neighbouring cell to a
+   * place on the far side must go round it, not through it — from every
+   * neighbour, to every place of one to four people there */
+  {
+    let routes = 0;
+    for (const kind of ['lamp', 'tree']) {
+      const S = setup(['#######', '#.....#', '#.....#', '#.....#', '#.....#', '#.....#', '#######'],
+                      [{ id: 1, kind, x: 3, y: 3 }]);
+      const st = { x: 0, z: 0, dx: 0, dz: 0, moving: false };
+      let deep = { d: -Infinity };
+      for (let N = 1; N <= 4; N++) {
+        const people = [];
+        for (let k = 0; k < N; k++) people.push({ id: 20 + k, x: 3, y: 3, in: false });
+        const s = Crowd.place(Walk, S.grid, people, {}, S.fixAt);
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue;
+            for (let k = 0; k < N; k++) {
+              const p = { id: 20 + k, x: 3, y: 3, px: 3 + dx, py: 3 + dy };
+              const got = Crowd.route(Walk, S.grid, p, s.x[k], s.z[k], {}, null, S.fixAt);
+              if (!got || got.fallback) {
+                fails.push(`${kind}-walk: no route from ${3 + dx},${3 + dy}`);
+                continue;
+              }
+              const r = got.route;
+              for (let t = 0; t <= r.total + 1e-9; t += 0.005) {
+                Walk.sample(r, Math.min(t, r.total), st);
+                const pe = S.orc.pen(st.x, st.z, R_BODY, -9, -9);
+                if (pe.into > deep.d) deep = { d: pe.into, at: [st.x, st.z], from: [3 + dx, 3 + dy] };
+              }
+              routes++;
+            }
+          }
+        }
+      }
+      if (deep.d > TOL_IN) {
+        fails.push(`${kind}-walk: a walk from ${deep.from} runs ${deep.d.toFixed(3)} ` +
+                   `into the ${kind} at ${deep.at.map(v => v.toFixed(3)).join(',')}`);
+      }
+    }
+    ran.push(`pole-walk ${routes}`);
+  }
+
   /* head-on, each a twentieth of a cell to the wrong side: they must
    * still pass on their own right (the estate keeps to the right) */
   {
@@ -323,7 +405,7 @@ function scenes(Walk, Crowd, fails) {
     ran.push(`${tag} ${N} (closest ${(placedGap * 100).toFixed(0)}%)`);
   };
   crowd('bench-nook', ['#####', '#...#', '##.##', '##.##', '#####'],
-        [{ id: 9, kind: 'bench', x: 2, y: 2, cap: 2 }], [2, 2], 10, true);
+        [{ id: 9, kind: 'bench', x: 2, y: 2, cap: 2 }], [2, 2], 20, true);
   crowd('lamp-dead-end', ['#####', '#####', '##.##', '##.##', '##.##', '#####'],
         [{ id: 5, kind: 'lamp', x: 2, y: 2 }], [2, 2], 15, false);
   return ran;
@@ -420,7 +502,7 @@ function check(ground, state) {
   for (const i of out) {
     const p = people[i];
     const got = Crowd.route(Walk, grid, p, spots.x[i], spots.z[i], {},
-                            p.pin ? doorOf(p.punit) : null);
+                            p.pin ? doorOf(p.punit) : null, fixAt);
     routes[i] = got ? got.route : null;
     durs[i] = got ? Walk.duration(got.route.total, dayMs) : 0;
     if (got && got.fallback) fallbacks++;

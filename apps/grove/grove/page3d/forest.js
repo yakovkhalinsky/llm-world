@@ -229,33 +229,30 @@
 
   /* The page's spacing for one frame: `Walk.separate` on F's n figures
    * (rx/rz their raw points, in cells; layer 0 the ground, 1 the air).
-   * Every push on the ground must pass the guard: open ground round the
-   * body (clearAt on the quartered grid, at its half-width when its raw
-   * point was clear, else its centre at least), and clear of every trunk
+   * Every push on the ground must pass the guard (Walk's keep-outs): the
+   * body, at its full half-width, clear of every water or off-map quarter
+   * near its raw point other than the one it is in, and of every trunk
    * near it, as a disk: TRUNK_KEEP plus the body's half-width from the
-   * trunk's middle — a body whose raw point is already nearer than that
-   * is never moved nearer. A flyer is kept over the map. One place for
-   * the page and the checks. */
-  var SP = { Walk: null, grid: null, F: null, N: 0, m: [], home: [],
-             t0: [], t1: [], T: [] };
+   * trunk's middle. A body clear of something stays clear of it; one
+   * already nearer than that (a walk's end in a trunk's quarter, a cell
+   * that is all water) is never moved nearer. A flyer is kept over the
+   * map. One place for the page and the checks. */
+  var SP = { Walk: null, grid: null, F: null, N: 0, t0: [], t1: [], K: [],
+             home: [] };
   function spaceOk(k, x, z) {
     if (SP.F.layer[k] === 1) {
       return x >= 0 && z >= 0 && x <= SP.N && z <= SP.N;
     }
-    var T = SP.T;
-    for (var i = SP.t0[k]; i < SP.t1[k]; i += 3) {
-      var dx = x - T[i], dz = z - T[i + 1];
-      if (dx * dx + dz * dz < T[i + 2] * T[i + 2]) return false;
-    }
-    return SP.Walk.clearAt(SP.grid, x * SUB, z * SUB, SP.m[k], SP.home[k]);
+    return SP.Walk.cellOpen(SP.grid, x * SUB, z * SUB, SP.home[k]) &&
+      SP.Walk.keepClear(SP.K, SP.t0[k], SP.t1[k], x * SUB, z * SUB);
   }
-  /* a push moves a body at most half a cell; the trunks that could then
-   * touch it are within two quarters of its raw quarter */
+  /* a push moves a body at most half a cell; the water and the trunks
+   * that could then touch it are within two quarters of its raw quarter */
   var NEAR = 2;
   function space(Walk, grid, F, n, N) {
     for (var k = n; k < F.layer.length; k++) F.layer[k] = -1;
     SP.Walk = Walk; SP.grid = grid; SP.F = F; SP.N = N;
-    var T = SP.T, t = 0;
+    var K = SP.K, t = 0;
     for (k = 0; k < n; k++) {
       SP.t0[k] = SP.t1[k] = t;
       /* a flyer hovering just past the edge comes back over the map */
@@ -265,21 +262,20 @@
         continue;
       }
       if (!grid) continue;
+      /* in quarters */
       var gx = F.rx[k] * SUB, gz = F.rz[k] * SUB;
       var hx = Math.floor(gx), hz = Math.floor(gz);
-      var home = hz * grid.W + hx;
-      var rc = Math.min(F.r[k], 0.2);
-      var r = rc * SUB;
-      SP.m[k] = Walk.clearAt(grid, gx, gz, r, home) ? r : 0;
+      var home = hx >= 0 && hx < grid.W && hz >= 0 && hz < grid.H
+        ? hz * grid.W + hx : -1;
       SP.home[k] = home;
+      var r = Math.min(F.r[k], 0.2) * SUB;
+      t = Walk.groundKeepOuts(grid, K, t, gx, gz, r, home, NEAR);
       for (var sz = hz - NEAR; sz <= hz + NEAR; sz++) {
         if (sz < 0 || sz >= grid.H) continue;
         for (var sx = hx - NEAR; sx <= hx + NEAR; sx++) {
           if (sx < 0 || sx >= grid.W || !grid.solid[sz * grid.W + sx]) continue;
-          var cx = (sx + 0.5) / SUB, cz = (sz + 0.5) / SUB;
-          var d = Math.sqrt((F.rx[k] - cx) * (F.rx[k] - cx) +
-                            (F.rz[k] - cz) * (F.rz[k] - cz));
-          T[t++] = cx; T[t++] = cz; T[t++] = Math.min(TRUNK_KEEP + rc, d);
+          t = Walk.keepOut(K, t, Walk.KEEP_DISK, sx + 0.5, sz + 0.5, 0,
+                           TRUNK_KEEP * SUB + r, gx, gz);
         }
       }
       SP.t1[k] = t;

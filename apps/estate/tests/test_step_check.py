@@ -131,10 +131,12 @@ class WorldUsesTheStepsTest(unittest.TestCase):
 
     def test_steps_are_drawn_one_step_high(self):
         self.assertIn("const STEP_H = Crowd ? Crowd.STEP_H : 0.06;", self.src)
-        self.assertEqual(self.src.count(
-            "addBox(g, stepMat, doorW + 0.24, STEP_H, 0.34,"), 1)
-        self.assertEqual(self.src.count(
-            "addBox(g, stepMat, 0.34, STEP_H, doorW + 0.24,"), 1)
+        # a door's step is drawn from crowd.js's own rectangle (the one
+        # people are lifted onto), not from numbers of its own
+        self.assertIn("const st = Crowd ? Crowd.doorStep(b) : null;", self.src)
+        self.assertEqual(self.src.count("addBox(g, stepMat,"), 1)
+        self.assertIn("addBox(g, stepMat, st.x1 - st.x0, STEP_H, st.z1 - st.z0,",
+                      self.src)
         self.assertIn("addBox(g, wood.mat, 0.9, STEP_H, 0.9, 0, STEP_H / 2, 0);",
                       self.src)
         self.assertNotIn("0.85, 0.5, 0.85", self.src)

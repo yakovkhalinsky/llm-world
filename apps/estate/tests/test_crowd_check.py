@@ -82,9 +82,37 @@ def _ignore_ok(src):
 
 
 def _no_frame_keep(src):
-    """crowd.js whose per-frame push forgets the fixture keep-out (the
-    lamp-post case): placing still keeps it."""
-    return _swap(src, "SP.keep[k] = keep;", "SP.keep[k] = 0;")
+    """crowd.js whose per-frame push forgets every fixture's body (the
+    lamp-post case): placing still keeps them."""
+    return _swap(src, "            t = Walk.keepOut(K, t, b[0], c + 0.5, "
+                 "y + 0.5, b[1], m + BODY_GAP, x, z);\n", "")
+
+
+def _no_frame_table(src):
+    """crowd.js whose per-frame push has no body for a table (the café
+    table case: the resident stands off the table's cell); placing still
+    keeps clear of it."""
+    return _swap(src, "table: [0, 0.41]", "table: [0, 0]")
+
+
+def _centre_only(src):
+    """crowd.js whose per-frame push keeps only a body's centre out of the
+    walls, not its edge (someone grazing a wall pushed into it)."""
+    return _swap(src, "Walk.groundKeepOuts(grid, K, t, x, z, m, home, 1)",
+                 "Walk.groundKeepOuts(grid, K, t, x, z, 0, home, 1)")
+
+
+def _no_round_pole(src):
+    """crowd.js whose walk to a lamp's or a tree's place runs straight
+    through the pole or the trunk."""
+    return _swap(src, "      if (Walk.around && fixAt) {", "      if (false) {")
+
+
+def _no_overflow_ok(src):
+    """crowd.js whose standers past a full bench's places go wherever
+    the packing puts them, walls or no walls."""
+    return _swap(src, "        return okAt(Walk, grid, fixAt, x, z, b.cx, b.cy);\n",
+                 "        return true;\n")
 
 
 def _no_table_keep(src):
@@ -143,8 +171,8 @@ class CrowdCheckTest(unittest.TestCase):
 
     def test_the_scenes_ran(self):
         out = self._run().stdout
-        for tag in ("lamp", "head-on", "corridor", "bench-nook 10",
-                    "lamp-dead-end 15"):
+        for tag in ("lamp", "table-passer", "pole-walk", "head-on",
+                    "corridor", "bench-nook 20", "lamp-dead-end 15"):
             self.assertIn(tag, out)
 
     def test_without_spacing_the_check_fails(self):
@@ -180,6 +208,25 @@ class CrowdCheckTest(unittest.TestCase):
         out = self._mutant(_no_frame_keep, CROWD, "PAGE3D_CROWD")
         self.assertIn("FAIL lamp: ", out)
         self.assertIn("into the lamp@2,2", out)
+
+    def test_a_push_into_the_cafe_table_fails(self):
+        out = self._mutant(_no_frame_table, CROWD, "PAGE3D_CROWD")
+        self.assertIn("FAIL table-passer: 7 pushed", out)
+        self.assertIn("into the table@3,2", out)
+
+    def test_a_push_of_an_edge_into_a_wall_fails(self):
+        out = self._mutant(_centre_only, CROWD, "PAGE3D_CROWD")
+        self.assertIn("into a wall or the water", out)
+
+    def test_a_walk_through_the_pole_fails(self):
+        out = self._mutant(_no_round_pole, CROWD, "PAGE3D_CROWD")
+        self.assertIn("FAIL lamp-walk", out)
+        self.assertIn("FAIL tree-walk", out)
+
+    def test_bench_overflow_in_the_wall_fails(self):
+        out = self._mutant(_no_overflow_ok, CROWD, "PAGE3D_CROWD")
+        self.assertIn("FAIL bench-nook: ", out)
+        self.assertIn("into a wall", out)
 
     def test_a_push_that_ignores_the_ground_fails(self):
         out = self._mutant(_ignore_ok, WALK, "PAGE3D_WALK")
