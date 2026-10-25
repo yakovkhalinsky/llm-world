@@ -145,6 +145,21 @@ class WaterOnEverySeed(unittest.TestCase):
                 self.assertEqual(out.returncode, 0, out.stderr)
                 self.assertIn(f"{size}×{size}", out.stdout)
 
+    def test_a_map_too_small_is_refused(self):
+        # a 1×1 map divided by zero; it is refused, the CLI says so
+        with self.assertRaises(ValueError):
+            gen.generate(3, 1)
+        self.assertEqual(gen.generate(3, gen.MIN_SIZE)["size"], gen.MIN_SIZE)
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            out = subprocess.run(
+                [sys.executable, "-m", "grove", "--data", d, "new",
+                 "--seed", "3", "--size", "1"],
+                cwd=ROOT, env=dict(os.environ, PYTHONPATH=ROOT),
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            self.assertEqual(out.returncode, 2, out.stderr)
+            self.assertIn("at least 2×2", out.stderr)
+
     def test_land_is_one_piece_four_ways(self):
         # the page walks four ways and never cuts a corner between two
         # water cells, so the land must join up four ways, at every size
@@ -204,6 +219,37 @@ class WaterOnEverySeed(unittest.TestCase):
                     self.assertNotIn("ford", c)
                     self.assertNotIn("water", c)
         self.assertEqual(rules.active_biome(), "grove")
+
+
+class WetMeadows(unittest.TestCase):
+    """The damp hollows stay open grazing: no tree is planted in one, and
+    none but the shore tree may seed or come back from the bank there."""
+
+    def test_hollows_are_planted_without_trees(self):
+        kinds = {sp: s["kind"] for sp, s in rules.R["plants"].items()}
+        damp = trees_in_damp = 0
+        for seed in range(1, 31):
+            st = gen.generate(seed)
+            cells = st["cells"]
+            damp += sum(1 for row in cells for c in row if c.get("damp"))
+            for p in st["plants"].values():
+                c = cells[p["y"]][p["x"]]
+                if c.get("damp") and kinds[p["sp"]] == "tree":
+                    trees_in_damp += 1
+        self.assertGreater(damp, 0)
+        self.assertEqual(trees_in_damp, 0)
+
+    def test_only_the_shore_tree_roots_in_a_hollow(self):
+        from grove.engine import plants
+        P = rules.R["plants"]
+        wet, dry = {"terrain": "soil", "damp": 1}, {"terrain": "soil"}
+        self.assertTrue(plants._waterlogged(wet, P["pine"]))
+        self.assertTrue(plants._waterlogged(wet, P["birch"]))
+        self.assertFalse(plants._waterlogged(wet, P["willow"]))
+        self.assertFalse(plants._waterlogged(wet, P["fern"]))
+        self.assertFalse(plants._waterlogged(wet, P["berry"]))
+        for sp in P:
+            self.assertFalse(plants._waterlogged(dry, P[sp]))
 
 
 class Drinking(unittest.TestCase):

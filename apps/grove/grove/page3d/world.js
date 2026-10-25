@@ -113,56 +113,11 @@ function colourOf(hex, fallback) {
 
 /* ------------------------------------------------------------- batches */
 
-/* An instanced mesh that grows: a forest gains and loses trees, so the
- * capacity doubles when it must and the count is set every rebuild. */
+/* An instanced mesh that grows (forest.js `batch`, where the tests can
+ * reach it with a stub THREE): past its capacity mid-build it doubles and
+ * keeps what it has. */
 function makeBatch(scene, geo, mat, cap, opts) {
-  const b = { mesh: null, cap: 0, n: 0, owner: [] };
-  function alloc(c) {
-    if (b.mesh) { scene.remove(b.mesh); b.mesh.dispose(); }
-    b.cap = c;
-    b.mesh = new THREE.InstancedMesh(geo, mat, c);
-    b.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    b.mesh.castShadow = !(opts && opts.noShadow);
-    b.mesh.receiveShadow = !!(opts && opts.receive);
-    b.mesh.frustumCulled = false;
-    b.mesh.count = 0;
-    b.mesh.setColorAt(0, _c1.setRGB(1, 1, 1));
-    scene.add(b.mesh);
-  }
-  alloc(Math.max(8, cap));
-  /* past its capacity mid-build, a batch doubles and keeps what it has:
-   * nothing added is ever dropped */
-  function grow() {
-    const old = b.mesh, had = b.n;
-    b.mesh = null;                  // alloc must not dispose it yet
-    alloc(b.cap * 2);
-    b.mesh.instanceMatrix.array.set(
-      old.instanceMatrix.array.subarray(0, had * 16));
-    if (old.instanceColor && b.mesh.instanceColor) {
-      b.mesh.instanceColor.array.set(
-        old.instanceColor.array.subarray(0, had * 3));
-    }
-    scene.remove(old);
-    old.dispose();
-  }
-  b.begin = n => {
-    if (n > b.cap) alloc(Math.max(n, b.cap * 2));
-    b.n = 0;
-    b.owner.length = 0;
-  };
-  b.add = (matrix, colour, owner) => {
-    if (b.n >= b.cap) grow();
-    b.mesh.setMatrixAt(b.n, matrix);
-    b.mesh.setColorAt(b.n, colour);
-    b.owner[b.n] = owner;
-    b.n++;
-  };
-  b.end = () => {
-    b.mesh.count = b.n;
-    b.mesh.instanceMatrix.needsUpdate = true;
-    if (b.mesh.instanceColor) b.mesh.instanceColor.needsUpdate = true;
-  };
-  return b;
+  return Forest.batch(THREE, scene, geo, mat, cap, opts);
 }
 
 function place(x, y, z, sx, sy, sz, yaw, out) {

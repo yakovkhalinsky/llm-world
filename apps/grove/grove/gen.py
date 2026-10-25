@@ -328,9 +328,15 @@ def join_land(cells, size):
             p = prev[p]
 
 
+MIN_SIZE = 2   # a 1×1 map has no span to spread its noise over
+
+
 def generate(seed: int, size: int = None, biome: str = None) -> dict:
     rng = W.rng_for(seed, 0, "gen")
     size = size or rules.R["world"]["size"]
+    if size < MIN_SIZE:
+        raise ValueError(f"a grove is at least {MIN_SIZE}×{MIN_SIZE}, "
+                         f"not {size}×{size}")
     gr = rules.R["gen"]
     st = W.new_state(seed, size)
     if biome:
@@ -359,7 +365,8 @@ def generate(seed: int, size: int = None, biome: str = None) -> dict:
             row.append(cell)
         cells.append(row)
 
-    # normalize elevation to 0..1 for thresholds
+    # normalize elevation: the water line is 0 and the rock line 1, so
+    # water and the damp hollows sit a little below 0 and rock above 1
     vals = sorted(v for row in elev for v in row)
     q = lambda p: vals[int(p * (len(vals) - 1))]
     e_lo, e_hi = q(gr["water_quantile"]), q(gr["rock_quantile"])
@@ -368,8 +375,12 @@ def generate(seed: int, size: int = None, biome: str = None) -> dict:
             e = elev[y][x]
             if e <= e_lo and (gr.get("creeks", 0) or gr.get("ponds")):
                 # a pack with a creek and dug ponds has no other water: the
-                # lowest ground is a damp hollow the pond will likely take
+                # lowest ground is a damp hollow, a wet meadow where the
+                # ground is too waterlogged for trees to root (only the
+                # shore tree may seed in later), so it stays open grazing
+                # (its elev sits just below 0, the bottom of the land)
                 cells[y][x]["terrain"] = "soil"
+                cells[y][x]["damp"] = 1
             elif e <= e_lo:
                 cells[y][x]["terrain"] = "water"
                 water_cells.append((x, y))
@@ -428,7 +439,7 @@ def generate(seed: int, size: int = None, biome: str = None) -> dict:
             cluster = (elev[y][x] + wet[y][x]) / 2
             p_tree = 0.0
             if c["moisture"] > gr["p_tree_moisture_min"] and \
-                    c["fert"] > gr["p_tree_fert_min"]:
+                    c["fert"] > gr["p_tree_fert_min"] and not c.get("damp"):
                 p_tree = gr["p_tree_base"] + gr["p_tree_slope"] * \
                     (cluster - 0.1)
             if rng.random() < p_tree:

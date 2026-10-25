@@ -65,7 +65,8 @@
    *  - paths: from each ford, four cells out either side, square to the
    *    creek; nothing grows on them but the ferns at their edge and logs;
    *  - clearings: a few 3×3 glades, by a hash of the cell and the world,
-   *    five cells apart, holding logs and a fern or two;
+   *    five cells apart, holding logs and a fern or two (at least one
+   *    wherever a cell two in from the edge is open land);
    *  - banks (land beside water): only weeping trees stand there, so the
    *    water can be seen;
    *  - elsewhere at most one standing tree in a cell (the old one first,
@@ -122,22 +123,31 @@
     }
     var seed = Number(st.seed) | 0;
     var most = Math.max(1, Math.floor(N * N / CLEAR_EVERY));
+    function glade(x, y) {
+      centres.push([x, y]);
+      for (var cy = y - 1; cy <= y + 1; cy++) {
+        for (var cx = x - 1; cx <= x + 1; cx++) {
+          if (!isWater(st, cx, cy)) clear[cx + ',' + cy] = 1;
+        }
+      }
+    }
+    /* a small map may draw no glade by the hash: it then gets one, at the
+     * open cell whose hash is lowest (none only when no cell is open) */
+    var best = null, bestH = 0;
     for (y = 2; y < N - 2 && centres.length < most; y++) {
       for (x = 2; x < N - 2 && centres.length < most; x++) {
         if (isWater(st, x, y) || bank[x + ',' + y] || path[x + ',' + y]) continue;
-        if (hash(x * 977 + y * 131, 7001 + seed) % CLEAR_EVERY > 2) continue;
+        var h = hash(x * 977 + y * 131, 7001 + seed) % CLEAR_EVERY;
+        if (!best || h < bestH) { best = [x, y]; bestH = h; }
+        if (h > 2) continue;
         var near = centres.some(function (q) {
           return Math.max(Math.abs(q[0] - x), Math.abs(q[1] - y)) < 5;
         });
         if (near) continue;
-        centres.push([x, y]);
-        for (var cy = y - 1; cy <= y + 1; cy++) {
-          for (var cx = x - 1; cx <= x + 1; cx++) {
-            if (!isWater(st, cx, cy)) clear[cx + ',' + cy] = 1;
-          }
-        }
+        glade(x, y);
       }
     }
+    if (!centres.length && best) glade(best[0], best[1]);
     return { bank: bank, path: path, clear: clear, centres: centres };
   }
 
@@ -172,6 +182,7 @@
       standing[key] = 1;
       ids[p.id] = 1;
     });
+    unseal(st, ids);
     plants.forEach(function (p) {
       var key = p.x + ',' + p.y;
       var kind = kindOf(st, p.sp);
@@ -248,6 +259,81 @@
     return Object.keys(hit).map(Number).sort(function (a, b) { return a - b; });
   }
 
+  /* The trunks must never wall land off from the router (walk.js: four
+   * ways over the quarters, soil and rock open, water shut). Two trunks on
+   * a diagonal across a one-cell neck can, so: place the trunks, flood the
+   * quarters from the largest open piece, and while some land is cut off,
+   * drop the unnamed tree whose trunk closes the gap (one touching both the
+   * piece and the cut-off ground, else any touching the cut-off ground;
+   * lowest id first) and look again. Named trees always stand. Edits `ids`
+   * in place. */
+  function unseal(st, ids) {
+    var N = Number(st.size) | 0, G = N * SUB, n = G * G;
+    var byId = {};
+    (st.plants || []).forEach(function (p) { byId[p.id] = p; });
+    var ground = new Uint8Array(n);
+    for (var i = 0; i < n; i++) {
+      var gx = i % G, gy = (i - gx) / G;
+      var c = st.cells[((gy / SUB) | 0) * N + ((gx / SUB) | 0)];
+      ground[i] = c && c[0] === 'w' ? 0 : 1;
+    }
+    var nb = function (i, f) {
+      var x = i % G, y = (i - x) / G;
+      if (x > 0) f(i - 1);
+      if (x < G - 1) f(i + 1);
+      if (y > 0) f(i - G);
+      if (y < G - 1) f(i + G);
+    };
+    for (var round = 0; round < 64; round++) {
+      var fx = placeTrunks(st, ids).fixtures;
+      var solid = new Int32Array(n);
+      fx.forEach(function (f) { solid[f.y * G + f.x] = f.id + 1; });
+      /* the open pieces, and the largest */
+      var part = new Int32Array(n), sizes = [0], big = 0;
+      for (var s0 = 0; s0 < n; s0++) {
+        if (!ground[s0] || solid[s0] || part[s0]) continue;
+        var id = sizes.length, todo = [s0], k = 0;
+        part[s0] = id;
+        while (todo.length) {
+          nb(todo.pop(), function (j) {
+            if (ground[j] && !solid[j] && !part[j]) { part[j] = id; todo.push(j); }
+          });
+          k++;
+        }
+        sizes.push(k);
+        if (k > sizes[big]) big = id;
+      }
+      /* land cells with no quarter in the largest piece */
+      var cut = false;
+      for (var cy = 0; cy < N && !cut; cy++) {
+        for (var cx = 0; cx < N && !cut; cx++) {
+          var cc = st.cells[cy * N + cx];
+          if (!cc || cc[0] === 'w') continue;
+          var ok = false;
+          for (var q = 0; q < SUB * SUB; q++) {
+            if (part[(cy * SUB + (q / SUB | 0)) * G + cx * SUB + q % SUB] === big) ok = true;
+          }
+          if (!ok) cut = true;
+        }
+      }
+      if (!cut) return;
+      var both = [], any = [];
+      fx.forEach(function (f) {
+        var p = byId[f.id];
+        if (!p || p.n) return;
+        var inBig = false, outside = false;
+        nb(f.y * G + f.x, function (j) {
+          if (!ground[j] || solid[j]) return;
+          if (part[j] === big) inBig = true; else outside = true;
+        });
+        if (outside) (inBig ? both : any).push(f.id);
+      });
+      var pick = (both.length ? both : any).sort(function (a, b) { return a - b; })[0];
+      if (pick === undefined) return;     /* only named trees: they stand */
+      delete ids[pick];
+    }
+  }
+
   /* Every standing tree takes one quarter of its cell for its trunk: the
    * one its id hashes to, or the next free one round the cell. The trees
    * are placed in id order, so who gets which quarter never depends on the
@@ -256,11 +342,14 @@
    * trees the page draws (`drawn`) stand: a creature never walks round a
    * tree that is not there. */
   function trunks(st) {
+    return placeTrunks(st, drawn(st).ids);
+  }
+
+  function placeTrunks(st, shown) {
     var N = Number(st.size) | 0;
     var taken = {};
     var fixtures = [];
     var at = {};
-    var shown = drawn(st).ids;
     var trees = (st.plants || []).filter(function (p) {
       return STANDING[p.st] && kindOf(st, p.sp) === 'tree' && shown[p.id];
     }).sort(function (a, b) { return a.id - b.id; });
@@ -504,6 +593,61 @@
     return out;
   }
 
+  /* An instanced mesh that grows, for the page (world.js makeBatch): a
+   * forest gains and loses trees, so the capacity doubles when it must and
+   * the count is set every rebuild. Past its capacity mid-build a batch
+   * doubles and copies what it has (matrices and colours) into the new
+   * mesh: nothing added is ever dropped. THREE is passed in, so the check
+   * can hold this to that with a stub. */
+  function batch(THREE, scene, geo, mat, cap, opts) {
+    var b = { mesh: null, cap: 0, n: 0, owner: [] };
+    var white = new THREE.Color(1, 1, 1);
+    function alloc(c) {
+      if (b.mesh) { scene.remove(b.mesh); b.mesh.dispose(); }
+      b.cap = c;
+      b.mesh = new THREE.InstancedMesh(geo, mat, c);
+      b.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      b.mesh.castShadow = !(opts && opts.noShadow);
+      b.mesh.receiveShadow = !!(opts && opts.receive);
+      b.mesh.frustumCulled = false;
+      b.mesh.count = 0;
+      b.mesh.setColorAt(0, white);
+      scene.add(b.mesh);
+    }
+    alloc(Math.max(8, cap));
+    function grow() {
+      var old = b.mesh, had = b.n;
+      b.mesh = null;                  // alloc must not dispose it yet
+      alloc(b.cap * 2);
+      b.mesh.instanceMatrix.array.set(
+        old.instanceMatrix.array.subarray(0, had * 16));
+      if (old.instanceColor && b.mesh.instanceColor) {
+        b.mesh.instanceColor.array.set(
+          old.instanceColor.array.subarray(0, had * 3));
+      }
+      scene.remove(old);
+      old.dispose();
+    }
+    b.begin = function (n) {
+      if (n > b.cap) alloc(Math.max(n, b.cap * 2));
+      b.n = 0;
+      b.owner.length = 0;
+    };
+    b.add = function (matrix, colour, owner) {
+      if (b.n >= b.cap) grow();
+      b.mesh.setMatrixAt(b.n, matrix);
+      b.mesh.setColorAt(b.n, colour);
+      b.owner[b.n] = owner;
+      b.n++;
+    };
+    b.end = function () {
+      b.mesh.count = b.n;
+      b.mesh.instanceMatrix.needsUpdate = true;
+      if (b.mesh.instanceColor) b.mesh.instanceColor.needsUpdate = true;
+    };
+    return b;
+  }
+
   var api = {
     SUB: SUB, QX: QX, QZ: QZ, WALK: WALK, STANDING: STANDING,
     hash: hash, subGround: subGround, trunks: trunks, restSpot: restSpot,
@@ -511,7 +655,7 @@
     frameOf: frameOf, figure: figure, restSpots: restSpots, stagger: stagger,
     space: space, TRUNK_KEEP: TRUNK_KEEP,
     zones: zones, drawn: drawn, drawList: drawList, occluders: occluders, shapeOf: shapeOf,
-    RADIUS: RADIUS, BODY_OF: BODY_OF, SCALE_OF: SCALE_OF,
+    RADIUS: RADIUS, BODY_OF: BODY_OF, SCALE_OF: SCALE_OF, batch: batch,
   };
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

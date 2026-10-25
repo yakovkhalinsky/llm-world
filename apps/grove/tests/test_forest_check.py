@@ -13,7 +13,7 @@ import unittest
 
 from grove import web
 
-from tests.helpers import ROOT, make_grove
+from tests.helpers import ROOT, make_grove, snapshot_of
 
 NODE = shutil.which("node")
 
@@ -61,25 +61,49 @@ class ForestCheckTest(unittest.TestCase):
             self.assertEqual(run.returncode, 0, run.stdout)
             self.assertIn("forest check ok", run.stdout)
 
-    def test_the_router_reaches_all_land_at_every_size(self):
+    # maps the router once lost land on (two trunks on a diagonal across a
+    # one-cell neck), kept so the fix stays tested whatever the sweep holds
+    SEALED = ((5, 119), (6, 23), (6, 41), (24, 709), (24, 952))
+    SWEEP = ((5, 1, 121), (6, 1, 101), (8, 1, 41), (12, 1, 41),
+             (16, 1, 41), (24, 1, 61), (32, 1, 21))
+
+    def _maps(self, maps, name):
+        p = os.path.join(self.dir.name, name)
+        with open(p, "w") as f:
+            for size, seed in maps:
+                st = snapshot_of(seed, size)
+                st["tag"] = "%d/%d" % (size, seed)
+                f.write(json.dumps(st) + "\n")
+        return p
+
+    def _reach(self, p, env=None):
+        return subprocess.run(
+            [NODE, CHECK, "--reach", p], cwd=ROOT, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True, timeout=120,
+            env=dict(os.environ, **(env or {})))
+
+    def test_the_router_reaches_all_land_on_many_maps(self):
         # the sim's land is one piece four ways; the page's router, four
-        # ways round the trunks, must reach all of it on every map
-        bad = []
-        for size in (12, 16, 24, 32):
-            for seed in (1, 5, 9, 13, 17):
-                tmp, data, g, lock, runner = make_grove(seed, 0, size)
-                try:
-                    state = web.snapshot(g, runner, lock)
-                finally:
-                    g.db.con.close()
-                    tmp.cleanup()
-                p = os.path.join(self.dir.name, "s-%d-%d.json" % (size, seed))
-                with open(p, "w") as f:
-                    json.dump(state, f)
-                run = self._run(p)
-                if "the router cannot reach" in run.stdout:
-                    bad.append((size, seed, run.stdout))
-        self.assertEqual(bad, [])
+        # ways round the trunks, must reach all of it on every map: a sweep
+        # of a few hundred fresh maps, small to large, made in-process and
+        # checked in one Node run, plus the maps that once came apart
+        maps = list(self.SEALED) + [(size, seed) for size, a, b in self.SWEEP
+                                    for seed in range(a, b)]
+        run = self._reach(self._maps(maps, "maps.jsonl"))
+        self.assertEqual(run.returncode, 0, run.stdout)
+        self.assertIn("router reach: %d of %d maps whole"
+                      % (len(maps), len(maps)), run.stdout)
+
+    def test_trunks_that_seal_land_off_fail(self):
+        # without unseal the drawn trunks cut those maps apart again
+        src = _read(FOREST)
+        p = self._mutant(src, "  unseal(st, ids);\n", "", "forest_sealed.js")
+        run = self._reach(self._maps(self.SEALED, "sealed.jsonl"),
+                          {"FOREST_JS": p})
+        self.assertNotEqual(run.returncode, 0, run.stdout)
+        for size, seed in self.SEALED:
+            self.assertIn("%d/%d: the router cannot reach" % (size, seed),
+                          run.stdout)
 
     def _mutant(self, src, old, new, name):
         self.assertIn(old, src)
@@ -96,7 +120,13 @@ class ForestCheckTest(unittest.TestCase):
                 ("const list = Forest.drawList(st);",
                  "const list = st.plants || [];"),
                 ("    for (const p of list) {\n",
-                 "    for (const p of (st.plants || [])) {\n")):
+                 "    for (const p of (st.plants || [])) {\n"),
+                # the loop still over the list, the list topped up behind it
+                ("    const n = list.length;\n",
+                 "    const n = list.length;\n"
+                 "    list.push(...Object.values(plantById));\n"),
+                ("    const n = list.length;\n",
+                 "    const n = list.length;\n    list.splice(0, 0, ...[]);\n")):
             p = self._mutant(src, old, new, "world_mutant.js")
             run = self._run(self.snaps[0], {"WORLD_JS": p})
             self.assertNotEqual(run.returncode, 0, (old, run.stdout))
@@ -108,6 +138,24 @@ class ForestCheckTest(unittest.TestCase):
         run = self._run(self.snaps[0], {"FOREST_JS": p})
         self.assertNotEqual(run.returncode, 0, run.stdout)
         self.assertIn("drawList", run.stdout)
+
+    def test_a_batch_that_drops_past_its_capacity_fails(self):
+        # the ghost batches start at 32: a batch that stops adding at its
+        # capacity, or grows without copying what it had, loses trees
+        src = _read(FOREST)
+        for old, new, want in (
+                ("if (b.n >= b.cap) grow();", "if (b.n >= b.cap) return;",
+                 "batch 32+1: n is 32, want 33"),
+                ("      b.mesh.instanceMatrix.array.set(\n"
+                 "        old.instanceMatrix.array.subarray(0, had * 16));\n",
+                 "", "batch 32+1: 32 of 33 matrices lost"),
+                ("        b.mesh.instanceColor.array.set(\n"
+                 "          old.instanceColor.array.subarray(0, had * 3));\n",
+                 "", "batch 32+1: 32 of 33 colours lost")):
+            p = self._mutant(src, old, new, "forest_batch.js")
+            run = self._run(self.snaps[0], {"FOREST_JS": p})
+            self.assertNotEqual(run.returncode, 0, (old, run.stdout))
+            self.assertIn(want, run.stdout)
 
     def test_a_forest_on_its_paths_fails(self):
         src = _read(FOREST)
