@@ -19,6 +19,7 @@ import time
 
 from . import db as dbm
 from . import gen
+from . import llm as llmm
 from . import render
 from . import rules
 from . import sim
@@ -238,9 +239,11 @@ def build_parser():
     sp.add_argument("--offline", action="store_true",
                     help="no model, no watcher — the estate alone")
     sp.add_argument("--model", default="auto",
-                    help="pin one model instead of the chain")
+                    help="pin one model for every job instead of the "
+                         "per-job defaults")
     sp.add_argument("--tier", default="cloud", choices=("cloud", "local"),
                     help="cloud-first with local fallback, or all local")
+    llmm.add_flags(sp)
     sp.set_defaults(func=cmd_web)
     sp = sub.add_parser("rules", help="print the live ruleset")
     sp.add_argument("--template", metavar="FILE")

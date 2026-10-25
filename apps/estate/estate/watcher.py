@@ -21,6 +21,7 @@ a fault:
 
 import json
 
+from . import decide as dec
 from . import rules
 from . import world as W
 
@@ -183,9 +184,68 @@ def validate(raw):
             "why": why or rules.R["fates"][fate].get("why", "")}
 
 
+# ---------------------------------------------- decide, then say why
+
+WHY_SCHEMA = {
+    "type": "object",
+    "properties": {"why": {"type": "string"}},
+    "required": ["why"],
+}
+
+
+def choose(w):
+    """The fate and region, chosen in code (decide.watch) — the half of
+    the watcher's job that is a choice from a finite menu. Always legal:
+    it is passed through the same validator a model's answer is."""
+    pick = dec.watch(w)
+    out = validate(pick)
+    out["decided"] = "rules"
+    out["confidence"] = pick["confidence"]
+    return out
+
+
+def why_prompt(w, intent, recent_lines=()):
+    """The watcher's digest, with the choice already made: the model is
+    asked only to say why, in one short sentence. A language model is good
+    at this half and bad at the other."""
+    head = digest(w, recent_lines).split("\n\nMenus")[0]
+    where = "" if intent.get("region", "all") == "all" else \
+        f" over the {intent['region']}"
+    spec = rules.R["fates"].get(intent["fate"], {})
+    return (f"{head}\n\nYou have decided: {intent['fate']}{where} — "
+            f"{spec.get('why', '')}.\nIn one short sentence, in your own "
+            f"voice, say why the estate gets this today.\n"
+            'Reply with JSON only: {"why": "<one short sentence>"}')
+
+
+def clean_why(raw):
+    """A model's why, or None. Never more than a line."""
+    if not isinstance(raw, dict):
+        return None
+    why = raw.get("why")
+    if not isinstance(why, str) or not why.strip():
+        return None
+    why = " ".join(why.split())
+    return why if len(why) <= 200 else why[:197] + "…"
+
+
 def invite(llm, w, recent_lines=()):
     """Ask the watcher once. Returns a validated intent; never raises and
-    never returns None — an unreachable model simply means `quiet`."""
+    never returns None — an unreachable model simply means `quiet`.
+
+    With `decide=rules` (the default) the choice is made in code and the
+    model only writes the why; no model at all still gets the choice,
+    worded by the pack."""
+    if llm is not None and getattr(llm, "decide", "llm") == "rules":
+        intent = choose(w)
+        if llm.ready():
+            why = clean_why(llm.chat_json(system(),
+                                          why_prompt(w, intent, recent_lines),
+                                          WHY_SCHEMA, max_tokens=80,
+                                          job="watch"))
+            if why:
+                intent["why"] = why
+        return intent
     if llm is None or not llm.enabled:
         return _quiet(why="no watcher is listening")
     raw = llm.chat_json(system(), digest(w, recent_lines), schema(),
