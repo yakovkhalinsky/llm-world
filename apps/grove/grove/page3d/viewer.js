@@ -218,8 +218,13 @@ function askBio(sel, quiet) {
 function select(sel) {
   S.selected = sel;
   S.ledger = null;
-  /* a new pick starts its card at the top */
+  /* a new pick starts its card at the top, and replaces it whole: the
+   * old selection goes and the card's lists forget what they were holding,
+   * so the new name never sits over the old state */
   $('card').scrollTop = 0;
+  if (window.Patch && window.Patch.fresh) {
+    window.Patch.fresh([$('cardState'), $('cardRows')]);
+  }
   if (!sel || sel.kind !== 'animal') S.follow = false;
   if (drawCard()) askBio(sel);
   if (S.world) S.world.follow(S.follow && sel ? sel.id : null);

@@ -14,6 +14,8 @@
  *   timeout   a hung ask is aborted through its signal, and fails plainly
  *   weekly    one quiet re-ask per week, not one per poll
  *   short     a hung ask with weeks shorter than the timeout still fails
+ *   pick      a pick starts the card afresh (Patch.fresh) before it
+ *             draws: the old selection and held writes go
  *   follow    '◎ follow' is offered on a creature's card only, and a
  *             press follows it; an open card hides the phone's bottom
  *             sheet (body.carded)
@@ -141,6 +143,13 @@ function page() {
       return !!sel;
     },
   };
+  /* the patch: which lists a pick asked to start afresh, and how many
+   * cards had been drawn when it did */
+  const freshes = [];
+  const Patch = {
+    hold() {}, write() {},
+    fresh(lists) { freshes.push({ ids: lists.map(l => l && l.id), drawn: cards.length }); },
+  };
   const follows = [];
   const world = {
     resize() {}, setState() {}, follow(id) { follows.push(id); },
@@ -160,6 +169,7 @@ function page() {
     addEventListener: () => {},
     WebGLRenderingContext: function () {},
     GroveHUD: HUD,
+    Patch,
     __createWorld: () => world,
   };
   ctx.window = ctx;
@@ -176,7 +186,7 @@ function page() {
 
   const V = ctx.__viewer;
   return {
-    P, cards, advance, settle, V, els, document, follows,
+    P, cards, advance, settle, V, els, document, follows, freshes,
     lastCard: () => cards[cards.length - 1],
     bioAsks: () => P.asks.length,
   };
@@ -312,8 +322,24 @@ async function follow() {
      !p.document.body.classList.contains('carded') && btn.hidden === true);
 }
 
+/* Acid Burn F2: a pick replaces the card, never the new name over the
+ * old state or a selection left from the last one */
+async function pick() {
+  const p = page();
+  await p.settle();
+  p.V.select({ kind: 'animal', id: 7 });
+  const drawn = p.cards.length;
+  p.V.select({ kind: 'animal', id: 8 });
+  const f = p.freshes[p.freshes.length - 1];
+  ok('pick: every pick starts the card\'s lists afresh',
+     p.freshes.length === 2 && f && f.ids.join(',') === 'cardState,cardRows',
+     JSON.stringify(p.freshes));
+  ok('pick: before the new card is drawn', f && f.drawn === drawn,
+     f && f.drawn + ' vs ' + drawn);
+}
+
 (async () => {
-  for (const scene of [kept, race, timeout, weekly, short, follow]) {
+  for (const scene of [kept, race, timeout, weekly, short, follow, pick]) {
     try { await scene(); } catch (e) {
       ok(scene.name + ' runs', false, e.stack);
     }

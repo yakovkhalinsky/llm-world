@@ -106,6 +106,19 @@ class Page3dTest(unittest.TestCase):
         self.assertNotIn("2D plan", page)
         self.assertNotIn('href="/"', page)
 
+    def test_a_pick_replaces_the_card_whole(self):
+        """Acid Burn F2: clicking something new must not leave the old
+        selection or the old card's held writes behind (the new name over
+        the old state, a feed frozen by a stale selection). `select()` hands
+        the card's lists to `Patch.fresh` (tested in tools/patch_check.js)
+        before it draws the new card."""
+        viewer = web._page3d("viewer.js")[0].decode()
+        body = viewer[viewer.index("function select(sel) {"):]
+        body = body[:body.index("\n}\n")]
+        fresh = body.index("window.Patch.fresh([$('cardState'), $('cardRows')]);")
+        self.assertLess(fresh, body.index("drawCard();"))
+        self.assertLess(body.index("S.selected = sel;"), fresh)
+
     def test_vendored_licence_resolves(self):
         got = web._page3d("vendor/LICENSE")
         self.assertIsNotNone(got)

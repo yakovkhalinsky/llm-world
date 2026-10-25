@@ -223,10 +223,15 @@ function drawCard() {
   document.body.classList.toggle('carded', !!open);
 }
 
-/* a new thing picked starts its card at the top */
+/* a new thing picked starts its card at the top, and replaces it whole:
+ * the old selection goes and the card's lists forget what they were
+ * holding, so the new name never sits over the old state */
 function select(sel) {
   S.selected = sel;
   $('card').scrollTop = 0;
+  if (window.Patch && window.Patch.fresh) {
+    window.Patch.fresh([$('cardState'), $('cardRows')]);
+  }
   drawCard();
 }
 
