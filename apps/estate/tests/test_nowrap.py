@@ -15,8 +15,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CSS = os.path.join(ROOT, "estate", "page3d", "style.css")
 
 # every label that must stay on one line, by its rule's selector
-ONE_LINE = [".idbox > div", ".chron li .d", ".speedrow .hint", "button", ".cardhead h3", ".timeline li.need > span:last-child", ".hint.foot"]
+ONE_LINE = [".idbox > div", ".chron li .d", ".speedrow .hint", "button", ".cardhead h3", ".timeline li.need > span:last-child", ".hint.foot", ".poplines .popline", ".idrow > span", "#tip"]
 
+
+# (selector, what its rule must say, what a mutant strips)
+GUARDS = [
+    (".idbox > #pops", r"overflow:\s*visible", r"overflow:\s*visible;?"),
+    (".idbox > #pops", r"flex-wrap:\s*wrap", r"flex-wrap:\s*wrap;?"),
+    (".idbox > .idrow", r"overflow:\s*visible", r"overflow:\s*visible;?"),
+    (".idbox > .idrow", r"flex-wrap:\s*wrap", r"flex-wrap:\s*wrap;?"),
+    (".speedrow #shows", r"display:\s*grid", r"display:\s*grid;?"),
+]
 
 def rules(css):
     """(selectors, body) for every rule, @media ones included."""
@@ -54,6 +63,43 @@ class NoWrapTest(unittest.TestCase):
                     mutant = mutant.replace(
                         b, re.sub(r"white-space:\s*nowrap;?", "", b))
                 self.assertIn(s, missing(mutant))
+
+
+def has(css, sel, prop):
+    """Does some rule for `sel` say `prop` (a regex over its body)?"""
+    return any(sel in sels and re.search(prop, b) for sels, b in rules(css))
+
+
+class NothingCutTest(unittest.TestCase):
+    """Nothing is cut short: no ellipsis on a line that holds counts, and
+    nothing a reader needs sits off the side of a row that scrolls."""
+
+    def setUp(self):
+        with open(CSS) as f:
+            self.css = re.sub(r"/\*.*?\*/", "", f.read(), flags=re.S)
+
+    def test_nothing_scrolls_sideways(self):
+        # the no-WebGL glyph map is a <pre> and may scroll; nothing else
+        rows = [sels for sels, b in rules(self.css)
+                if re.search(r"overflow-x:\s*(auto|scroll)", b)
+                and not all("#plain" in x or "pre" in x.split() for x in sels)]
+        self.assertEqual(rows, [])
+
+    def test_the_counts_and_the_date_wrap_rather_than_cut(self):
+        for sel, prop, _ in GUARDS:
+            with self.subTest(sel):
+                self.assertTrue(has(self.css, sel, prop))
+
+
+    def test_the_checks_see_a_rule_go(self):
+        for sel, prop, rx in GUARDS:
+            with self.subTest(sel):
+                bodies = [b for sels, b in rules(self.css)
+                          if sel in sels and re.search(prop, b)]
+                mutant = self.css
+                for b in bodies:
+                    mutant = mutant.replace(b, re.sub(rx, "", b))
+                self.assertFalse(has(mutant, sel, prop))
 
 
 if __name__ == "__main__":
