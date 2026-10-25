@@ -9,15 +9,22 @@
  * under the reader every time a day arrived. Now:
  *
  *   - the same html again is no write at all (the 700 ms no-op);
- *   - while a pointer is pressed in a held panel (`Patch.hold`), text is
- *     selected in it, or it scrolled a moment ago (a fling still
- *     coasting), the write waits and lands when that ends;
+ *   - while a pointer is pressed in a held panel (`Patch.hold`), or it
+ *     scrolled a moment ago (a fling still coasting), the write waits and
+ *     lands when that ends;
+ *   - text selected in the same panel holds it too, but only that panel
+ *     and only for SELECT_MS after the selection last changed: a
+ *     selection left behind does not freeze the feed for good;
  *   - `opts.newestFirst`: rows arrive at the top. A reader at the top
  *     stays stuck to it and sees the new row; one who has scrolled down
- *     keeps the row they were reading, `scrollTop` moving by exactly the
- *     height added above it. (Right while both feeds drop their old rows
- *     off the bottom; a feed that ever trims from the top needs keyed
- *     rows instead.)
+ *     keeps the row they were reading. The feeds are capped, so rows
+ *     come in at the top and go out at the bottom at once and the height
+ *     says nothing; the patch anchors on the first row in view instead
+ *     (its `data-key`, else its text) and puts that row back exactly
+ *     where it was. Only when that row and every one after it are gone
+ *     does it fall back to the height added above.
+ *   - `Patch.drop(el)` forgets a list: what it showed and any write it
+ *     was holding, so the next write lands whole (a card for a new pick);
  *   - `opts.reset`: a different list (a tab change) starts at the top;
  *   - otherwise the position is kept as it was.
  *
@@ -34,7 +41,10 @@
   /* how long after the last scroll event a list counts as still moving:
    * longer than the gap between a momentum fling's scroll events */
   var SETTLE_MS = 250;
+  /* how long a selection holds its panel after it last changed */
+  var SELECT_MS = 4000;
   var held = [];               // panels a pointer is pressed in
+  var selAt = -Infinity;       // when the selection last changed
 
   function now() {
     return root.performance && root.performance.now
@@ -52,16 +62,21 @@
     return false;
   }
 
-  function selecting(el) {
-    var s = root.getSelection && root.getSelection();
-    return !!(s && !s.isCollapsed && s.anchorNode &&
-              inside(el, s.anchorNode));
-  }
-
   /* the scroll box that moves when `el` is written: `el` itself, or the
    * panel it sits in (a card scrolls as one) */
   function scroller(el) {
     return el._scroller || el;
+  }
+
+  /* text selected in this list's own panel, chosen in the last SELECT_MS */
+  function selecting(el) {
+    var s = root.getSelection && root.getSelection();
+    if (!s || s.isCollapsed) return false;
+    var box = scroller(el);
+    if (!((s.anchorNode && inside(box, s.anchorNode)) ||
+          (s.focusNode && inside(box, s.focusNode)))) return false;
+    if (selAt === -Infinity) selAt = now();   // no selectionchange seen yet
+    return now() - selAt < SELECT_MS;
   }
 
   function moving(el) {
@@ -83,9 +98,90 @@
   }
 
   var timer = 0;
-  function later() {
-    if (timer || !root.setTimeout) return;
-    timer = root.setTimeout(function () { timer = 0; flush(); }, SETTLE_MS);
+  var due = 0;
+  /* flush once `ms` from now; an earlier flush already set stands, and
+   * whatever is still held then sets the next */
+  function later(ms) {
+    ms = ms || SETTLE_MS;
+    if (!root.setTimeout) return;
+    if (timer && due >= now() && due <= now() + ms) return;
+    if (timer && root.clearTimeout) root.clearTimeout(timer);
+    due = now() + ms;
+    timer = root.setTimeout(function () { timer = 0; flush(); }, ms);
+  }
+
+  function drop(el) {
+    el._html = undefined;
+    el._pending = null;
+    el._opts = undefined;
+    var i = waiting.indexOf(el);
+    if (i >= 0) waiting.splice(i, 1);
+  }
+
+  /* the rows of a list, as an array */
+  function rowsOf(el) {
+    var k = el.children || [];
+    return Array.prototype.slice.call(k);
+  }
+
+  function keyOf(row) {
+    var k = row.getAttribute && row.getAttribute('data-key');
+    return k !== null && k !== undefined && k !== '' ? 'k:' + k
+      : 't:' + (row.textContent || '');
+  }
+
+  /* where a row's top sits, in px below the scroll box's visible top */
+  function offsetIn(box, row) {
+    if (!row.getBoundingClientRect || !box.getBoundingClientRect) return null;
+    return row.getBoundingClientRect().top - box.getBoundingClientRect().top;
+  }
+
+  /* the first row in view and the rows after it: [{key, at, index}] */
+  function anchors(el, box) {
+    var rows = rowsOf(el), out = [];
+    for (var i = 0; i < rows.length; i++) {
+      var at = offsetIn(box, rows[i]);
+      if (at === null) return [];
+      var h = rows[i].getBoundingClientRect().height || 0;
+      if (!out.length && at + h <= 0) continue;   // above the view
+      out.push({ key: keyOf(rows[i]), at: at, index: i });
+    }
+    return out;
+  }
+
+  function count(list, k) {
+    var n = 0;
+    for (var i = 0; i < list.length; i++) if (list[i] === k) n += 1;
+    return n;
+  }
+
+  /* put the first surviving anchor back where it was; true if one was.
+   * A row whose words appear once, before and after, is trusted first:
+   * every row in a capped feed moves by the same amount, so any one of
+   * them in view says how far. */
+  function reanchor(el, box, marks) {
+    var rows = rowsOf(el);
+    var keys = rows.map(keyOf);
+    var was = marks.map(function (a) { return a.key; });
+    var order = marks.filter(function (a) {
+      return count(was, a.key) === 1 && count(keys, a.key) === 1;
+    }).concat(marks);
+    for (var m = 0; m < order.length; m++) {
+      var a = order[m], pick = -1;
+      /* rows only move down a capped newest-first feed, so the same text
+       * twice is told apart by taking the first at or below where it was */
+      for (var i = 0; i < keys.length; i++) {
+        if (keys[i] !== a.key) continue;
+        pick = i;
+        if (i >= a.index) break;
+      }
+      if (pick < 0) continue;
+      var at = offsetIn(box, rows[pick]);
+      if (at === null) return false;
+      box.scrollTop = (box.scrollTop || 0) + (at - a.at);
+      return true;
+    }
+    return false;
   }
 
   function write(el, html, opts) {
@@ -102,6 +198,7 @@
       el._opts = reset ? Object.assign({}, opts, { reset: true }) : opts;
       if (waiting.indexOf(el) < 0) waiting.push(el);
       if (moving(el)) later();
+      else if (!isHeld(el)) later(Math.max(SETTLE_MS, SELECT_MS - (now() - selAt)));
       return false;
     }
     el._pending = null;
@@ -114,11 +211,15 @@
     var top = box.scrollTop || 0;
     var before = box.scrollHeight || 0;
     var atTop = top <= 2;
+    var marks = opts && opts.newestFirst && !atTop ? anchors(el, box) : [];
     el._html = html;
     el.innerHTML = html;
     if (opts && opts.reset) box.scrollTop = 0;
     else if (opts && opts.newestFirst) {
-      box.scrollTop = atTop ? 0 : top + ((box.scrollHeight || 0) - before);
+      if (atTop) box.scrollTop = 0;
+      else if (!reanchor(el, box, marks)) {
+        box.scrollTop = top + ((box.scrollHeight || 0) - before);
+      }
     } else if (box.scrollTop !== top) box.scrollTop = top;
     return true;
   }
@@ -146,8 +247,9 @@
     if (root.document && root.document.addEventListener && !hold.sel) {
       hold.sel = true;
       root.document.addEventListener('selectionchange', function () {
-        if (waiting.length && !(root.getSelection &&
-                                !root.getSelection().isCollapsed)) later();
+        selAt = now();
+        var s = root.getSelection && root.getSelection();
+        if (waiting.length && !(s && !s.isCollapsed)) later();
       });
     }
   }
@@ -164,5 +266,6 @@
     return NF ? NF.format(v) : v.toLocaleString('en-AU');
   }
 
-  root.Patch = { write: write, hold: hold, fmt: fmt, flush: flush };
+  root.Patch = { write: write, hold: hold, fmt: fmt, flush: flush, drop: drop,
+                 SETTLE_MS: SETTLE_MS, SELECT_MS: SELECT_MS };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
