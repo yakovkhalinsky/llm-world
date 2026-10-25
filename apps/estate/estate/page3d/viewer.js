@@ -146,14 +146,14 @@ function cardFor(sel) {
     const p = st.people.filter(x => x.id === sel.id)[0];
     if (!p) return null;
     const needs = Object.keys(p.needs || {}).sort()
-      .map(n => '<li><span>' + glyphOf('needs', n) + ' ' + esc(n) +
+      .map(n => '<li><span>' + esc(glyphOf('needs', n)) + ' ' + esc(n) +
                 '</span><span>' + p.needs[n].toFixed(2) + '</span></li>')
       .join('');
     return {
       name: p.name || 'a resident',
-      state: glyphOf('roles', p.role) + ' ' + esc(p.role) + ' · age ' +
+      state: esc(glyphOf('roles', p.role)) + ' ' + esc(p.role) + ' · age ' +
         p.age + ' · ' + esc(p.kind || '') + ' household<br>' +
-        (p.in ? 'inside, flat ' + p.unit
+        (p.in ? 'inside, flat ' + esc(p.unit)
               : 'out at ' + p.x + ',' + p.y) +
         (p.stress >= 1 ? ' · frayed ' + p.stress : ''),
       rows: needs,
@@ -165,7 +165,7 @@ function cardFor(sel) {
     if (!b) return null;
     return {
       name: b.name,
-      state: b.kind + ' · ' + b.floors + ' floors · door at ' +
+      state: esc(b.kind) + ' · ' + b.floors + ' floors · door at ' +
         b.door[0] + ',' + b.door[1] + '<br>' +
         (d.power ? 'power on' : 'no power') + ' · ' +
         (d.water ? 'water on' : 'no water'),

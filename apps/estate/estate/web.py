@@ -439,6 +439,24 @@ def _page3d(rel):
     return data, ctype
 
 
+def _respond(handler, code, body, ctype):
+    """Write one response. Every response goes through here, so a header
+    added to one route cannot be forgotten on another.
+
+    `nosniff` is the whole point of the route: the vendored engine and the
+    page's modules are served by suffix, and a browser left to guess is a
+    browser that may run something the server did not send it as.
+    """
+    data = body if isinstance(body, bytes) else body.encode()
+    handler.send_response(code)
+    handler.send_header("Content-Type", ctype)
+    handler.send_header("Content-Length", str(len(data)))
+    handler.send_header("X-Content-Type-Options", "nosniff")
+    handler.send_header("Cache-Control", "no-store")
+    handler.end_headers()
+    handler.wfile.write(data)
+
+
 def _ip_hint(host):
     if host != "0.0.0.0":
         return ("local only: http://localhost:{}"
@@ -473,13 +491,7 @@ def cmd_web(args):
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code, body, ctype):
-            data = body if isinstance(body, bytes) else body.encode()
-            self.send_response(code)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(data)
+            _respond(self, code, body, ctype)
 
         def log_message(self, *_a):   # keep the terminal readable
             pass

@@ -73,6 +73,12 @@ reason.
 python3 tools/balance.py       # the gate: 8 estates, years, every law
 ```
 
+The web server's own tests are stdlib-only:
+
+```sh
+python3 -m unittest discover -s tests
+```
+
 The dashboard runs the estate at a pace you choose — `a day every 60s`,
 `20s` or `5s`, set in the control panel and owned by the pack
 (`pacing.day_seconds`), not by the page. At the slowest, one of the day's
