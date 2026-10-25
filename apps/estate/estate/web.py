@@ -36,6 +36,7 @@ from . import sim
 from . import watcher
 from . import webguard
 from . import world as W
+from .engine import families
 
 POLL_MS = 700          # what the page is told to wait between polls
 
@@ -292,6 +293,22 @@ def _small(vals, scale=9.0):
     return [min(9, int(v * scale)) for v in vals]
 
 
+def _walking_with(w, r):
+    """The guardian a young child out on the plan is beside: on their own
+    cell first, then the nearest, then the lowest id. None indoors, for
+    anyone who is not a young child, and for a child with nobody beside
+    them (which the family rules mean never happens)."""
+    if r["where"]["mode"] != "at" or not families.is_young(r):
+        return None
+    near = [g for g in families.guardians_of(w, r) if families.together(r, g)]
+    if not near:
+        return None
+    wx, wy = r["where"]["x"], r["where"]["y"]
+    g = min(near, key=lambda g: (max(abs(g["where"]["x"] - wx),
+                                     abs(g["where"]["y"] - wy)), g["id"]))
+    return g["id"]
+
+
 def snapshot(est, runner, lock):
     """Everything the page needs for one frame. Deliberately small: the
     ground is not repeated here, and the fields are quantised."""
@@ -319,6 +336,12 @@ def snapshot(est, runner, lock):
                 "px": px, "py": py, "pin": pmode == "in", "punit": punit,
                 "habit": r["habit"], "stress": round(r["stress"], 1),
                 "needs": {k: round(v, 2) for k, v in r["needs"].items()},
+                # the rest of the household, for the card; and, for a young
+                # child out on the plan, the guardian they are walking with
+                # (engine/families.py), so a view can draw the two as a pair
+                "family": [m for m in hh.get("members", ())
+                           if m != r["id"] and str(m) in w["residents"]],
+                "with": _walking_with(w, r),
             })
         fixtures = [{"id": int(fid), "kind": f["kind"], "x": f["x"],
                      "y": f["y"], "c": round(f["condition"], 3),

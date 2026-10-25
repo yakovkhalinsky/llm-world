@@ -15,10 +15,16 @@ rather than a diff:
 
 from .. import rules
 from .. import world as W
+from . import families
 from . import places
 from . import weather
 
 PHASES = ("dawn", "morning", "afternoon", "evening", "night")
+
+# Called as watcher(w, phase) once every resident has settled a phase. The
+# engine never reads them; the tools observe the settled states through
+# them (tools/family_check.py) without editing the chooser.
+PHASE_WATCHERS = []
 
 
 def _pos(w, r):
@@ -392,9 +398,135 @@ def _seat_holders(w):
             f["occupants"].append(r["id"])
 
 
+def _top_press(w, r, phase):
+    """How hard this person's most pressing need is pushing."""
+    return max([pressure(w, r, n, phase) for n in rules.R["needs"]] or [0.0])
+
+
+def _home_of(w, r, cand, phase):
+    """Your own flat as a candidate, with the home need it best meets —
+    the way home when a curfew sends you there with nothing else to do."""
+    unit = _unit_of(w, r)
+    if unit is None:
+        return None, None
+    best = None
+    for need, spec in rules.R["needs"].items():
+        if not spec.get("home"):
+            continue
+        for c in cand.get(need, ()):
+            if c["kind"] == "home" and c["unit"]["id"] == unit["id"]:
+                p = pressure(w, r, need, phase)
+                if best is None or p > best[0]:
+                    best = (p, c, need)
+    return (best[1], best[2]) if best else (None, None)
+
+
+def _choose(w, party, cand, phase, rng):
+    """The place this party goes and the need, and whose need, it serves.
+
+    A party of one is a resident choosing alone, exactly as before: the
+    most pressing need first, and if there is nowhere to meet it, the next
+    one down. A minder's party pools everyone's needs and goes for the most
+    pressing of them, whoever's it is — that is how a child's longing to
+    play becomes a playground trip with a parent — but only to places the
+    minder may take children (`families.allows`).
+    """
+    lead = party[0]
+    minding = len(party) > 1
+    wants = [(pressure(w, p, n, phase), n, p)
+             for p in party for n in ranked_needs(w, p, phase)]
+    wants.sort(key=lambda e: (-e[0], e[1], e[2]["id"]))
+    for _, need, p in wants:
+        best, best_u = None, None
+        for c in cand.get(need, ()):
+            if not families.allows(w, lead, c, phase, minding):
+                continue
+            u = _utility(w, p, c, need, phase, rng)
+            if u is not None and (best_u is None or u > best_u):
+                best, best_u = c, u
+        if best is not None:
+            return best, need, p
+    return None, None, None
+
+
+def _also(w, r, c, phase):
+    """What else a member of a party gets where the party went: their own
+    most pressing need the place meets, if a seat is free for them."""
+    for need in ranked_needs(w, r, phase):
+        if c["kind"] == "home":
+            if rules.R["needs"][need].get("home"):
+                return need
+            continue
+        f = c["fixture"]
+        if rules.R["fixtures"][f["kind"]]["affords"].get(need, 0) > 0:
+            return None if places.full(f["kind"], f["occupants"]) else need
+    return None
+
+
+def _fray(r, line):
+    """A person who cannot get what they want starts to fray — and stops,
+    and recovers: this is what the letting office reads."""
+    frayed = max(r["needs"][n] for n in rules.R["needs"]
+                 if not rules.R["needs"][n].get("roles")
+                 or r["role"] in rules.R["needs"][n]["roles"])
+    if frayed >= line:
+        r["stress"] += 1.0
+    else:
+        r["stress"] *= rules.R["engine"]["stress_decay"]
+
+
+def _live(w, party, cand, phase, line):
+    """One phase for a resident and whoever they are minding."""
+    r = party[0]
+    minding = len(party) > 1
+    # a resident re-deciding is not competing with themselves for the seat
+    # they are on (nor are the children with them)
+    held = []
+    for p in party:
+        h = _held_fixture(w, p)
+        if h is not None:
+            h["occupants"].remove(p["id"])
+        held.append((p, h))
+    rng = W.rng_for(w["seed"], w["day"], f"whim:{r['id']}:{phase}")
+    best, need_of, who = _choose(w, party, cand, phase, rng)
+    if best is None and r["where"]["mode"] == "at" \
+            and families.curfew(w, r, phase, minding):
+        best, need_of = _home_of(w, r, cand, phase)
+        who = r
+    if best is None:
+        # nowhere to go: a phase at home, worth the same as any other
+        # visit home — the same expression, so the two paths cannot drift
+        # apart
+        full = rules.R["engine"]["need_max"] * \
+            rules.R["engine"]["arrive_restore"]
+        for p, h in held:
+            p["needs"]["rest"] = max(
+                0.0, p["needs"]["rest"] - full * rules.R["engine"]["home_rest"])
+            if h is not None:
+                h["occupants"].append(p["id"])   # still sitting
+        return
+    arrived = _go_to(w, r, best)
+    # the children walk with their minder and are wherever they got to,
+    # indoors or out — never left at the door or on the bench behind
+    for k in party[1:]:
+        families.follow(k, r)
+    if arrived:
+        _satisfy(w, who, best, need_of, phase)
+        for p in party:
+            if p is not who:
+                also = _also(w, p, best, phase)
+                if also is not None:
+                    _satisfy(w, p, best, also, phase)
+    for p in party:
+        _fray(p, line)
+
+
 def update_residents(w, evs):
     cand = candidates(w)
     line = rules.R["engine"]["stress_at"]
+    # a world saved before the family rules, or anything the slow layer
+    # left: every young child starts the day beside a guardian
+    families.settle(w, evs)
     for phase in PHASES:
         drain(w, phase)
         # A seat is held from the moment it is taken until its holder gets
@@ -404,49 +536,15 @@ def update_residents(w, evs):
         # keeps their seat when nothing pulls them away — invisible to the
         # chooser, and two more could sit down beside them.
         _seat_holders(w)
+        # who minds the young children this phase: they live it as their
+        # minder's party, on the minder's turn, and never on their own
+        leads = families.plan(w, lambda g: _top_press(w, g, phase))
+        led = {k["id"] for ks in leads.values() for k in ks}
         for rid in sorted(w["residents"], key=lambda k: int(k)):
             r = w["residents"].get(rid)
-            if r is None:
+            if r is None or r["id"] in led:
                 continue
-            # a resident re-deciding is not competing with themselves for
-            # the seat they are on
-            held = _held_fixture(w, r)
-            if held is not None:
-                held["occupants"].remove(r["id"])
-            best, best_u, need_of = None, None, None
-            rng = W.rng_for(w["seed"], w["day"], f"whim:{rid}:{phase}")
-            # the most pressing need first, and if there is nowhere to
-            # meet it, the next one down — never a place chosen on
-            # convenience before the need that sent you looking
-            for need in ranked_needs(w, r, phase):
-                for c in cand.get(need, ()):
-                    u = _utility(w, r, c, need, phase, rng)
-                    if u is not None and (best_u is None or u > best_u):
-                        best, best_u, need_of = c, u, need
-                if best is not None:
-                    break
-            if best is None:
-                # nowhere to go: a phase at home, worth the same as any
-                # other visit home — the same expression, so the two paths
-                # cannot drift apart
-                full = rules.R["engine"]["need_max"] * \
-                    rules.R["engine"]["arrive_restore"]
-                r["needs"]["rest"] = max(
-                    0.0, r["needs"]["rest"] - full * rules.R["engine"]["home_rest"])
-                if held is not None:
-                    held["occupants"].append(r["id"])   # still sitting
-                continue
-            if _go_to(w, r, best):
-                _satisfy(w, r, best, need_of, phase)
-            # a person who cannot get what they want starts to fray — and
-            # stops, and recovers: this is what the letting office reads
-            frayed = max(r["needs"][n] for n in rules.R["needs"]
-                         if not rules.R["needs"][n].get("roles")
-                         or r["role"] in rules.R["needs"][n]["roles"])
-            if frayed >= line:
-                r["stress"] += 1.0
-            else:
-                r["stress"] *= rules.R["engine"]["stress_decay"]
+            _live(w, [r] + leads.get(r["id"], []), cand, phase, line)
         for f in w["fixtures"].values():
             f["occupants"] = []
         # how full the estate was at its fullest hour, which is the one
@@ -456,3 +554,5 @@ def update_residents(w, evs):
             out = sum(1 for x in w["residents"].values()
                       if x["where"]["mode"] == "at")
             w["daybook"]["out"] = max(w["daybook"]["out"], out)
+        for watch in PHASE_WATCHERS:
+            watch(w, phase)

@@ -252,6 +252,22 @@ is present, planting a fresh seed-42 estate for them.
   hardest and *then* the best place for it, falling to the next need down
   when the first has nowhere to go. Scored the other way round, the nearest
   bench beats a meal merely by being nearest.
+- **Families mind their little ones** (`engine/families.py`, numbers in
+  `rules.R["families"]`). A child under ten (`young_under`) is never out
+  without a guardian from their household beside them — a parent, a
+  grandparent, or a brother or sister of sixteen or more
+  (`guardian_from`) — and never alone in the flat. Each phase the least
+  pressed guardian already with the children minds them, and the minder
+  and the children choose and walk as one party: a child's need to play
+  is a playground trip with a parent, a parent's hunger is the shop run
+  with the children along, and a busy parent's errand is covered by the
+  other adult at home. A household with young children keeps near home in
+  the evening and is home at night. The 10–15s may go alone only to the
+  playground or the shop near their own door, and only in daylight. A
+  household left with children and no adult leaves whole. The 3D view
+  walks a young child at their guardian's side, and a resident's card
+  lists the household. `python3 tools/family_check.py --seeds 42 --days
+  364` measures it.
 - **A walk goes round a wall.** Movement is a greedy step toward the
   target, priced by the ground — but a building is impassable, so when
   every step forward is a wall the walk commits to a side and holds it

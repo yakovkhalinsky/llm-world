@@ -163,6 +163,30 @@
     }).join('');
   }
 
+  /* The household, one row each: name, role and age, and who a young
+   * child is out walking with (engine/families.py keeps every child under
+   * ten beside a guardian). Members are looked up in the same frame, so
+   * the card names only people the frame carries. */
+  function familyRows(st, p) {
+    var byId = {};
+    (st.people || []).forEach(function (x) { byId[x.id] = x; });
+    var rows = (p.family || []).map(function (id) {
+      var m = byId[id];
+      if (!m) return '';
+      return '<li><span>' + esc(glyphOf('roles', m.role)) + ' ' +
+        esc(m.name || 'a resident') + '</span><span>' + esc(m.role) +
+        ' · ' + Number(m.age) + '</span></li>';
+    }).join('');
+    var w = p['with'] !== null && p['with'] !== undefined
+      ? byId[p['with']] : null;
+    if (w) {
+      rows = '<li><span>out with</span><span>' +
+        esc(w.name || 'a resident') + '</span></li>' + rows;
+    }
+    return rows ? '<li><span>— family —</span><span></span></li>' + rows
+                : '';
+  }
+
   function cardFor(st, sel) {
     if (!st || !sel) return null;
     if (sel.kind === 'resident') {
@@ -174,6 +198,7 @@
         ? 'inside, flat ' + (p.unit === null || p.unit === undefined
                              ? '' : Number(p.unit))
         : 'out at ' + Number(p.x) + ',' + Number(p.y);
+      var family = familyRows(st, p);
       var habit = Object.keys(p.habit || {}).map(function (k) {
         return '<li><span>' + esc(k) + '</span><span>' +
           esc(p.habit[k]) + '</span></li>';
@@ -184,7 +209,7 @@
           Number(p.age) + ' · ' + esc(p.kind || '') + ' household<br>' +
           esc(where) +
           (p.stress >= 1 ? ' · frayed ' + Number(p.stress) : ''),
-        rows: needRows(p) + (habit ?
+        rows: needRows(p) + family + (habit ?
           '<li><span>— today —</span><span></span></li>' + habit : ''),
       };
     }

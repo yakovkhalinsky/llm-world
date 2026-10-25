@@ -14,6 +14,8 @@
  *   · the watcher tab lists the chronicle
  *   · a resident, a fixture, a block and a cell each get a card, and a
  *     fixture card carries its wear
+ *   · a resident card lists the household, and who a young child is out
+ *     with (engine/families.py)
  *   · every string from the server is escaped where it is written, and
  *     numbers never reach innerHTML as anything but a number
  *
@@ -173,6 +175,28 @@ if (!person) {
      els.cardRows.innerHTML.slice(0, 120));
 }
 
+/* the family: a two-person household cards each other, and a young child
+ * out with a guardian names them */
+if (person) {
+  const st = clone(state);
+  const kid = Object.assign(clone(person), { id: 9001, name: 'Kit',
+    role: 'child', age: 6, in: false, family: [9002], with: 9002 });
+  const mum = Object.assign(clone(person), { id: 9002, name: 'Ann',
+    role: 'adult', age: 34, in: false, family: [9001], with: null });
+  st.people = [kid, mum];
+  EstateHUD.card(st, { kind: 'resident', id: 9001 });
+  const rows = els.cardRows.innerHTML;
+  ok('a child\'s card lists the household', rows.indexOf('Ann') >= 0 &&
+     rows.indexOf('34') >= 0, rows.slice(0, 200));
+  ok('a child\'s card names who they are out with',
+     rows.indexOf('out with</span><span>Ann') >= 0, rows.slice(0, 200));
+  EstateHUD.card(st, { kind: 'resident', id: 9002 });
+  ok('a guardian\'s card lists the child and says nobody is minding them',
+     els.cardRows.innerHTML.indexOf('Kit') >= 0 &&
+     els.cardRows.innerHTML.indexOf('out with') < 0,
+     els.cardRows.innerHTML.slice(0, 200));
+}
+
 const fixture = first(state.fixtures);
 if (!fixture) {
   ok('the frame has a fixture to card', false);
@@ -322,6 +346,33 @@ if (!state.people || !state.people[0]) {
   }
 }
 
+/* the family rows: a household member's name and role, and the name of
+ * the guardian a young child is out with, each hostile on its own */
+if (state.people && state.people[0]) {
+  const kidOf = () => Object.assign(clone(state.people[0]), {
+    id: 9001, role: 'child', kind: 'family', in: false, habit: {},
+    needs: {}, family: [9002], with: 9002 });
+  const mumOf = () => Object.assign(clone(state.people[0]), {
+    id: 9002, name: 'Ann', role: 'adult', kind: 'family', in: false,
+    habit: {}, needs: {}, family: [9001], with: null });
+  const cases = [
+    ['a family member\'s name', m => { m.name = TAG; }, false],
+    ['a family member\'s role (and its glyph)', m => { m.role = TAG; }, false],
+    ['the name of who a child is out with', m => { m.name = TAG; }, true],
+  ];
+  for (const [what, mutate, onlyWith] of cases) {
+    const st = clone(state);
+    const kid = kidOf();
+    const m = mumOf(); mutate(m);
+    st.people = [kid, m];
+    EstateHUD.card(st, { kind: 'resident', id: kid.id });
+    const rows = els.cardRows.innerHTML;
+    escaped('the resident card escapes ' + what,
+            onlyWith ? (rows.split('out with')[1] || '').split('</li>')[0]
+                     : rows);
+  }
+}
+
 /* the block card: a building's kind comes with the ground */
 if (evilGround.buildings && evilGround.buildings[0]) {
   EstateHUD.card(state, { kind: 'building', id: evilGround.buildings[0].id });
@@ -368,6 +419,14 @@ if (nums.people && nums.people[0]) {
   EstateHUD.card(nums, { kind: 'resident', id: p.id });
   numeric('a resident\'s age and place are numbers', els.cardState.innerHTML);
   numeric('a need\'s level is a number', els.cardRows.innerHTML);
+  const m = clone(p);
+  m.id = 9002; m.age = TAG; m.name = 'Ann'; m.role = 'adult';
+  p.family = [9002];
+  nums.people = [p, m];
+  EstateHUD.card(nums, { kind: 'resident', id: p.id });
+  numeric('a family member\'s age is a number',
+          els.cardRows.innerHTML.split('— family —')[1] || '');
+  nums.people = [p]; p.family = [];
   p.in = true; p.unit = TAG;
   EstateHUD.card(nums, { kind: 'resident', id: p.id });
   numeric('a resident\'s flat is a number', els.cardState.innerHTML);

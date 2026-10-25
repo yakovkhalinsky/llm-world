@@ -44,6 +44,7 @@ const Field = (typeof globalThis !== 'undefined' && globalThis.Page3DField) ||
 
 const FLOOR_H = 1.35;          // world units per storey
 const TILE_TOP = 0.12;         // the walking surface: top of a ground tile
+const CHILD_BESIDE = [0.36, 0.08]; // a young child's step beside their guardian
 const WALK_Y = TILE_TOP + 0.005;
 
 /* A season shifts the living ground and the trees; the road, the paving and
@@ -1057,6 +1058,44 @@ export function createWorld(ground, canvas, opts) {
       }
       routesBuilt = true;
       if (traceMesh) rebuildTrace();
+    }
+
+    /* A young child out on the plan walks beside the guardian the engine
+     * keeps them with (`with`, engine/families.py): the guardian's own
+     * route and timing, a small fixed step to their side, so the pair set
+     * off, walk and arrive as one. Beside a seated guardian the child
+     * stands in front of the bench rather than on the slats. */
+    const indexOf = new Map();
+    for (let i = 0; i < people.length; i++) indexOf.set(people[i].id, i);
+    for (let i = 0; i < people.length; i++) {
+      const p = people[i];
+      if (p.in || p.with == null || sitMode[i] === 1) continue;
+      const j = indexOf.get(p.with);
+      if (j === undefined || people[j].in) continue;
+      if (fresh) {
+        routes[i] = routes[j];
+        routeT0[i] = routeT0[j];
+        routeDur[i] = routeDur[j];
+      }
+      /* the step to the side: in front of a seated guardian, else the
+       * guardian's own scatter plus CHILD_BESIDE. `offX` is this page's
+       * per-figure scatter; a page that places figures absolutely instead
+       * (crowd.js, PR #7) has none, so there the child's place is moved
+       * and the shared route is left to the crowd's spacing. */
+      const sx = sitMode[j] === 1 ? seatFx[j] * CHILD_BESIDE[0]
+                                  : CHILD_BESIDE[0];
+      const sz = sitMode[j] === 1 ? seatFz[j] * CHILD_BESIDE[0]
+                                  : CHILD_BESIDE[1];
+      if (typeof offX !== 'undefined') {
+        toX[i] = toX[j];
+        toZ[i] = toZ[j];
+        offX[i] = (sitMode[j] === 1 ? 0 : offX[j]) + sx;
+        offZ[i] = (sitMode[j] === 1 ? 0 : offZ[j]) + sz;
+      } else {
+        toX[i] = toX[j] + sx;
+        toZ[i] = toZ[j] + sz;
+      }
+      sitMode[i] = 0;
     }
 
     /* freeze at the hour the page is showing; re-anchor at the fraction
