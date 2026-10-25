@@ -622,37 +622,71 @@ export function createWorld(ground, canvas, opts) {
 
   /* ---------------------------------------------------------- lamplight */
 
+  /* The lamps' light is a field, not a set of objects: the engine sends a
+   * value per cell (0-9) and that is what is drawn. It used to be drawn as
+   * a flat disc stamped on every lit cell at one opacity, which read as a
+   * grid of hard-edged circles rather than pools of light. Now the field is
+   * baked into one texture: a cell per pixel, scaled up with smoothing and
+   * blurred, so the light is brightest under the lamp, fades to nothing at
+   * its reach, and two lamps' pools merge where they overlap. It lies on
+   * the ground as one plane, added to whatever is under it, and `dark`
+   * scales it, so it comes up through the dusk with the windows. */
+  const GLOW_PX = 16;                 // texture pixels per tile
+  const glowCanvas = document.createElement('canvas');
+  glowCanvas.width = W * GLOW_PX;
+  glowCanvas.height = H * GLOW_PX;
+  const glowCells = document.createElement('canvas');
+  glowCells.width = W;
+  glowCells.height = H;
+  const glowTex = new THREE.CanvasTexture(glowCanvas);
+  glowTex.colorSpace = THREE.NoColorSpace;  // an amount of light, not a colour
+  glowTex.minFilter = THREE.LinearFilter;
+  glowTex.magFilter = THREE.LinearFilter;
+  glowTex.generateMipmaps = false;
   const glowMat = new THREE.MeshBasicMaterial({
-    color: 0xffca7a, transparent: true, opacity: 0, depthWrite: false,
-    blending: THREE.AdditiveBlending, fog: false });
-  /* a circle, not a square: a pool of lamplight has no corners */
-  const glowGeo = new THREE.CircleGeometry(0.5, 12);
+    color: 0xffbf66, map: glowTex, transparent: true, opacity: 0,
+    depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+  const glowGeo = new THREE.PlaneGeometry(W, H);
   glowGeo.rotateX(-Math.PI / 2);
-  const glow = new THREE.InstancedMesh(glowGeo, glowMat, Math.max(1, W * H));
-  glow.frustumCulled = false;
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  glow.position.set(W / 2, TILE_TOP + 0.02, H / 2);
   glow.renderOrder = 2;
+  glow.visible = false;
   scene.add(glow);
 
   let glowCount = 0;
+  let glowKey = '';
   function buildGlow(st) {
     const light = (st && st.light) || [];
+    const key = light.join(',');
+    if (key === glowKey) return;       // the field changes when a lamp does
+    glowKey = key;
+    const small = glowCells.getContext('2d');
+    const img = small.createImageData(W, H);
     let n = 0;
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        const v = light[y * W + x] || 0;
-        if (!v) continue;
-        const s = 1.35 + v * 0.2;
-        dummy.position.set(x + 0.5, TILE_TOP + 0.02, y + 0.5);
-        dummy.rotation.set(0, 0, 0);
-        dummy.scale.set(s, 1, s);
-        dummy.updateMatrix();
-        glow.setMatrixAt(n, dummy.matrix);
-        n++;
-      }
+    for (let i = 0; i < W * H; i++) {
+      const v = Math.max(0, Math.min(9, Number(light[i]) || 0)) / 9;
+      if (v) n++;
+      /* eased a little so the rim of a pool is a fade, not a ledge: the
+       * field steps 0-9 per cell and this keeps the low steps faint */
+      const a = Math.round(255 * Math.pow(v, 1.3));
+      img.data[i * 4] = 255;
+      img.data[i * 4 + 1] = 255;
+      img.data[i * 4 + 2] = 255;
+      img.data[i * 4 + 3] = a;
     }
-    glow.count = n;
+    small.putImageData(img, 0, 0);
+    const big = glowCanvas.getContext('2d');
+    big.clearRect(0, 0, glowCanvas.width, glowCanvas.height);
+    big.imageSmoothingEnabled = true;
+    big.imageSmoothingQuality = 'high';
+    /* the blur takes the corners off the smoothing's diamonds; a browser
+     * without canvas filters still gets the smooth upscale */
+    if ('filter' in big) big.filter = `blur(${GLOW_PX * 0.6}px)`;
+    big.drawImage(glowCells, 0, 0, glowCanvas.width, glowCanvas.height);
+    if ('filter' in big) big.filter = 'none';
+    glowTex.needsUpdate = true;
     glowCount = n;
-    glow.instanceMatrix.needsUpdate = true;
   }
 
   /* --------------------------------------------------------- windows lit */
@@ -1465,7 +1499,7 @@ export function createWorld(ground, canvas, opts) {
     headMat.emissiveIntensity = 0.06 + dark * 0.34;
     lampBulbMat.emissiveIntensity = 0.05 + dark * 2.6;
     shopSignMat.emissiveIntensity = 0.1 + dark * 1.8;
-    glowMat.opacity = dark * 0.55;
+    glowMat.opacity = dark * 1.1;
     glow.visible = glowCount > 0 && dark > 0.02;
 
     updateResidents(now);
