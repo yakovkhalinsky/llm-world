@@ -24,7 +24,9 @@ const path = require('path');
 const vm = require('vm');
 
 const HERE = path.join(__dirname, '..', 'estate', 'page');
-const FILES = ['boot.js', 'scene.js', 'panels.js'];
+/* walk.js first: the plan page inlines it ahead of the rest, and scene.js
+ * reads `EstateWalk` at load */
+const FILES = ['walk.js', 'boot.js', 'scene.js', 'panels.js'];
 
 /* ------------------------------------------------------------- stubs */
 

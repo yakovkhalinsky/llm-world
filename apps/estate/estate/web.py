@@ -229,6 +229,11 @@ def ground(est):
     return {
         "width": w["width"], "height": w["height"],
         "codes": codes, "rows": rows,
+        # What a step onto each site costs, from the pack — `null` where
+        # nobody may walk. The pages route their people over this ground, and
+        # the price of a lawn is the pack's fact: a renderer that wrote its
+        # own would be a second copy that drifts (grove b2/b34).
+        "walk": {name: rules.R["sites"][name].get("walk") for name in codes},
         "biome": w.get("biome"),
         "seed": w["seed"], "buildings": buildings, "units": units,
         # every glyph comes from the pack too. A page that spells its own
@@ -369,8 +374,32 @@ def _load_page():
 
     return (read("index.html")
             .replace("{{STYLE}}", "\n" + read("style.css"))
-            .replace("{{SCRIPT}}", read("boot.js") + read("scene.js")
-                     + read("panels.js")))
+            .replace("{{SCRIPT}}", read("walk.js") + read("boot.js")
+                     + read("scene.js") + read("panels.js")))
+
+
+WALK_JS = os.path.join(os.path.dirname(__file__), "page", "walk.js")
+
+_WALK_CACHE = None
+
+
+def _walk_bytes():
+    """The router the 3D page loads, and the plan page inlines.
+
+    One file, two pages: the 3D view is modules and the plan is classic
+    scripts, so it publishes itself as a global and is served rather than
+    imported. Served as JavaScript, never text/plain — a module (or a
+    script) the browser refuses to execute looks exactly like a broken
+    page.
+    """
+    global _WALK_CACHE
+    if _WALK_CACHE is None:
+        try:
+            with open(WALK_JS, "rb") as f:
+                _WALK_CACHE = f.read()
+        except OSError:
+            _WALK_CACHE = b""
+    return _WALK_CACHE
 
 
 PIXI_JS = os.path.join(os.path.dirname(__file__), "page",
@@ -510,6 +539,14 @@ def cmd_web(args):
                     self._send(200, b, "application/javascript; charset=utf-8")
                 else:
                     self._send(404, "the engine's file is missing", "text/plain")
+            elif path == "/walk.js":
+                # shared by both viewers: the plan inlines it, the 3D page
+                # loads it as a classic script before its module
+                b = _walk_bytes()
+                if b:
+                    self._send(200, b, "application/javascript; charset=utf-8")
+                else:
+                    self._send(404, "the router is missing", "text/plain")
             elif path in ("/3d", "/3d/"):
                 f = _page3d("index.html")
                 if f:

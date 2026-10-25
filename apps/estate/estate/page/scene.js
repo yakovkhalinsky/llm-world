@@ -51,13 +51,23 @@ const Scene = (() => {
 
   const ROLE = { child: 0xf2c14e, adult: 0x9ecbf0, elder: 0xd9b8e8 };
 
+  /* the shared router (page/walk.js), inlined into this page's script */
+  const Walk = (typeof globalThis !== 'undefined' && globalThis.EstateWalk) ||
+               null;
+
   const SC = {
     app: null, world: null,
     gGround: null, gShade: null, gBuild: null, gWin: null,
     gObj: null, gPeople: null, gLight: null, gFx: null, gMark: null,
     ground: null, state: null, tickMs: 6000, t0: 0,
     agents: {}, drops: [], season: -1, built: false, shadeKey: '',
-    benchByCell: {}, seatPrev: {},
+    benchByCell: {},
+    /* the walkable plan, and the day whose routes are current. The state is
+     * polled several times per day; a route is built on the day, not on
+     * every poll, or it would restart before arriving. */
+    grid: null, day: -1, routeStats: { active: 0, maxWaypoints: 0,
+                                       fallbacks: 0 },
+    sample: { x: 0, z: 0, dx: 0, dz: 0, moving: false },
     scale: 1, ox: 0, oy: 0, cw: 0, ch: 0,
     ext: { x0: 0, y0: 0, w: 1, h: 1 },
     heights: null,
@@ -91,6 +101,14 @@ const Scene = (() => {
   }
 
   const heightAt = (x, y) => (SC.heights || {})[x + ',' + y] || 0;
+
+  /* Where a walk begins or ends when a block is involved: the door cell the
+   * engine walks to, never a point on the wall. */
+  function doorOf(unit) {
+    const u = SC.ground.units[String(unit)];
+    const b = u ? SC.ground.byId[u.b] : null;
+    return b ? { cx: b.door[0], cy: b.door[1] } : null;
+  }
 
   /* where a resident is when they are in: a window of their own flat. A
    * person indoors is a state, not a coordinate, and this is how a state
@@ -275,11 +293,12 @@ const Scene = (() => {
     return { x: s.x, y: s.y - heightAt(Math.floor(q.x), Math.floor(q.y)) };
   };
 
-  function syncPeople(st) {
+  function syncPeople(st, fresh) {
     /* who is on a bench. The fixtures say where the benches are and how
      * many each holds; the people say who is standing on one. Lowest ids
      * take the seats first, so the picture does not shuffle between polls;
      * whoever does not fit stands at the end of the bench. */
+    SC.tickMs = Math.max(300, (st.tick_seconds || 6) * 1000);
     const benches = {};
     st.fixtures.forEach(f => {
       if (f.kind === 'bench' && f.cap > 0) {
@@ -301,12 +320,12 @@ const Scene = (() => {
         if (rank < b.cap) {
           const off = b.cap > 1 ? (rank - (b.cap - 1) / 2) * 6 : 0;
           sitAt[id] = { x: base.x + off, y: base.y - 1, seated: true,
-                        cell: key };
+                        cell: key, off: off };
         } else {
           const side = (id & 1) ? 1 : -1;
-          const off = 10 + (id % 3) * 2;
-          sitAt[id] = { x: base.x + side * off, y: base.y, seated: false,
-                        cell: key };
+          const off = side * (10 + (id % 3) * 2);
+          sitAt[id] = { x: base.x + off, y: base.y, seated: false,
+                        cell: key, off: off };
         }
       });
     }
@@ -319,32 +338,99 @@ const Scene = (() => {
         a = G();
         SC.gPeople.addChild(a);
         SC.agents[p.id] = a;
+        a.__route = null;
       }
       const sit = p.in ? null : sitAt[p.id];
-      const seated = !!(sit && sit.seated);
+      /* A route that has run its course is no longer walking. Clearing it
+       * here — on a poll, never inside a frame — is what lets the figure
+       * settle into its seat a poll after it arrives. */
+      if (a.__route && (!fresh &&
+          performance.now() - a.__routeT0 >= a.__routeDur)) {
+        a.__route = null;
+      }
+      if (p.in) a.__route = null;
+
+      /* the screen point a person occupies when not walking */
+      const to = p.in ? windowOf(p.unit) : (sit || atop(p));
+      a.__to = to;
+
+      if (fresh) {
+        if (p.in) {
+          a.__route = null;
+        } else {
+          /* the route's end in cell coordinates. A seat's screen offset is
+           * turned back into the cell plane, so a walk ends on the seat
+           * rather than at the cell's centre. */
+          let tx = p.x + 0.5, tz = p.y + 0.5;
+          if (sit) {
+            tx += sit.off / TW;
+            tz -= sit.off / TW;
+            if (sit.seated) {          // and the one-pixel lift onto it
+              const half = -1 / TH;
+              tx += half; tz += half;
+            }
+          }
+          let scx, scy, sx, sz;
+          const door = p.pin ? doorOf(p.punit) : null;
+          if (door) {
+            scx = door.cx; scy = door.cy;
+            sx = scx + 0.5; sz = scy + 0.5;
+          } else {
+            scx = p.px == null ? p.x : p.px;
+            scy = p.py == null ? p.y : p.py;
+            sx = scx + 0.5; sz = scy + 0.5;
+          }
+          if (scx === p.x && scy === p.y) {
+            a.__route = null;          // the same cell: no walk to draw
+          } else {
+            let route = null;
+            if (SC.grid) {
+              const cells = Walk.findPath(SC.grid, scx, scy, p.x, p.y);
+              if (cells) route = Walk.routePoints(cells, sx, sz, tx, tz);
+            }
+            if (!route) {
+              SC.routeStats.fallbacks++;
+              route = Walk ? Walk.straight(sx, sz, tx, tz) : null;
+            }
+            a.__route = route;
+            if (route) {
+              a.__routeT0 = performance.now();
+              a.__routeDur = Walk ? Walk.duration(route.total, SC.tickMs)
+                                  : Math.max(120, SC.tickMs * 0.9);
+            }
+          }
+        }
+      }
+
+      const moving = !!a.__route;
+      const seated = !!(sit && sit.seated) && !moving;
       const tag = p.role + p.in + (p.stress >= 3) + (seated ? 's' : '');
       if (a.__drawn !== tag) { drawAgent(a, p, p.in, seated); a.__drawn = tag; }
-      a.__to = p.in ? windowOf(p.unit) : (sit || atop(p));
-      const prev = SC.seatPrev[p.id];
-      /* somebody who stays on the same bench starts from the seat rather
-       * than from the cell's centre, so the seat does not re-enter the
-       * bench on every poll */
-      if (!p.in && prev && sit && prev.cell === p.x + ',' + p.y) {
-        a.__from = prev;
-      } else {
-        a.__from = p.pin ? windowOf(p.punit) : atop({ x: p.px, y: p.py });
+      if (!a.__init) {
+        if (a.__route) {
+          const r = a.__route;
+          const x = r.xs[0], y = r.zs[0];
+          a.position.set((x - y) * TW / 2, (x + y) * TH / 2);
+        } else {
+          a.position.set(to.x, to.y);
+        }
+        a.__init = true;
       }
-      if (!a.__from) a.__from = a.__to;
-      if (!a.__init) { a.position.set(a.__to.x, a.__to.y); a.__init = true; }
     });
-    SC.seatPrev = sitAt;
     for (const id in SC.agents) {
       if (!seen[id]) {
         SC.gPeople.removeChild(SC.agents[id]);
         delete SC.agents[id];
       }
     }
-    SC.tickMs = Math.max(300, (st.tick_seconds || 6) * 1000);
+    /* what the debug hook publishes; these are the routes the frame follows */
+    let active = 0, maxPts = 0;
+    for (const id in SC.agents) {
+      const r = SC.agents[id].__route;
+      if (r) { active++; if (r.n > maxPts) maxPts = r.n; }
+    }
+    SC.routeStats.active = active;
+    SC.routeStats.maxWaypoints = maxPts;
     SC.t0 = performance.now();
   }
 
@@ -414,14 +500,22 @@ const Scene = (() => {
     if (!SC.state) return;
     const dt = ticker.deltaMS;
     const ph = phaseNow();
-    const ease = Math.min(1, (performance.now() - SC.t0) / SC.tickMs);
-    const e = ease < 0.5 ? 2 * ease * ease
-                         : 1 - Math.pow(-2 * ease + 2, 2) / 2;
+    /* A walk follows its route at a steady pace; a person standing still
+     * sits where they are. Positions only — a warm frame draws no geometry
+     * (see tools/pixi_check.js), which is why this loop sets nothing but
+     * positions. */
+    const now = performance.now();
     for (const id in SC.agents) {
       const a = SC.agents[id];
-      if (!a.__to) continue;
-      a.position.set(a.__from.x + (a.__to.x - a.__from.x) * e,
-                     a.__from.y + (a.__to.y - a.__from.y) * e);
+      const r = a.__route;
+      if (Walk && r && r.total > 1e-6) {
+        const t = (now - a.__routeT0) / (a.__routeDur || 1) * r.total;
+        Walk.sample(r, t, SC.sample);
+        const x = SC.sample.x, y = SC.sample.z;
+        a.position.set((x - y) * TW / 2, (x + y) * TH / 2);
+      } else if (a.__to) {
+        a.position.set(a.__to.x, a.__to.y);
+      }
     }
     const tint = tintFor(ph);
     SC.overlay.tint = tint.c;
@@ -448,6 +542,7 @@ const Scene = (() => {
 
   function init(ground) {
     SC.ground = ground;
+    SC.grid = Walk ? Walk.buildGrid(ground) : null;
     SC.ground.byId = {};
     SC.ground.buildings = ground.buildings || [];
     SC.ground.unitsPer = {};
@@ -515,10 +610,16 @@ const Scene = (() => {
       buildGround(st);
       SC.shadeKey = key;
     }
+    /* Routes are rebuilt when a day arrives, not on every poll — the state
+     * repeats in between, and re-planning a walk every 700 ms restarted it
+     * before it had arrived. */
+    const fresh = st.day !== SC.day;
+    SC.day = st.day;
+    if (SC.grid) Walk.setFixtures(SC.grid, st.fixtures || []);
     buildWindows();
     buildObjects();
     buildLight();
-    syncPeople(st);
+    syncPeople(st, fresh);
     syncWeather(st);
   }
 

@@ -12,9 +12,48 @@ Run from `apps/estate`:
 """
 
 import io
+import types
 import unittest
 
-from estate import web
+from estate import gen, rules, web
+
+
+class GroundWalkTest(unittest.TestCase):
+    """The pages route on the plan, so the plan has to carry the pack's
+    prices. A client that invented its own would be a second copy of a fact
+    the engine owns — and the two would disagree the first time the pack was
+    tuned."""
+
+    def test_ground_ships_the_packs_walk_costs(self):
+        world = gen.generate(42)
+        g = web.ground(types.SimpleNamespace(world=world))
+        self.assertEqual(
+            g["walk"],
+            {name: rules.R["sites"][name].get("walk")
+             for name in g["codes"]})
+        # the two facts the router needs most: a lawn is dearer than a path,
+        # and a wall is not a step
+        self.assertLess(g["walk"]["path"], g["walk"]["lawn"])
+        self.assertIsNone(g["walk"]["building"])
+        self.assertIsNone(g["walk"]["water"])
+
+
+class WalkModuleTest(unittest.TestCase):
+    """One router, two viewers: the plan page inlines it and the 3D page
+    loads it from the same place."""
+
+    def test_the_router_is_served(self):
+        data = web._walk_bytes()
+        self.assertIsInstance(data, bytes)
+        self.assertIn(b"EstateWalk", data)
+        self.assertIn(b"findPath", data)
+
+    def test_the_plan_page_inlines_the_router(self):
+        page = web._load_page()
+        self.assertIn("root.EstateWalk", page)
+        # and it is before the scene that reads it
+        self.assertLess(page.index("root.EstateWalk"),
+                        page.index("const Walk ="))
 
 
 class Page3dTest(unittest.TestCase):

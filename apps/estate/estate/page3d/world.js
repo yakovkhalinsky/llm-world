@@ -22,6 +22,12 @@
 import * as THREE from 'three';
 import { OrbitControls } from '/3d/vendor/OrbitControls.js';
 
+/* The router is a classic script (`/walk.js`) so the plan page can inline the
+ * same file; see page/walk.js. If it ever fails to load, the page still draws
+ * everyone — as a straight line, which is what it used to do always. */
+const Walk = (typeof globalThis !== 'undefined' && globalThis.EstateWalk) ||
+             null;
+
 const PHASE_NAMES = ['dawn', 'morning', 'afternoon', 'evening', 'night'];
 const FLOOR_H = 1.35;          // world units per storey
 const TILE_TOP = 0.12;         // the walking surface: top of a ground tile
@@ -140,6 +146,9 @@ export function createWorld(ground, canvas, opts) {
   const staticMode = !!opts.staticMode;
   const W = ground.width, H = ground.height;
   const centre = new THREE.Vector3(W / 2, 1.4, H / 2);
+  /* the plan's walkable ground, searched once and never rebuilt unless the
+   * fixture list changes */
+  const grid = Walk ? Walk.buildGrid(ground) : null;
 
   /* The outer band of the estate: walkable ground inside the ring road
    * within three cells of it. The plan is the source — the road's own
@@ -751,19 +760,72 @@ export function createWorld(ground, canvas, opts) {
   let bodyMesh = null, headMesh = null, capacity = 0;
   let people = [];
   let personAt = [];
-  const fromX = [], fromZ = [], toX = [], toZ = [];
+  const toX = [], toZ = [];
   const offX = [], offZ = [], roleScale = [];
   /* 0 stands, 1 sits on the bench, 2 stands beside it because it is full */
   const sitMode = [], seatFx = [], seatFz = [];
-  /* last state's seat positions, so somebody who stays on the same bench
-   * does not glide from the cell's centre to the seat on every poll */
+  /* Each walker's route (from page/walk.js) and when its walk began. A route
+   * is built when a person's cell changes, not once a frame and not once a
+   * poll: the state repeats between days, and rebuilding on every poll
+   * restarted the walk before it had got anywhere. */
+  const routes = [], routeT0 = [], routeDur = [];
+  const facing = [];
+  let routesBuilt = false;
+  let routeFallbacks = 0;     // straight lines used because no path was found
+  let routeMaxPoints = 0;
+  const routeSample = { x: 0, z: 0, dx: 0, dz: 0, moving: false };
+
+  /* ----------------------------------------------------------- trace */
+  /* `?trace=1` draws every current route; `?trace=<id>` draws one. It is a
+   * debugging view, rebuilt when the day arrives and never inside a frame —
+   * the lines are the route the person is actually walking, not a second
+   * guess at it. */
+  const TRACE_MAX = 8192;           // vertices
+  let traceMesh = null, traceGeo = null;
+  if (opts.trace) {
+    traceGeo = new THREE.BufferGeometry();
+    traceGeo.setAttribute('position',
+      new THREE.BufferAttribute(new Float32Array(TRACE_MAX * 3), 3)
+        .setUsage(THREE.DynamicDrawUsage));
+    traceGeo.setDrawRange(0, 0);
+    traceMesh = new THREE.LineSegments(traceGeo, new THREE.LineBasicMaterial({
+      color: 0xffd166, transparent: true, opacity: 0.9,
+      depthWrite: false }));
+    traceMesh.frustumCulled = false;
+    traceMesh.renderOrder = 4;
+    traceMesh.visible = false;
+    scene.add(traceMesh);
+  }
+
+  function rebuildTrace() {
+    if (!traceMesh) return;
+    const pos = traceGeo.attributes.position.array;
+    const want = String(opts.trace);
+    const one = want === '1' ? null : Number(want);
+    let n = 0;
+    for (let i = 0; i < people.length && n + 6 <= TRACE_MAX * 3; i++) {
+      if (one !== null && people[i].id !== one) continue;
+      const r = routes[i];
+      if (!r || r.n < 2) continue;
+      for (let k = 0; k + 1 < r.n && n + 6 <= TRACE_MAX * 3; k++) {
+        pos[n++] = r.xs[k]; pos[n++] = WALK_Y + 0.04; pos[n++] = r.zs[k];
+        pos[n++] = r.xs[k + 1]; pos[n++] = WALK_Y + 0.04; pos[n++] = r.zs[k + 1];
+      }
+    }
+    traceGeo.setDrawRange(0, n / 3);
+    traceGeo.attributes.position.needsUpdate = true;
+    traceMesh.visible = n > 0;
+  }
+
+  /* last state's seat positions: somebody already on a bench starts their
+   * next walk from the seat rather than the cell's centre, and somebody who
+   * stays on the same bench is not sent walking at all */
   let prevSeat = {};
   /* The day is the clock, not the poll. The page is polled several times
    * per day, and resetting these on every state made the light restart
-   * toward dawn and the glide restart toward the old position before
-   * either had got anywhere. */
+   * toward dawn and the walk restart toward the old position before either
+   * had got anywhere. */
   let tickMs = 6000;
-  let moveT0 = 0;             // when the current day's positions arrived
   let phaseStart = 0;         // when the current day's phase run began
   let daySeen = -1;
   let paused = false;
@@ -790,21 +852,13 @@ export function createWorld(ground, canvas, opts) {
     scene.add(headMesh);
   }
 
-  /* where a person appears when they step out: the face of their block,
-   * under the window of their own flat */
-  function homeSpot(unit) {
+  /* Where a walk begins or ends when a block is involved: the door cell the
+   * engine itself walks to, never a point on the wall. Being inside is a
+   * state, not a coordinate (`_pos` in the engine makes the same turn). */
+  function doorSpot(unit) {
     const u = ground.units[String(unit)];
-    if (!u) return { x: centre.x, z: centre.z };
-    const b = buildingById[u.b];
-    if (!b) return { x: centre.x, z: centre.z };
-    const longX = b.w >= b.h;
-    const t = (u.i + 0.5) / Math.max(1, u.n);
-    if (longX) {
-      return { x: b.x + 0.72 + t * Math.max(0.1, b.w - 1.44),
-               z: b.y + b.h + 0.38 };
-    }
-    return { x: b.x + b.w + 0.38,
-             z: b.y + 0.72 + t * Math.max(0.1, b.h - 1.44) };
+    const b = u ? buildingById[u.b] : null;
+    return b ? { x: b.door[0], y: b.door[1] } : null;
   }
 
   function syncResidents(st) {
@@ -815,23 +869,28 @@ export function createWorld(ground, canvas, opts) {
     if (personAt.length < capacity) {
       for (let i = personAt.length; i < capacity; i++) {
         personAt[i] = null;
-        fromX[i] = fromZ[i] = toX[i] = toZ[i] = 0;
+        toX[i] = toZ[i] = 0;
         offX[i] = offZ[i] = 0;
         roleScale[i] = 1;
         sitMode[i] = 0;
         seatFx[i] = 0;
         seatFz[i] = 1;
+        routes[i] = null;
+        routeT0[i] = routeDur[i] = 0;
+        facing[i] = 0;
       }
     }
+
+    /* A position only changes when a day does. The page is polled several
+     * times per day, so a route is rebuilt on the day's arrival and left
+     * alone in between: rebuilding it on every poll restarted the walk from
+     * its beginning before it had arrived. */
+    const fresh = !routesBuilt || st.day !== daySeen;
+    const seatWas = prevSeat;
 
     for (let i = 0; i < people.length; i++) {
       const p = people[i];
       personAt[i] = p;
-      const from = p.pin ? homeSpot(p.punit)
-                         : { x: (p.px == null ? p.x : p.px) + 0.5,
-                             z: (p.py == null ? p.y : p.py) + 0.5 };
-      fromX[i] = from.x;
-      fromZ[i] = from.z;
       toX[i] = p.x + 0.5;
       toZ[i] = p.y + 0.5;
       offX[i] = (hash01(p.id, 11) * 2 - 1) * 0.17;
@@ -877,11 +936,6 @@ export function createWorld(ground, canvas, opts) {
           sitMode[i] = 1;
           seatFx[i] = b.fx;
           seatFz[i] = b.fz;
-          const prev = prevSeat[p.id];
-          if (prev && prev.cell === key) {
-            fromX[i] = prev.x;
-            fromZ[i] = prev.z;
-          }
           seatNow[p.id] = { cell: key, x: toX[i], z: toZ[i] };
           seatedCount++;
         } else {
@@ -909,6 +963,68 @@ export function createWorld(ground, canvas, opts) {
 
     tickMs = Math.max(300, (st.tick_seconds || 6) * 1000);
     const now = performance.now();
+
+    /* Each changed position becomes a walk over the plan's own ground. A
+     * resident leaving a block starts at its door; a resident already on a
+     * bench starts at the seat. Anyone whose cell did not change keeps the
+     * route they had — which is what lets a walk finish. */
+    if (fresh) {
+      if (grid) Walk.setFixtures(grid, st.fixtures || []);
+      routeMaxPoints = 0;
+      for (let i = 0; i < people.length; i++) {
+        const p = people[i];
+        routes[i] = null;
+        if (p.in) continue;                // indoors is not drawn walking
+        const gx = p.x, gy = p.y;
+        const tx = toX[i], tz = toZ[i];
+
+        let scx, scy, sx, sz;
+        const door = p.pin ? doorSpot(p.punit) : null;
+        if (door) {
+          scx = door.x; scy = door.y;
+          sx = scx + 0.5; sz = scy + 0.5;
+        } else {
+          scx = p.px == null ? gx : p.px;
+          scy = p.py == null ? gy : p.py;
+          sx = scx + 0.5; sz = scy + 0.5;
+          const was = seatWas[p.id];
+          if (was && was.cell === scx + ',' + scy) {
+            sx = was.x; sz = was.z;        // get up from where you sat
+          }
+        }
+        if (scx === gx && scy === gy) continue;   // same cell: no walk
+
+        let route = null;
+        if (grid) {
+          const cells = Walk.findPath(grid, scx, scy, gx, gy);
+          if (cells) route = Walk.routePoints(cells, sx, sz, tx, tz);
+        }
+        if (!route) {
+          /* no path (or no router): the straight line the page used to
+           * draw, counted so a broken grid is visible rather than silent */
+          routeFallbacks++;
+          route = Walk ? Walk.straight(sx, sz, tx, tz)
+                       : { xs: [sx, tx], zs: [sz, tz],
+                           cum: [0, 1], n: 2,
+                           total: Math.hypot(tx - sx, tz - sz) };
+        }
+        routes[i] = route;
+        routeT0[i] = now;
+        routeDur[i] = Walk ? Walk.duration(route.total, tickMs)
+                           : Math.max(120, tickMs * 0.9);
+        if (route.total > 1e-4 && route.n > routeMaxPoints) {
+          routeMaxPoints = route.n;
+        }
+        if (route.n > 1) {
+          const dx = route.xs[1] - route.xs[0];
+          const dz = route.zs[1] - route.zs[0];
+          if (dx || dz) facing[i] = Math.atan2(dx, dz);
+        }
+      }
+      routesBuilt = true;
+      if (traceMesh) rebuildTrace();
+    }
+
     if (!!st.paused !== paused) {
       if (st.paused) pausedPhase = rawPhase(now);
       else phaseStart = now - (pausedPhase / 5) * tickMs;
@@ -916,23 +1032,13 @@ export function createWorld(ground, canvas, opts) {
     }
     if (st.day !== daySeen) {
       daySeen = st.day;
-      moveT0 = now;
       if (paused) pausedPhase = 0;
       else phaseStart = now;
     }
   }
 
-  function glided(now) {
-    /* a frozen frame shows where the estate actually is, not where its
-     * people were before the day that the frame is showing */
-    if (staticMode) return 1;
-    const raw = Math.min(1, Math.max(0, (now - moveT0) / tickMs));
-    return raw < 0.5 ? 2 * raw * raw : 1 - Math.pow(-2 * raw + 2, 2) / 2;
-  }
-
   function updateResidents(now) {
     if (!bodyMesh) return;
-    const e = glided(now);
     for (let i = 0; i < people.length; i++) {
       const p = people[i];
       if (p.in) {
@@ -945,9 +1051,26 @@ export function createWorld(ground, canvas, opts) {
         continue;
       }
       const s = roleScale[i];
-      const x = fromX[i] + (toX[i] - fromX[i]) * e + offX[i];
-      const z = fromZ[i] + (toZ[i] - fromZ[i]) * e + offZ[i];
-      if (sitMode[i] === 1) {
+      const r = routes[i];
+      let x = toX[i], z = toZ[i];
+      let moving = false;
+      if (Walk && r && r.total > 1e-6) {
+        const t = staticMode ? r.total
+                             : (now - routeT0[i]) / (routeDur[i] || 1) * r.total;
+        Walk.sample(r, t, routeSample);
+        x = routeSample.x;
+        z = routeSample.z;
+        moving = routeSample.moving;
+        if (routeSample.dx || routeSample.dz) {
+          facing[i] = Math.atan2(routeSample.dx, routeSample.dz);
+        }
+      }
+      x += offX[i];
+      z += offZ[i];
+
+      /* somebody who has arrived at their bench sits; somebody still
+       * walking there is still walking */
+      if (sitMode[i] === 1 && !moving) {
         /* sitting: the body is shorter and its foot is the seat's top, and
          * a small lean toward the path is what makes it read as sitting
          * rather than as a figure sunk into the ground */
@@ -966,8 +1089,12 @@ export function createWorld(ground, canvas, opts) {
         headMesh.setMatrixAt(i, dummy.matrix);
         continue;
       }
-      const bob = Math.sin(now * 0.003 + i * 1.7) * 0.014;
-      dummy.rotation.set(0, 0, 0);
+      /* a small gait while walking, still otherwise; and a body turned the
+       * way it is going */
+      const bob = moving
+        ? Math.sin(now * 0.009 + i * 1.7) * 0.02 * s
+        : 0;
+      dummy.rotation.set(0, facing[i], 0);
       dummy.scale.set(s, s, s);
       dummy.position.set(x, WALK_Y + 0.36 * s + bob, z);
       dummy.updateMatrix();
@@ -1500,10 +1627,24 @@ export function createWorld(ground, canvas, opts) {
     return true;
   }
 
+  /* What the route machinery is doing, for the page's debug hook: how many
+   * walks are in flight, the longest one's waypoints, and how many positions
+   * ever had to fall back to a straight line. */
+  function routeStats() {
+    const now = performance.now();
+    let active = 0;
+    for (let i = 0; i < people.length; i++) {
+      const r = routes[i];
+      if (r && r.total > 1e-6 && now - routeT0[i] < routeDur[i]) active++;
+    }
+    return { active, maxWaypoints: routeMaxPoints,
+             fallbacks: routeFallbacks };
+  }
+
   return {
     scene, camera, renderer, controls,
     setState, frame, resize, pick, stateSummary, focusBench, focusPerimeter,
-    focusCell,
+    focusCell, routeStats,
     phaseIndex: () => phaseInfo.index,
     phaseName: () => phaseInfo.name,
     hasState: () => haveState,

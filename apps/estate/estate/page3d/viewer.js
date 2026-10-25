@@ -21,13 +21,17 @@
  *                   hold its benches and the people on them.
  *   ?focus=x,y     frames a named cell instead, for a close-up of a
  *                   particular place.
+ *   ?trace=1       draw every current walking route as a line on the ground;
+ *                   ?trace=<id> draws one resident's route only. The lines
+ *                   are rebuilt when the day arrives, never inside a frame.
  *
  * When the first state has been drawn it publishes
  * `window.__estate3d = {ready, residents, buildings, benches, seated,
- * outside, walking, perimeter, phase}` — `seated` is how many residents
- * are on a bench now, `outside` how many are not in a flat, `walking` how
- * many the page is gliding between cells, and `perimeter` how many are out
- * on the estate's edge.
+ * outside, walking, perimeter, phase, routes}` — `seated` is how many
+ * residents are on a bench now, `outside` how many are not in a flat,
+ * `walking` how many the page is walking between cells, `perimeter` how
+ * many are out on the estate's edge, and `routes` is
+ * `{active, maxWaypoints, fallbacks}` from the router.
  */
 
 import { createWorld } from './world.js';
@@ -54,6 +58,8 @@ const STATIC = params.get('static') === '1';
 const TOP = params.get('view') === 'top';
 /* a close camera on the busiest bench, or on a named cell */
 const FOCUS = (params.get('focus') || '').toLowerCase();
+/* debug lines: every walking route, or one resident's */
+const TRACE = params.get('trace') || '';
 const parsedPhase = Object.prototype.hasOwnProperty.call(PHASE_ALIAS, phaseArg)
   ? PHASE_ALIAS[phaseArg] : -1;
 /* static with no named phase freezes at afternoon for a legible shot */
@@ -228,6 +234,7 @@ function publishReady() {
     perimeter: summary.perimeter,
     phase: S.world.phaseName(),
     static: STATIC,
+    routes: S.world.routeStats(),
   };
   /* the same signal in the DOM, so a headless check that only dumps the
    * page can tell a drawn estate from a module that never ran */
@@ -293,6 +300,7 @@ function poll() {
       window.__estate3d.outside = summary.outside;
       window.__estate3d.walking = summary.walking;
       window.__estate3d.perimeter = summary.perimeter;
+      window.__estate3d.routes = S.world.routeStats();
       applyFocus();
     }
     if (STATIC) return;
@@ -377,7 +385,7 @@ function start() {
     S.ground = g;
     try {
       S.world = createWorld(g, $('view'), {
-        forcedPhase, staticMode: STATIC, topView: TOP,
+        forcedPhase, staticMode: STATIC, topView: TOP, trace: TRACE,
       });
     } catch (e) {
       fallback('WebGL could not start: ' + e.message);
