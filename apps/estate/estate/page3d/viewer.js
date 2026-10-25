@@ -22,6 +22,13 @@
 import { createWorld } from './world.js';
 
 const PHASES = ['dawn', 'morning', 'afternoon', 'evening', 'night'];
+/* The pack names the phases but carries no glyph for them (its glyph map
+ * is needs, households, fixtures, sites and weather), so this one display
+ * fact lives here rather than being an emoji the server has to invent.
+ * Night is a moon, not the same sun the afternoon uses. */
+const PHASE_GLYPH = {
+  dawn: '🌅', morning: '☀', afternoon: '☀', evening: '🌇', night: '☾',
+};
 const PHASE_ALIAS = {
   dawn: 0, sunrise: 0, morning: 1, noon: 2, day: 2, afternoon: 2,
   dusk: 3, sunset: 3, evening: 3, night: 4, midnight: 4,
@@ -117,7 +124,11 @@ function markPace(now) {
 function phaseLabel(info) {
   if (info.index === S.phaseLabel) return;
   S.phaseLabel = info.index;
-  $('phase').textContent = PHASES[info.index];
+  const name = PHASES[info.index];
+  $('phase').textContent = name;
+  const glyph = $('phaseGlyph');
+  glyph.textContent = PHASE_GLYPH[name] || '·';
+  glyph.classList.toggle('night', name === 'night');
 }
 
 /* ------------------------------------------------------------- the card */

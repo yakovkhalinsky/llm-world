@@ -89,6 +89,8 @@ html, body {
   color: var(--ink);
 }
 .watchline .d { color: var(--lamp); }
+/* the moon is not a lamp: at night the glyph takes the sky's own blue */
+.watchline .d.night { color: #cfe0ff; }
 .watchline .dim { color: var(--dim); }
 
 .ctl { bottom: 14px; left: 16px; }

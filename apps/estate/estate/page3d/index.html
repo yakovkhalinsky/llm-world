@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Highfield — 3D</title>
+<!-- no favicon on this page; an empty data URL stops the browser asking
+     for /favicon.ico and logging a 404 on every visit -->
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="/3d/style.css">
 <!-- The import map is what lets the vendored OrbitControls keep its plain
      `import ... from 'three'` while the page never touches a CDN. -->
@@ -28,7 +31,7 @@
     </div>
     <div class="poplines" id="pops"></div>
     <div class="watchline">
-      <span class="d">☀</span> <span id="phase">…</span>
+      <span class="d" id="phaseGlyph">·</span> <span id="phase">…</span>
       <span class="dim"> · the five phases turn the light</span>
     </div>
   </div>
