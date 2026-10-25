@@ -63,13 +63,17 @@ const SKIN = [0xf1d5b5, 0xe8c39a, 0xc68863, 0x8d5524];
  * table works on a plan of any size. Colours are sRGB hex and become linear
  * when three reads them. */
 const SKY = [
-  { sun: 0xffb27a, sunI: 1.15, offset: [30, 12, 22], sky: 0xe6b28c,
+  /* Dawn and evening keep the warm light but not a grazing sun: below about
+   * 25° the shadow camera sees the estate edge-on and a low sun throws long
+   * rectangles across everything beyond it. The colour says the hour; the
+   * elevation stays high enough for the light to fall like light. */
+  { sun: 0xffb27a, sunI: 1.15, offset: [28, 20, 20], sky: 0xe6b28c,
     hemiSky: 0xffd6ae, hemiGround: 0x4a4034, hemiI: 0.55 },
-  { sun: 0xfff2dc, sunI: 2.35, offset: [24, 40, 26], sky: 0xa9cbe8,
+  { sun: 0xfff2dc, sunI: 2.35, offset: [24, 40, 26], sky: 0x9fcdf2,
     hemiSky: 0xdcecff, hemiGround: 0x4e5648, hemiI: 0.82 },
-  { sun: 0xffe0b0, sunI: 2.15, offset: [-24, 36, 18], sky: 0xbdd6e8,
+  { sun: 0xffe0b0, sunI: 2.15, offset: [-24, 36, 18], sky: 0xa9d6f5,
     hemiSky: 0xe4f0ff, hemiGround: 0x55584a, hemiI: 0.78 },
-  { sun: 0xff8a4c, sunI: 1.35, offset: [-32, 12, -16], sky: 0xd98a62,
+  { sun: 0xff8a4c, sunI: 1.35, offset: [-30, 20, -14], sky: 0xd98a62,
     hemiSky: 0xffc9a8, hemiGround: 0x40372e, hemiI: 0.48 },
   /* Night is dark, not black: the plan page lays a 52%-alpha navy over a
    * drawing that is still there, and the 3D page keeps the same bargain —
@@ -80,7 +84,23 @@ const SKY = [
     hemiSky: 0x6e86b8, hemiGround: 0x2a3038, hemiI: 1.05 },
 ];
 
+/* A weather is a fact about the sky, so it tints the sky (and the fog that
+ * matches it) rather than only the ground. Clear days keep the phase's own
+ * blue; rain and storm pull it to grey, frost to a cold haze, heat to a
+ * warm one. Night keeps its dark blue — the tint fades out with the light,
+ * because a grey sky at midnight is not what rain looks like. */
+const WEATHER_SKY = {
+  rain:  { hex: 0x8c98a3, mix: 0.68, sun: 0.72 },
+  storm: { hex: 0x6d7883, mix: 0.8, sun: 0.55 },
+  frost: { hex: 0xd7e2ea, mix: 0.45, sun: 0.85 },
+  heat:  { hex: 0xe8cfa0, mix: 0.32, sun: 1.02 },
+};
+
+/* the sun never gets low enough to throw a shadow across the sky */
+const SUN_MIN_Y = 19;
+
 const _c1 = new THREE.Color();
+const _haze = new THREE.Color(0x8a9184);
 
 function hash01(n, salt) {
   let x = (n * 374761393 + (salt || 0) * 668265263) | 0;
@@ -133,10 +153,13 @@ export function createWorld(ground, canvas, opts) {
   renderer.toneMappingExposure = 1.0;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
+  const maxDim = Math.max(W, H);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(SKY[2].sky);
-  scene.fog = new THREE.Fog(SKY[2].sky, Math.max(W, H) * 1.05,
-                            Math.max(W, H) * 3.2);
+  /* Fog turns the ground past the estate into sky. It starts beyond the
+   * estate's own footprint so the blocks stay crisp, and its colour is the
+   * sky's every frame. */
+  scene.fog = new THREE.Fog(SKY[2].sky, maxDim * 1.3, maxDim * 2.8);
 
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
   /* high enough to see over the front blocks into the courtyard, still
@@ -170,15 +193,20 @@ export function createWorld(ground, canvas, opts) {
   const sun = new THREE.DirectionalLight(0xffffff, 2);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
-  const shadowSpan = Math.max(W, H) * 0.85;
+  /* Tight to the estate: half its diagonal, plus enough for the tallest
+   * block's top to fall inside the frustum at a low-ish sun. Everything
+   * past the estate is outside the shadow camera, so no shadow can be
+   * stretched across the ground behind it. */
+  const shadowSpan = Math.hypot(W, H) * 0.5 + 8;
   sun.shadow.camera.left = -shadowSpan;
   sun.shadow.camera.right = shadowSpan;
   sun.shadow.camera.top = shadowSpan;
   sun.shadow.camera.bottom = -shadowSpan;
   sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 190;
+  sun.shadow.camera.far = 120;
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.02;
+  sun.shadow.camera.updateProjectionMatrix();
   scene.add(sun);
   scene.add(sun.target);
   sun.target.position.copy(centre);
@@ -206,12 +234,45 @@ export function createWorld(ground, canvas, opts) {
     return siteColourCache[site];
   }
 
-  const base = new THREE.Mesh(
-    new THREE.PlaneGeometry(W + 90, H + 90),
-    new THREE.MeshStandardMaterial({ color: 0x33402f, roughness: 1 }));
+  /* The ground outside the estate. It is an apron that fades to nothing —
+   * and therefore to the sky behind it — a little way past the last tile,
+   * rather than a plane large enough to fill the frame. It takes no
+   * shadows: a building's shadow belongs on the estate's paving, and a
+   * shadow stretched across this apron was the dark rectangle the low sun
+   * used to throw into the background. The alpha is computed once from the
+   * estate rectangle, so the fade has a constant width on every side. */
+  const baseW = W + 120, baseH = H + 120;
+  const FADE_IN = 1.5, FADE_OUT = 21, FADE_TEX = 256;
+  const fadeCanvas = document.createElement('canvas');
+  fadeCanvas.width = fadeCanvas.height = FADE_TEX;
+  const fadeCtx = fadeCanvas.getContext('2d');
+  const fadeImg = fadeCtx.createImageData(FADE_TEX, FADE_TEX);
+  for (let py = 0; py < FADE_TEX; py++) {
+    for (let px = 0; px < FADE_TEX; px++) {
+      const wx = ((px + 0.5) / FADE_TEX - 0.5) * baseW + W / 2;
+      const wz = ((py + 0.5) / FADE_TEX - 0.5) * baseH + H / 2;
+      const dx = Math.max(0, -wx, wx - W);
+      const dz = Math.max(0, -wz, wz - H);
+      const t = clamp01((Math.hypot(dx, dz) - FADE_IN) /
+                        (FADE_OUT - FADE_IN));
+      const a = 1 - t * t * (3 - 2 * t);
+      const o = (py * FADE_TEX + px) * 4;
+      fadeImg.data[o] = 255;
+      fadeImg.data[o + 1] = Math.round(a * 255);
+      fadeImg.data[o + 2] = 255;
+      fadeImg.data[o + 3] = 255;
+    }
+  }
+  fadeCtx.putImageData(fadeImg, 0, 0);
+  const fadeTex = new THREE.CanvasTexture(fadeCanvas);
+
+  const baseMat = new THREE.MeshStandardMaterial({
+    color: 0x66735c, roughness: 1, transparent: true,
+    alphaMap: fadeTex, depthWrite: false });
+  const base = new THREE.Mesh(new THREE.PlaneGeometry(baseW, baseH), baseMat);
   base.rotation.x = -Math.PI / 2;
   base.position.set(W / 2, -0.03, H / 2);
-  base.receiveShadow = true;
+  base.receiveShadow = false;
   scene.add(base);
 
   const tileGeo = new THREE.BoxGeometry(1, 0.14, 1);
@@ -239,6 +300,10 @@ export function createWorld(ground, canvas, opts) {
     const season = Math.max(0, Math.min(3, (st && st.season) || 0));
     const pal = SEASONS[season];
     const shade = (st && st.shade) || null;
+    /* the apron is the same living ground, muted and hazed so it reads as
+     * distance rather than as a second, flatter estate */
+    _c1.setHex(pal.lawn).lerp(_haze, 0.38).multiplyScalar(0.84);
+    baseMat.color.copy(_c1);
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const i = y * W + x;
@@ -589,6 +654,7 @@ export function createWorld(ground, canvas, opts) {
   const sunColour = new THREE.Color();
   const hemiSky = new THREE.Color();
   const hemiGround = new THREE.Color();
+  let weather = 'clear';
   const skyA = SKY.map(p => ({
     sun: new THREE.Color(p.sun), sky: new THREE.Color(p.sky),
     hemiSky: new THREE.Color(p.hemiSky),
@@ -608,6 +674,17 @@ export function createWorld(ground, canvas, opts) {
     skyColour.lerpColors(ca.sky, cb.sky, f);
     hemiSky.lerpColors(ca.hemiSky, cb.hemiSky, f);
     hemiGround.lerpColors(ca.hemiGround, cb.hemiGround, f);
+
+    /* the weather is a property of the sky, so it greys the sky itself
+     * (and the fog, which is the same colour) rather than only dimming
+     * the ground. It fades out at night, where every sky is dark anyway. */
+    const wt = WEATHER_SKY[weather];
+    if (wt) {
+      _c1.setHex(wt.hex);
+      skyColour.lerp(_c1, wt.mix * (1 - darkness(ph)));
+      sun.intensity *= wt.sun;
+    }
+
     hemi.color.copy(hemiSky);
     hemi.groundColor.copy(hemiGround);
     scene.background.copy(skyColour);
@@ -615,28 +692,40 @@ export function createWorld(ground, canvas, opts) {
 
     sun.position.set(
       centre.x + mixNum(a.offset[0], b.offset[0], f),
-      mixNum(a.offset[1], b.offset[1], f),
+      Math.max(SUN_MIN_Y, mixNum(a.offset[1], b.offset[1], f)),
       centre.z + mixNum(a.offset[2], b.offset[2], f));
   }
 
   /* ----------------------------------------------------------- residents */
 
-  /* A figure is a little over half a cell tall — small enough that a block
-   * dwarfs it, large enough that a person is visible from the far side of
-   * the estate without a label. */
-  const bodyGeo = new THREE.CapsuleGeometry(0.13, 0.36, 3, 8);
+  /* A figure is about a door's height — small enough that a block dwarfs
+   * it, large enough that a person is visible from the far side of
+   * the estate without a label. It carries a little warm emissive so the
+   * same figure reads at dusk as a person and not as a dark speck. */
+  const bodyGeo = new THREE.CapsuleGeometry(0.16, 0.40, 4, 8);
   const bodyMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff, roughness: 0.76, metalness: 0.02 });
-  const headGeo = new THREE.SphereGeometry(0.13, 10, 8);
+    color: 0xffffff, emissive: 0xffe0b0, emissiveIntensity: 0.1,
+    roughness: 0.7, metalness: 0.0 });
+  const headGeo = new THREE.SphereGeometry(0.16, 10, 8);
   const headMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff, roughness: 0.7 });
+    color: 0xffffff, emissive: 0xffd0a0, emissiveIntensity: 0.06,
+    roughness: 0.65 });
 
   let bodyMesh = null, headMesh = null, capacity = 0;
   let people = [];
   let personAt = [];
   const fromX = [], fromZ = [], toX = [], toZ = [];
   const offX = [], offZ = [], roleScale = [];
-  let t0 = 0, tickMs = 6000;
+  /* The day is the clock, not the poll. The page is polled several times
+   * per day, and resetting these on every state made the light restart
+   * toward dawn and the glide restart toward the old position before
+   * either had got anywhere. */
+  let tickMs = 6000;
+  let moveT0 = 0;             // when the current day's positions arrived
+  let phaseStart = 0;         // when the current day's phase run began
+  let daySeen = -1;
+  let paused = false;
+  let pausedPhase = 0;
 
   function ensureResidents(n) {
     if (bodyMesh && n <= capacity) return;
@@ -653,6 +742,7 @@ export function createWorld(ground, canvas, opts) {
     headMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     bodyMesh.castShadow = true;
     bodyMesh.frustumCulled = false;
+    headMesh.castShadow = true;
     headMesh.frustumCulled = false;
     scene.add(bodyMesh);
     scene.add(headMesh);
@@ -718,12 +808,26 @@ export function createWorld(ground, canvas, opts) {
     }
     occupancyDirty = true;
 
-    t0 = performance.now();
     tickMs = Math.max(300, (st.tick_seconds || 6) * 1000);
+    const now = performance.now();
+    if (!!st.paused !== paused) {
+      if (st.paused) pausedPhase = rawPhase(now);
+      else phaseStart = now - (pausedPhase / 5) * tickMs;
+      paused = !!st.paused;
+    }
+    if (st.day !== daySeen) {
+      daySeen = st.day;
+      moveT0 = now;
+      if (paused) pausedPhase = 0;
+      else phaseStart = now;
+    }
   }
 
   function glided(now) {
-    const raw = Math.min(1, Math.max(0, (now - t0) / tickMs));
+    /* a frozen frame shows where the estate actually is, not where its
+     * people were before the day that the frame is showing */
+    if (staticMode) return 1;
+    const raw = Math.min(1, Math.max(0, (now - moveT0) / tickMs));
     return raw < 0.5 ? 2 * raw * raw : 1 - Math.pow(-2 * raw + 2, 2) / 2;
   }
 
@@ -744,13 +848,13 @@ export function createWorld(ground, canvas, opts) {
       const s = roleScale[i];
       const x = fromX[i] + (toX[i] - fromX[i]) * e + offX[i];
       const z = fromZ[i] + (toZ[i] - fromZ[i]) * e + offZ[i];
-      const bob = Math.sin(now * 0.003 + i * 1.7) * 0.012;
+      const bob = Math.sin(now * 0.003 + i * 1.7) * 0.014;
       dummy.rotation.set(0, 0, 0);
       dummy.scale.set(s, s, s);
-      dummy.position.set(x, WALK_Y + 0.31 * s + bob, z);
+      dummy.position.set(x, WALK_Y + 0.36 * s + bob, z);
       dummy.updateMatrix();
       bodyMesh.setMatrixAt(i, dummy.matrix);
-      dummy.position.set(x, WALK_Y + 0.72 * s + bob, z);
+      dummy.position.set(x, WALK_Y + 0.82 * s + bob, z);
       dummy.updateMatrix();
       headMesh.setMatrixAt(i, dummy.matrix);
     }
@@ -1016,6 +1120,7 @@ export function createWorld(ground, canvas, opts) {
 
   function setState(st) {
     haveState = true;
+    weather = st.weather || 'clear';
     const key = st.day + ':' + st.season;
     if (key !== groundKey) {
       groundKey = key;
@@ -1034,11 +1139,15 @@ export function createWorld(ground, canvas, opts) {
 
   const phaseInfo = { phase: 2, index: 2, name: 'afternoon', darkness: 0 };
 
+  function rawPhase(now) {
+    return Math.max(0, Math.min(4.999, (now - phaseStart) / tickMs * 5));
+  }
+
   function phaseNow(now) {
     if (forcedPhase >= 0) return forcedPhase;
     if (!haveState) return 2;
-    const t = (now - t0) / tickMs;
-    return Math.max(0, Math.min(4.999, t * 5));
+    /* a paused day does not keep turning its light */
+    return paused ? pausedPhase : rawPhase(now);
   }
 
   function frame(now) {
@@ -1054,6 +1163,10 @@ export function createWorld(ground, canvas, opts) {
       occupancyDirty = false;
       paintWindows();
     }
+    /* people do not become part of the scenery after dark: the same small
+     * warm emissive keeps an outside figure legible at night */
+    bodyMat.emissiveIntensity = 0.1 + dark * 0.42;
+    headMat.emissiveIntensity = 0.06 + dark * 0.34;
     lampBulbMat.emissiveIntensity = 0.05 + dark * 2.6;
     shopSignMat.emissiveIntensity = 0.1 + dark * 1.8;
     glowMat.opacity = dark * 0.55;
@@ -1080,7 +1193,9 @@ export function createWorld(ground, canvas, opts) {
             -((clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
     if (bodyMesh) {
-      const hits = raycaster.intersectObject(bodyMesh, false);
+      /* the head is a person too: without it a click on the most visible
+       * part of a figure fell through to whatever stood behind */
+      const hits = raycaster.intersectObjects([bodyMesh, headMesh], false);
       if (hits.length) {
         const p = personAt[hits[0].instanceId];
         if (p) return { kind: 'resident', person: p };
