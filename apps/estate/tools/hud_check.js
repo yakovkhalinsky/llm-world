@@ -224,37 +224,168 @@ ok('closing the card hides it', !els.card.classList.contains('on'));
 
 /* --- nothing from the server is markup ------------------------------- */
 
-const evil = clone(state);
-const tag = '<img src=x onerror=alert(1)>';
-if (person) evil.people[0].role = tag;
-if (evil.people[0]) {
-  EstateHUD.card(evil, { kind: 'resident', id: evil.people[0].id });
-  ok('the resident card escapes a role',
-     els.cardState.innerHTML.indexOf('<img') < 0 &&
-     els.cardState.innerHTML.indexOf('&lt;img') >= 0,
-     els.cardState.innerHTML.slice(0, 160));
-}
-evil.days = [{ day: 1, line: tag, says: [tag] }];
-EstateHUD.tab('chron', evil);
-ok('the day feed escapes a line and its news',
-   els.chron.innerHTML.indexOf('<img') < 0 &&
-   els.chron.innerHTML.indexOf('&lt;img') >= 0,
-   els.chron.innerHTML.slice(0, 160));
-evil.chronicle = [{ day: 1, text: tag }];
-EstateHUD.tab('watch', evil);
-ok('the watcher tab escapes the chronicle',
-   els.chron.innerHTML.indexOf('<img') < 0 &&
-   els.chron.innerHTML.indexOf('&lt;img') >= 0,
-   els.chron.innerHTML.slice(0, 160));
+/* One hostile string goes into every string the HUD writes with innerHTML:
+ * the watcher's words (LLM text), the feed, the chronicle, census keys,
+ * roles, household kinds, need names, habits, a building's kind and every
+ * glyph. It carries both quotes, so the day an attribute interpolates text
+ * the check already covers it. A site that drops its `esc` leaves a raw
+ * `<img` behind, and the check fails — every site, not only the first. */
+const TAG = '"\'><img src=x onerror=1><script>x</script>';
 
-/* a card number is a number: a string that is not one must not leak */
-const numeric = clone(state);
-if (numeric.people[0]) {
-  numeric.people[0].age = 41;
-  EstateHUD.card(numeric, { kind: 'resident', id: numeric.people[0].id });
-  ok('numbers reach the card as numbers, not NaN',
-     els.cardState.innerHTML.indexOf('NaN') < 0,
-     els.cardState.innerHTML);
+function escaped(name, html) {
+  ok(name,
+     html.indexOf('<img') < 0 && html.indexOf('<script') < 0 &&
+     html.indexOf('&lt;img') >= 0 && html.indexOf('&lt;script') >= 0 &&
+     html.indexOf('&quot;') >= 0 && html.indexOf('&#39;') >= 0,
+     html.slice(0, 200));
+}
+
+ok('esc escapes both quotes and the angle brackets',
+   EstateHUD.esc(TAG) ===
+   '&quot;&#39;&gt;&lt;img src=x onerror=1&gt;&lt;script&gt;x&lt;/script&gt;',
+   EstateHUD.esc(TAG));
+
+const evilGround = clone(ground);
+evilGround.glyphs = clone(ground.glyphs || {});
+for (const g of ['households', 'roles', 'needs', 'fixtures', 'sites',
+                 'weather']) {
+  evilGround.glyphs[g] = Object.assign({}, evilGround.glyphs[g] || {},
+                                       { [TAG]: TAG });
+}
+if (evilGround.buildings && evilGround.buildings[0]) {
+  evilGround.buildings[0].kind = TAG;
+}
+EstateHUD.setGround(evilGround);
+
+const evil = clone(state);
+
+/* the watcher line: its reason, and its fate when it gave no reason */
+evil.watcher = { fate: TAG, why: TAG };
+EstateHUD.update(evil);
+escaped('the watcher line escapes the watcher\'s reason', els.watch.innerHTML);
+evil.watcher = { fate: TAG, why: '' };
+EstateHUD.update(evil);
+escaped('the watcher line escapes a fate given without a reason',
+        els.watch.innerHTML);
+
+/* the census: a household kind and its glyph, a role and its glyph */
+evil.census = { [TAG]: 3 };
+evil.people = (evil.people || []).slice(0, 1);
+if (evil.people[0]) evil.people[0].role = TAG;
+EstateHUD.tab('census', evil);
+escaped('the census escapes household kinds and their glyphs',
+        els.chron.innerHTML.split('by age')[0]);
+escaped('the census escapes roles and their glyphs',
+        els.chron.innerHTML.split('by age')[1] || '');
+
+/* the day feed: the day's line, and its news */
+evil.days = [{ day: 1, line: TAG, says: [] }];
+EstateHUD.tab('chron', evil);
+escaped('the day feed escapes a day\'s line', els.chron.innerHTML);
+evil.days = [{ day: 1, line: '', says: [TAG, TAG] }];
+EstateHUD.tab('chron', evil);
+escaped('the day feed escapes a day\'s news', els.chron.innerHTML);
+
+/* the watcher tab: the chronicle */
+evil.chronicle = [{ day: 1, text: TAG }];
+EstateHUD.tab('watch', evil);
+escaped('the watcher tab escapes the chronicle', els.chron.innerHTML);
+EstateHUD.tab('chron', evil);
+
+/* the resident card, one hostile field at a time, so one escaped field
+ * cannot stand in for another that is not */
+if (!state.people || !state.people[0]) {
+  ok('the frame has a resident to card with hostile strings', false);
+} else {
+  const base = clone(state.people[0]);
+  base.role = 'kid'; base.kind = 'family'; base.in = false;
+  base.habit = {}; base.needs = {};
+  const cases = [
+    ['a role (and its glyph)', p => { p.role = TAG; }, 'cardState'],
+    ['a household kind', p => { p.kind = TAG; }, 'cardState'],
+    ['a need name (and its glyph)', p => { p.needs = { [TAG]: 2 }; },
+     'cardRows'],
+    ['a habit\'s name', p => { p.habit = { [TAG]: 'home' }; }, 'cardRows'],
+    ['a habit\'s place', p => { p.habit = { work: TAG }; }, 'cardRows'],
+  ];
+  for (const [what, mutate, where] of cases) {
+    const st = clone(state);
+    const p = clone(base);
+    mutate(p);
+    st.people = [p];
+    EstateHUD.card(st, { kind: 'resident', id: p.id });
+    escaped('the resident card escapes ' + what, els[where].innerHTML);
+  }
+}
+
+/* the block card: a building's kind comes with the ground */
+if (evilGround.buildings && evilGround.buildings[0]) {
+  EstateHUD.card(state, { kind: 'building', id: evilGround.buildings[0].id });
+  escaped('the block card escapes the building\'s kind',
+          els.cardState.innerHTML);
+}
+
+/* --- a number is a number -------------------------------------------- */
+
+/* (The resident card's `where` also goes through `esc`, but it is built
+ * only from `Number`s and fixed words, so no input can tell that `esc`
+ * apart from its absence. What guards it is `Number`, checked here.) */
+
+/* Every number goes through `Number`, so a hostile string where a number
+ * belongs comes out as NaN — never as markup, and never as escaped text
+ * (escaped text would mean the number went through `esc` instead). */
+function numeric(name, html) {
+  ok(name,
+     html.indexOf('<img') < 0 && html.indexOf('&lt;') < 0 &&
+     html.indexOf('img') < 0 && html.indexOf('script') < 0,
+     html.slice(0, 200));
+}
+
+EstateHUD.setGround(ground);
+const nums = clone(state);
+nums.residents = TAG; nums.units = TAG; nums.waiting = TAG;
+nums.census = { family: TAG };
+nums.days = [{ day: TAG, line: 'a day', says: [] }];
+nums.chronicle = [{ day: TAG, text: 'a line' }];
+EstateHUD.update(nums);
+numeric('the header\'s counts are numbers', els.pops.innerHTML);
+numeric('the day feed\'s day is a number', els.chron.innerHTML);
+EstateHUD.tab('census', nums);
+numeric('the census counts are numbers', els.chron.innerHTML);
+EstateHUD.tab('watch', nums);
+numeric('the chronicle\'s day is a number', els.chron.innerHTML);
+EstateHUD.tab('chron', nums);
+
+if (nums.people && nums.people[0]) {
+  const p = nums.people[0];
+  p.age = TAG; p.in = false; p.x = TAG; p.y = TAG; p.stress = TAG;
+  p.habit = {}; p.needs = { rest: TAG };
+  p.role = 'kid'; p.kind = 'family';
+  EstateHUD.card(nums, { kind: 'resident', id: p.id });
+  numeric('a resident\'s age and place are numbers', els.cardState.innerHTML);
+  numeric('a need\'s level is a number', els.cardRows.innerHTML);
+  p.in = true; p.unit = TAG;
+  EstateHUD.card(nums, { kind: 'resident', id: p.id });
+  numeric('a resident\'s flat is a number', els.cardState.innerHTML);
+}
+if (nums.fixtures && nums.fixtures[0]) {
+  const f = nums.fixtures[0];
+  f.x = TAG; f.y = TAG; f.uses = TAG; f.stock = TAG; f.c = TAG;
+  EstateHUD.card(nums, { kind: 'fixture', id: f.id });
+  numeric('a fixture\'s place, uses and stock are numbers',
+          els.cardState.innerHTML);
+  numeric('a fixture\'s condition is a number', els.cardRows.innerHTML);
+}
+if (ground.buildings && ground.buildings[0]) {
+  const g2 = clone(ground);
+  const b = g2.buildings[0];
+  b.floors = TAG; b.door = [TAG, TAG];
+  nums.buildings = [{ id: b.id, units: TAG, lived: TAG, power: 1, water: 1 }];
+  EstateHUD.setGround(g2);
+  EstateHUD.card(nums, { kind: 'building', id: b.id });
+  numeric('a block\'s floors and door are numbers', els.cardState.innerHTML);
+  numeric('a block\'s flats are numbers', els.cardRows.innerHTML);
+  EstateHUD.setGround(ground);
 }
 
 console.log('\n' + (fails.length
