@@ -18,6 +18,9 @@
  *             the page draws them: no two figures nearer than MIN_WALK of
  *             their combined radii, and no push ever takes a body further
  *             into a wall, the water or a fixture than its walk had it.
+ *   tables    nobody's body, standing or walking, ever overlaps a table's
+ *             0.82 top — their own table's included — and everyone at a
+ *             table stands beside it facing its middle.
  *   scenes    small made-up places the day may never produce: a passer-by
  *             at a lamp from every side (the lamp-post case), two walkers
  *             meeting head-on a little to the wrong side (each must pass
@@ -113,7 +116,21 @@ function oracle(ground, fixtures) {
     }
     return { wall, into, what };
   }
-  return { pen, blocked };
+  /* how deep a body of radius r at (x, z) is in any table's top — the
+   * 0.82 square world.js draws — wherever its walk has it: nobody stands
+   * or walks inside a table, their own included */
+  const tables = (fixtures || []).filter(f => f.kind === 'table');
+  function inTable(x, z, r) {
+    let d = -Infinity, what = null;
+    for (const f of tables) {
+      const h = BODY.table[1];
+      const v = intoBox(x, z, r, f.x + 0.5 - h, f.y + 0.5 - h,
+                        f.x + 0.5 + h, f.y + 0.5 + h);
+      if (v > d) { d = v; what = 'table@' + f.x + ',' + f.y; }
+    }
+    return { d, what };
+  }
+  return { pen, blocked, inTable };
 }
 
 /* every body in F against the oracle: none further into a wall or a
@@ -334,6 +351,7 @@ function check(ground, state) {
   people.forEach((p, i) => { if (!p.in) out.push(i); });
   let staticGap = Infinity, staticRaw = Infinity, worst = null;
   const seatSeen = {}, seatedAt = {};
+  let atTable = 0;
   for (let a = 0; a < out.length; a++) {
     const i = out[a], p = people[i];
     /* the old page: every resident on their cell's middle, give or take
@@ -344,6 +362,25 @@ function check(ground, state) {
       const g = Math.hypot(spots.x[i] - spots.x[j], spots.z[i] - spots.z[j]) - need;
       if (g < staticGap) { staticGap = g; worst = [p.id, q.id]; }
       if (p.x === q.x && p.y === q.y) staticRaw = Math.min(staticRaw, -need);
+    }
+    {
+      const t = orc.inTable(spots.x[i], spots.z[i], rOf(p));
+      if (t.d > TOL_IN) {
+        fails.push(`table: resident ${p.id} stands ${t.d.toFixed(3)} inside ` +
+                   `the ${t.what} at ${spots.x[i].toFixed(2)},${spots.z[i].toFixed(2)}`);
+      }
+    }
+    if (fixAt[p.x + ',' + p.y] && fixAt[p.x + ',' + p.y].kind === 'table') {
+      atTable++;
+      const want = Math.atan2(p.x + 0.5 - spots.x[i], p.y + 0.5 - spots.z[i]);
+      const got = Crowd.faceTable ? Crowd.faceTable(fixAt, p.x, p.y,
+                                                    spots.x[i], spots.z[i]) : null;
+      const off = got === null ? Math.PI
+        : Math.abs(Math.atan2(Math.sin(got - want), Math.cos(got - want)));
+      if (off > 0.2) {
+        fails.push(`table: resident ${p.id} at the table@${p.x},${p.y} ` +
+                   `does not face it`);
+      }
     }
     if (spots.sit[i] === 1) {
       const k = spots.x[i].toFixed(3) + ',' + spots.z[i].toFixed(3);
@@ -365,6 +402,7 @@ function check(ground, state) {
     const b = benchByCell[cell];
     if (seatedAt[cell] > b.cap) fails.push(`bench ${cell} seats ${seatedAt[cell]} > ${b.cap}`);
   }
+  if (!atTable) fails.push('table: nobody at a table, so the table check proves nothing');
   if (staticGap < -TOL) {
     fails.push(`snapshot: residents ${worst} overlap by ${(-staticGap).toFixed(3)}`);
   }
@@ -404,6 +442,7 @@ function check(ground, state) {
   const s = { x: 0, z: 0, dx: 0, dz: 0, moving: false };
   let walkRaw = Infinity, walkGap = Infinity, walkWorst = null, frames = 0;
   const pushed = freshWorst();
+  let tableWorst = { d: -Infinity };
   for (let ms = 0; ms <= longest + 50; ms += 1000 / 60) {
     frames++;
     out.forEach((i, k) => {
@@ -435,6 +474,14 @@ function check(ground, state) {
     judgeFrame(orc, F, n, pushed);
     for (let a = 0; a < n; a++) {
       if (F.layer[a] < 0) continue;
+      const t = orc.inTable(F.x[a], F.z[a], F.r[a]);
+      if (t.d > tableWorst.d) {
+        tableWorst = { d: t.d, id: F.id[a], what: t.what, ms: Math.round(ms),
+                       at: [F.x[a], F.z[a]] };
+      }
+    }
+    for (let a = 0; a < n; a++) {
+      if (F.layer[a] < 0) continue;
       for (let b = a + 1; b < n; b++) {
         if (F.layer[b] < 0) continue;
         const g = Math.hypot(F.x[a] - F.x[b], F.z[a] - F.z[b]) / (F.r[a] + F.r[b]);
@@ -450,10 +497,16 @@ function check(ground, state) {
                `${(walkGap * 100).toFixed(0)}% of a body apart, ${walkWorst[2]} ms in`);
   }
   worstFails('walking', pushed, fails);
+  if (tableWorst.d > TOL_IN) {
+    fails.push(`table: resident ${tableWorst.id} walks ${tableWorst.d.toFixed(3)} ` +
+               `inside the ${tableWorst.what} at ` +
+               `${tableWorst.at.map(v => v.toFixed(2)).join(',')}, ${tableWorst.ms} ms in`);
+  }
 
   const ran = scenes(Walk, Crowd, fails);
   return {
     tiles: built.tiles, outdoor: out.length, seated: spots.seated, scenes: ran,
+    atTable,
     snapshot: { before: staticRaw, after: staticGap },
     walking: { frames, before: walkRaw, after: walkGap },
     fails,
@@ -466,7 +519,8 @@ if (require.main === module) {
   const ground = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
   const state = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
   const r = check(ground, state);
-  console.log(`crowd: ${r.outdoor} outdoors, ${r.seated} seated, tiles ` +
+  console.log(`crowd: ${r.outdoor} outdoors, ${r.seated} seated, ` +
+              `${r.atTable} at tables (beside, facing), tiles ` +
               JSON.stringify(r.tiles));
   console.log(`snapshot: closest pair ${r.snapshot.before.toFixed(3)} -> ` +
               `${r.snapshot.after.toFixed(3)} (gap beyond touching, cells)`);

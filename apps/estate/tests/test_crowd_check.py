@@ -87,6 +87,18 @@ def _no_frame_keep(src):
     return _swap(src, "SP.keep[k] = keep;", "SP.keep[k] = 0;")
 
 
+def _no_table_keep(src):
+    """crowd.js that lets a body stand anywhere on a table's cell — the
+    live picture of someone standing inside a café table."""
+    return _swap(src, "table: 0.42,", "table: 0,")
+
+
+def _not_facing(src):
+    """crowd.js whose people at a table look wherever they last walked."""
+    return _swap(src, "    if (!f || f.kind !== 'table') return null;\n",
+                 "    return null;\n")
+
+
 @unittest.skipUnless(NODE, "node is not installed")
 class CrowdCheckTest(unittest.TestCase):
     @classmethod
@@ -149,6 +161,20 @@ class CrowdCheckTest(unittest.TestCase):
         out = self._mutant(_no_keep, WALK, "PAGE3D_WALK")
         self.assertIn("into the table@", out)
         self.assertIn("FAIL lamp-dead-end", out)
+
+    def test_people_at_a_table_stand_beside_it_facing_it(self):
+        out = self._run().stdout
+        self.assertIn("at tables (beside, facing)", out)
+        self.assertNotIn(" 0 at tables", out)
+
+    def test_someone_inside_a_table_fails(self):
+        out = self._mutant(_no_table_keep, CROWD, "PAGE3D_CROWD")
+        self.assertIn("FAIL table: resident", out)
+        self.assertIn("inside the table@23,15", out)
+
+    def test_someone_not_facing_the_table_fails(self):
+        out = self._mutant(_not_facing, CROWD, "PAGE3D_CROWD")
+        self.assertIn("does not face it", out)
 
     def test_a_push_into_the_lamp_post_fails(self):
         out = self._mutant(_no_frame_keep, CROWD, "PAGE3D_CROWD")

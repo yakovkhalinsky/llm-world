@@ -50,6 +50,9 @@ const Field = (typeof globalThis !== 'undefined' && globalThis.Page3DField) ||
 const FLOOR_H = 1.35;          // world units per storey
 const TILE_TOP = 0.12;         // the walking surface: top of a ground tile
 const WALK_Y = TILE_TOP + 0.005;
+/* A door's step and the shop's stall are one step high (crowd.js), and a
+ * figure over either stands on it, never in it. */
+const STEP_H = Crowd ? Crowd.STEP_H : 0.06;
 
 /* A season shifts the living ground and the trees; the road, the paving and
  * the buildings are the same in every season, because they are not alive. */
@@ -511,15 +514,15 @@ export function createWorld(ground, canvas, opts) {
     if (face.axis === 'z') {
       addBox(g, doorMat, doorW, doorH, 0.08,
              along, TILE_TOP + doorH / 2, out).castShadow = false;
-      addBox(g, stepMat, doorW + 0.24, 0.07, 0.34,
-             along, TILE_TOP + 0.035, face.at + face.sign * 0.21);
+      addBox(g, stepMat, doorW + 0.24, STEP_H, 0.34,
+             along, TILE_TOP + STEP_H / 2, face.at + face.sign * 0.21);
       addBox(g, roofMat, doorW + 0.34, 0.06, 0.36,
              along, TILE_TOP + doorH + 0.2, face.at + face.sign * 0.16);
     } else {
       addBox(g, doorMat, 0.08, doorH, doorW,
              out, TILE_TOP + doorH / 2, along).castShadow = false;
-      addBox(g, stepMat, 0.34, 0.07, doorW + 0.24,
-             face.at + face.sign * 0.21, TILE_TOP + 0.035, along);
+      addBox(g, stepMat, 0.34, STEP_H, doorW + 0.24,
+             face.at + face.sign * 0.21, TILE_TOP + STEP_H / 2, along);
       addBox(g, roofMat, 0.36, 0.06, doorW + 0.34,
              face.at + face.sign * 0.16, TILE_TOP + doorH + 0.2, along);
     }
@@ -805,6 +808,7 @@ export function createWorld(ground, canvas, opts) {
    * and the smallest gap it left, for the HUD and the checks */
   let crowdF = null, crowdIdx = [];
   let crowdFix = null;
+  let stepList = null;
 
   /* ----------------------------------------------------------- trace */
   /* `?trace=1` draws every current route; `?trace=<id>` draws one. It is a
@@ -940,6 +944,7 @@ export function createWorld(ground, canvas, opts) {
      * A function of the snapshot alone, so a poll that repeats the state
      * repeats the picture. */
     crowdFix = Crowd ? Crowd.fixtureMap(st.fixtures) : null;
+    stepList = Crowd ? Crowd.steps(ground, st.fixtures) : null;
     const spots = Crowd ? Crowd.place(Walk, grid, people, benchByCell,
                                       crowdFix)
                         : null;
@@ -1132,6 +1137,11 @@ export function createWorld(ground, canvas, opts) {
       }
       x += crowdDx[i] || 0;
       z += crowdDz[i] || 0;
+      /* at a table and not walking: beside it, facing it (crowd.js) */
+      if (!moving && Crowd) {
+        const yaw = Crowd.faceTable(crowdFix, p.x, p.y, x, z);
+        if (yaw !== null) facing[i] = yaw;
+      }
 
       /* somebody who has arrived at their bench sits; somebody still
        * walking there is still walking */
@@ -1157,14 +1167,18 @@ export function createWorld(ground, canvas, opts) {
       /* a small gait while walking, still otherwise; and a body turned the
        * way it is going */
       const bob = moving
-        ? Math.sin(now * 0.009 + i * 1.7) * 0.02 * s
+        ? (1 + Math.sin(now * 0.009 + i * 1.7)) * 0.02 * s
         : 0;
+      /* standing on a step when over one, and rising onto it smoothly on
+       * the way in (crowd.js `lift`); the gait only ever lifts a foot,
+       * never sinks it into the ground */
+      const footY = WALK_Y + (Crowd ? Crowd.lift(stepList, x, z) : 0);
       dummy.rotation.set(0, facing[i], 0);
       dummy.scale.set(s, s, s);
-      dummy.position.set(x, WALK_Y + 0.36 * s + bob, z);
+      dummy.position.set(x, footY + 0.36 * s + bob, z);
       dummy.updateMatrix();
       bodyMesh.setMatrixAt(i, dummy.matrix);
-      dummy.position.set(x, WALK_Y + 0.82 * s + bob, z);
+      dummy.position.set(x, footY + 0.82 * s + bob, z);
       dummy.updateMatrix();
       headMesh.setMatrixAt(i, dummy.matrix);
     }
@@ -1302,8 +1316,10 @@ export function createWorld(ground, canvas, opts) {
     } else if (f.kind === 'shop') {
       const wood = fixtureMaterial(0xcf9f60, 0.8);
       mats.push(wood);
-      addBox(g, wood.mat, 0.9, 0.08, 0.9, 0, 0.55, 0);
-      addBox(g, wood.mat, 0.85, 0.5, 0.85, 0, 0.27, 0);
+      /* the shop's front: a low wooden plinth before its door, one step
+       * high, that its customers step up onto (it was a waist-high
+       * counter they walked through) */
+      addBox(g, wood.mat, 0.9, STEP_H, 0.9, 0, STEP_H / 2, 0);
     } else {
       /* a kind the page has never seen: a small plinth in its own colour,
        * so the estate still shows that something is there */

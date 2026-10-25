@@ -309,11 +309,93 @@
     return { delay: d, dur: Math.min(dur, Math.max(60, cap - d)) };
   }
 
+  /* Someone standing at a table faces it: the yaw (world.js's `facing`,
+   * atan2 of the way they look) from (x, z) to the middle of the table on
+   * their cell (hx, hy), or null when their cell has no table. */
+  function faceTable(fixAt, hx, hy, x, z) {
+    var f = fixAt && fixAt[hx + ',' + hy];
+    if (!f || f.kind !== 'table') return null;
+    var dx = f.x + 0.5 - x, dz = f.y + 0.5 - z;
+    if (dx * dx + dz * dz < 1e-8) return null;
+    return Math.atan2(dx, dz);
+  }
+
+  /* Steps underfoot. A door's step and the shop's stall — a low wooden
+   * plinth on the cell in front of the shop, where the engine puts its
+   * counter — are the only raised ground a walker crosses, so they are
+   * one step high (STEP_H), and a figure over one is lifted onto it: fully
+   * once a foot (FOOT from the body's middle) is over its edge, and on a
+   * smooth ramp over the RAMP before that, so nobody's feet pass through
+   * a step and nobody pops up onto one in a frame. `steps` is the list
+   * world.js draws the steps from — the same rectangles, so what is drawn
+   * and what is stood on cannot drift apart. */
+  var STEP_H = 0.06;
+  var FOOT = 0.10;
+  var RAMP = 0.22;
+  function doorFace(b) {
+    var dx = b.door[0], dy = b.door[1];
+    if (dy < b.y) return { axis: 'z', sign: -1, at: b.y };
+    if (dy >= b.y + b.h) return { axis: 'z', sign: 1, at: b.y + b.h };
+    if (dx < b.x) return { axis: 'x', sign: -1, at: b.x };
+    return { axis: 'x', sign: 1, at: b.x + b.w };
+  }
+  /* one building's door step: {x0, z0, x1, z1, h, kind, id, face, along,
+   * doorW}, in world units (x along columns, z along rows) */
+  function doorStep(b) {
+    var face = doorFace(b);
+    var doorW = b.kind === 'shop' ? 0.8 : 0.55;
+    var along = face.axis === 'z'
+      ? Math.max(b.x + 0.55, Math.min(b.x + b.w - 0.55, b.door[0] + 0.5))
+      : Math.max(b.y + 0.55, Math.min(b.y + b.h - 0.55, b.door[1] + 0.5));
+    var half = (doorW + 0.24) / 2;
+    var a = face.at + face.sign * 0.04, c = face.at + face.sign * 0.38;
+    var lo = Math.min(a, c), hi = Math.max(a, c);
+    var r = face.axis === 'z'
+      ? { x0: along - half, x1: along + half, z0: lo, z1: hi }
+      : { x0: lo, x1: hi, z0: along - half, z1: along + half };
+    r.h = STEP_H; r.kind = 'door'; r.id = b.id;
+    r.face = face; r.along = along; r.doorW = doorW;
+    return r;
+  }
+  function steps(ground, fixtures) {
+    var out = [];
+    (ground.buildings || []).forEach(function (b) {
+      if (b && b.door) out.push(doorStep(b));
+    });
+    (fixtures || []).forEach(function (f) {
+      if (f.kind !== 'shop') return;
+      out.push({ x0: f.x + 0.05, x1: f.x + 0.95, z0: f.y + 0.05,
+                 z1: f.y + 0.95, h: STEP_H, kind: 'shop', id: f.id });
+    });
+    return out;
+  }
+  /* how far above the ground a figure standing at (x, z) has its feet */
+  function lift(st, x, z) {
+    var best = 0;
+    if (!st) return 0;
+    for (var k = 0; k < st.length; k++) {
+      var r = st[k];
+      var dx = Math.max(r.x0 - x, 0, x - r.x1);
+      var dz = Math.max(r.z0 - z, 0, z - r.z1);
+      var d = Math.sqrt(dx * dx + dz * dz), y;
+      if (d <= FOOT) y = r.h;
+      else if (d >= FOOT + RAMP) continue;
+      else {
+        var t = 1 - (d - FOOT) / RAMP;
+        y = r.h * t * t * (3 - 2 * t);
+      }
+      if (y > best) best = y;
+    }
+    return best;
+  }
+
   var api = {
     R: R, GAP: GAP, KEEP: KEEP, SEAT_STEP: SEAT_STEP, END: END,
     benchFacing: benchFacing, bench: bench, fixtureMap: fixtureMap,
     okAt: okAt, keepAt: keepAt, place: place, route: route, space: space,
     queue: queue, fit: fit, QUEUE_MS: QUEUE_MS,
+    STEP_H: STEP_H, FOOT: FOOT, RAMP: RAMP, doorFace: doorFace,
+    steps: steps, lift: lift, faceTable: faceTable,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.EstateCrowd = api;
