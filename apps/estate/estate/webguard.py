@@ -102,8 +102,9 @@ def check(handler, hosts):
     site = (handler.headers.get("Sec-Fetch-Site") or "").strip().lower()
     if site == "cross-site":
         raise Refused(403, "a request from another site")
-    ctype = handler.headers.get("Content-Type") or ""
-    if ctype.split(";", 1)[0].strip().lower() != "application/json":
+    ctypes = handler.headers.get_all("Content-Type") or []
+    if len(ctypes) != 1 or \
+            ctypes[0].split(";", 1)[0].strip().lower() != "application/json":
         raise Refused(403, "the body must be application/json")
 
 

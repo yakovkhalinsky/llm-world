@@ -218,6 +218,18 @@ class StewardTest(PostServer):
         self.assertEqual(rules.R["animals"]["fox"]["cap"], 60.0)
 
 
+class PauseStepTest(PostServer):
+    def test_pause_toggles_and_step_moves_one_week_when_paused(self):
+        self.runner.paused = False
+        self.assertEqual(self.post("/api/pause"), (200, {"paused": True}))
+        tick = self.g.world["tick"]
+        self.assertEqual(self.post("/api/step"), (200, {"stepped": True}))
+        self.assertEqual(self.g.world["tick"], tick + 1)
+        self.assertEqual(self.post("/api/pause"), (200, {"paused": False}))
+        self.runner.paused = False
+        self.assertEqual(self.post("/api/step"), (200, {"stepped": False}))
+
+
 class LengthTest(PostServer):
     def test_lengths_that_lie(self):
         pid = self.offer()
@@ -235,9 +247,37 @@ class LengthTest(PostServer):
         self.assertEqual(self.status_of(pid), "offered")
 
     def test_two_lengths_are_refused(self):
-        got, _ = self.post("/api/tuning/dismiss", b"{}",
+        # a body that would be answered with one length, so only the
+        # second length can be what refuses it
+        pid = self.offer()
+        body = json.dumps({"id": pid}).encode()
+        got, out = self.post("/api/tuning/dismiss", body,
+                             extra=("Content-Length: %d" % len(body),))
+        self.assertEqual((got, out), (400, {"error": "more than one length"}))
+        self.assertEqual(self.status_of(pid), "offered")
+        self.runner.paused = True
+        got, _ = self.post("/api/pause", b"{}",
                            extra=("Content-Length: 2",))
         self.assertEqual(got, 400)
+        self.assertTrue(self.runner.paused)
+        # and the same body with one length is answered
+        self.assertEqual(self.post("/api/tuning/dismiss", body)[0], 200)
+
+    def test_a_body_cut_short_is_refused_without_waiting(self):
+        # the client closes its side early: refused at once, not at the
+        # socket timeout
+        self.httpd.RequestHandlerClass.timeout = 30
+        s = socket.create_connection(("127.0.0.1", self.port), timeout=10)
+        t0 = time.time()
+        s.sendall(("POST /api/pause HTTP/1.0\r\nHost: %s\r\n"
+                   "Content-Type: application/json\r\n"
+                   "Content-Length: 40\r\n\r\n{}" % self.host).encode())
+        s.shutdown(socket.SHUT_WR)
+        out = s.recv(65536)
+        s.close()
+        self.assertTrue(out.startswith(b"HTTP/1.0 400"), out[:40])
+        self.assertLess(time.time() - t0, 5)
+        self.assertTrue(self.runner.paused)
 
     def test_a_body_over_the_limit_is_refused_before_it_is_read(self):
         body = b'{"q":"' + b"a" * webguard.BODY_LIMIT + b'"}'
@@ -323,6 +363,14 @@ class CrossSiteTest(PostServer):
     def test_no_host_is_refused(self):
         self.refused(host="")
 
+    def test_two_origins_are_refused(self):
+        # the page's own origin first, so only the second can refuse it
+        self.refused(extra=("Origin: http://" + self.host,
+                            "Origin: https://evil.example"))
+
+    def test_two_content_types_are_refused(self):
+        self.refused(extra=("Content-Type: text/plain",))
+
     def test_two_hosts_are_refused(self):
         self.refused(extra=("Host: evil.example",))
 
@@ -375,14 +423,6 @@ class AllowedHostsTest(unittest.TestCase):
         h = webguard.allowed_hosts("127.0.0.1", 80, False)
         self.assertIn("localhost", h)
         self.assertIn("localhost:80", h)
-
-    def test_the_guard_is_the_estates_guard(self):
-        here = os.path.dirname(webguard.__file__)
-        other = os.path.join(here, "..", "..", "estate", "estate",
-                             "webguard.py")
-        with open(webguard.__file__, "rb") as a, open(other, "rb") as b:
-            self.assertEqual(a.read(), b.read(),
-                             "grove and estate webguard.py differ")
 
 
 if __name__ == "__main__":

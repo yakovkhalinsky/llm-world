@@ -637,11 +637,14 @@ def cmd_web(args):
 
     httpd = ThreadingHTTPServer((host, args.port), Handler)
     httpd.daemon_threads = True
-    print(f"estate web — {_ip_hint(host).format(args.port)}")
-    print("  the controls answer at: " + ", ".join(sorted(hosts)))
+    print(f"estate web — {_ip_hint(host).format(args.port)}", flush=True)
+    print("  the controls answer at: " + ", ".join(sorted(hosts)),
+          flush=True)
+    if getattr(args, "allow_host", None) and not args.public:
+        print("  (--allow-host is ignored without --public)", flush=True)
     print(f"  day {est.world['day']} · {rules.active_biome()} · "
           f"{est.world['width']}×{est.world['height']} · "
-          f"{llmm.status_line(est.llm)}")
+          f"{llmm.status_line(est.llm)}", flush=True)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

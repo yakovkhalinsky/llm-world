@@ -29,6 +29,7 @@ class FakeRunner:
 
 class ControlTest(unittest.TestCase):
     hosts = None
+    public = False
 
     def setUp(self):
         self.runner = FakeRunner()
@@ -144,26 +145,44 @@ class ControlTest(unittest.TestCase):
         self.refused(host="evil.example:%d" % self.port,
                      origin="http://evil.example:%d" % self.port)
 
+    def test_two_origins_are_refused(self):
+        self.refused(extra=("Origin: http://" + self.host,
+                            "Origin: https://evil.example"))
+
+    def test_two_content_types_are_refused(self):
+        self.refused(extra=("Content-Type: text/plain",))
+
+    def test_two_lengths_are_refused(self):
+        body = b'{"paused":true}'
+        code, _ = self.post(body, extra=("Content-Length: %d" % len(body),))
+        self.assertEqual(code, 400)
+        self.assertFalse(self.runner.paused)
+        self.assertEqual(self.post(body)[0], 200)
+        self.assertTrue(self.runner.paused)
+
     def test_two_hosts_are_refused(self):
         self.refused(extra=("Host: evil.example",))
 
-    def test_the_tailnet_name_is_refused_when_not_public(self):
-        self.refused(host="station.tail8a1a2.ts.net:%d" % self.port)
-
+    def test_the_tailnet_name_only_when_public(self):
+        name = "station.tail8a1a2.ts.net:%d" % self.port
+        if not self.public:
+            self.refused(host=name)
+            return
+        code, _ = self.post({"paused": True}, host=name,
+                            origin="http://" + name)
+        self.assertEqual(code, 200)
+        self.assertTrue(self.runner.paused)
 
 class PublicControlTest(ControlTest):
+    """Every test above again, with the `--public` set."""
+
+    public = True
+
     def setUp(self):
         self.hosts = set()
         super().setUp()
         self.hosts |= webguard.allowed_hosts("0.0.0.0", self.port, True,
                                              lookup=False)
-
-    def test_the_tailnet_name_is_refused_when_not_public(self):
-        name = "station.tail8a1a2.ts.net:%d" % self.port
-        code, _ = self.post({"paused": True}, host=name,
-                            origin="http://" + name)
-        self.assertEqual(code, 200)
-        self.assertTrue(self.runner.paused)
 
 
 if __name__ == "__main__":

@@ -650,6 +650,8 @@ def cmd_web(args):
           f"{W.season_name(g.world['tick'])}")
     print(_ip_hint(bind).format(port), flush=True)
     print("  buttons answer at: " + ", ".join(sorted(hosts)), flush=True)
+    if getattr(args, "allow_host", None) and not args.public:
+        print("  (--allow-host is ignored without --public)", flush=True)
     srv = ThreadingHTTPServer((bind, port), Handler)
     try:
         srv.serve_forever()
