@@ -24,7 +24,7 @@ from estate import gen, rules, web
 
 
 class GroundWalkTest(unittest.TestCase):
-    """The pages route on the plan, so the plan has to carry the pack's
+    """The view routes on the plan, so the plan has to carry the pack's
     prices. A client that invented its own would be a second copy of a fact
     the engine owns — and the two would disagree the first time the pack was
     tuned."""
@@ -44,21 +44,24 @@ class GroundWalkTest(unittest.TestCase):
 
 
 class WalkModuleTest(unittest.TestCase):
-    """One router, two viewers: the plan page inlines it and the 3D page
-    loads it from the same place."""
+    """The router lives beside the page and is served as its own script."""
 
     def test_the_router_is_served(self):
-        data = web._walk_bytes()
-        self.assertIsInstance(data, bytes)
+        got = web._page3d("walk.js")
+        self.assertIsNotNone(got)
+        data, ctype = got
         self.assertIn(b"EstateWalk", data)
         self.assertIn(b"findPath", data)
+        self.assertEqual(ctype, "application/javascript; charset=utf-8")
 
-    def test_the_plan_page_inlines_the_router(self):
-        page = web._load_page()
-        self.assertIn("root.EstateWalk", page)
-        # and it is before the scene that reads it
-        self.assertLess(page.index("root.EstateWalk"),
-                        page.index("const Walk ="))
+    def test_the_page_loads_the_router_before_its_module(self):
+        data, _ = web._page3d("index.html")
+        page = data.decode()
+        self.assertIn('src="/3d/walk.js"', page)
+        # a classic script before the module: `EstateWalk` exists by the
+        # time the deferred module runs
+        self.assertLess(page.index("/3d/walk.js"),
+                        page.index("/3d/viewer.js"))
 
 
 class Page3dTest(unittest.TestCase):
@@ -76,6 +79,17 @@ class Page3dTest(unittest.TestCase):
         data, ctype = got
         self.assertTrue(data)
         self.assertEqual(ctype, "application/javascript; charset=utf-8")
+
+    def test_the_no_webgl_fallback_shows_the_glyph_map(self):
+        """Without WebGL the page still has to show the estate. The server's
+        glyph map at `/api/plain` is that view; there is no second page to
+        link to any more."""
+        page = web._page3d("index.html")[0].decode()
+        viewer = web._page3d("viewer.js")[0].decode()
+        self.assertIn('id="plain"', page)
+        self.assertIn("/api/plain", viewer)
+        self.assertNotIn("2D plan", page)
+        self.assertNotIn('href="/"', page)
 
     def test_vendored_licence_resolves(self):
         got = web._page3d("vendor/LICENSE")
@@ -133,6 +147,21 @@ def _unlink_quiet(path):
         pass
 
 
+class StartupTest(unittest.TestCase):
+    """The page is files on disk, so a missing page has to stop the server
+    when it starts, not wait to be a 404 on `/`."""
+
+    def test_the_server_refuses_to_start_without_its_page(self):
+        real = web._page3d
+        web._page3d = lambda rel: None
+        try:
+            with self.assertRaises(SystemExit) as cm:
+                web.cmd_web(types.SimpleNamespace())
+        finally:
+            web._page3d = real
+        self.assertIn("index.html", str(cm.exception))
+
+
 class _LiveServer:
     """A real `ThreadingHTTPServer` on port 0 with the page's own handler.
 
@@ -145,8 +174,7 @@ class _LiveServer:
     def setUpClass(cls):
         cls.httpd = ThreadingHTTPServer(
             ("127.0.0.1", 0),
-            web.make_handler("<html>the plan</html>", None,
-                             threading.Lock(), None))
+            web.make_handler(None, threading.Lock(), None))
         cls.httpd.daemon_threads = True
         cls.port = cls.httpd.server_address[1]
         cls.thread = threading.Thread(target=cls.httpd.serve_forever,
@@ -196,14 +224,31 @@ class LiveTraversalTest(_LiveServer, unittest.TestCase):
                 self.assertEqual(resp.status, 404, path)
 
     def test_the_real_page_still_serves(self):
-        for path, ctype in (("/3d/", "text/html; charset=utf-8"),
+        for path, ctype in (("/", "text/html; charset=utf-8"),
+                            ("/3d", "text/html; charset=utf-8"),
+                            ("/3d/", "text/html; charset=utf-8"),
                             ("/3d/viewer.js",
+                             "application/javascript; charset=utf-8"),
+                            ("/3d/walk.js",
                              "application/javascript; charset=utf-8")):
             with self.subTest(path=path):
                 resp, body = self.request("GET", path)
                 self.assertEqual(resp.status, 200, path)
                 self.assertEqual(resp.getheader("Content-Type"), ctype)
                 self.assertTrue(body)
+
+    def test_the_root_and_the_3d_alias_serve_the_same_page(self):
+        """`/` is the view's address; `/3d` is kept for old links and for
+        screenshot URLs whose query string a redirect would drop."""
+        _, root = self.request("GET", "/")
+        _, alias = self.request("GET", "/3d?phase=night")
+        self.assertEqual(root, alias)
+
+    def test_the_plan_page_routes_are_gone(self):
+        for path in ("/pixi.js", "/walk.js"):
+            with self.subTest(path=path):
+                resp, _ = self.request("GET", path)
+                self.assertEqual(resp.status, 404, path)
 
     def test_a_backslash_symlink_through_http_is_404(self):
         link = os.path.join(web.PAGE3D, ".test-http-link")

@@ -70,7 +70,7 @@ reason.
 ./estate.sh map                # draw the plan
 ./estate.sh status             # census history
 ./estate.sh rules              # the live ruleset
-./estate.sh web                # dashboard on :8787 — plan / , 3D /3d
+./estate.sh web                # dashboard on :8787 — the 3D view at /
 python3 tools/balance.py       # the gate: 8 estates, years, every law
 ```
 
@@ -87,23 +87,28 @@ five phases lasts twelve seconds and you can follow a single person out of
 their door and back; at the fastest the phases blur into a timelapse.
 
 It is one hand-written page and no build step: a background
-thread ticks the estate and the page draws it, gliding each resident from
+thread ticks the estate and the page draws it, walking each resident from
 where they were yesterday to where they are today, and turning the light
-across the plan as the five phases pass. PixiJS is **vendored** beside the
-page (`estate/page/vendor/pixi.min.js`), so the file is never fetched from
-a CDN at runtime and the whole thing works offline. If PixiJS will not
-load, the page falls back to the plain glyph map rather than showing a
-blank rectangle.
+across the estate as the five phases pass. Three.js is **vendored** beside
+the page (`estate/page3d/vendor/`), so the file is never fetched from a CDN
+at runtime and the whole thing works offline. If WebGL will not start, the
+page shows the server's glyph map (`/api/plain`) rather than a blank
+rectangle.
 
-## The 3D view
+## The view
 
-There is a second view at <http://localhost:8787/3d> (follow **3d ↗** on
-the plan page, and **← plan** to come back). It is the same estate, the
-same poll and the same five phases seen through a real camera: solid
-blocks with their floors, doors and windows, the fixtures in their cells,
-and the residents gliding between them. The windows of lived-in flats warm
-at dusk while empty ones stay dark, lamps lay pools of light on the
-ground, seasons turn the grass and the trees, and rain falls as streaks.
+The estate has one view, in three dimensions, at
+<http://localhost:8787/>. `/3d` and `/3d/` serve the same page: they are
+kept as aliases for old links and for screenshot URLs, whose `?phase=`,
+`?clock=` and `?focus=` query strings a redirect would drop. Every asset is
+absolute under `/3d/`, so it resolves from either address.
+
+It is the same estate, the same poll and the same five phases seen through
+a real camera: solid blocks with their floors, doors and windows, the
+fixtures in their cells, and the residents walking between them. The
+windows of lived-in flats warm at dusk while empty ones stay dark, lamps
+lay pools of light on the ground, seasons turn the grass and the trees, and
+rain falls as streaks.
 
 The light runs on one continuous clock rather than switching when a poll
 reports a new day: the sun crosses the sky, the sky and fog take its colour,
@@ -117,8 +122,14 @@ the light where it is, and changing pace changes the rate of the day, not
 the hour it is at.
 
 Drag to orbit, wheel to zoom, right-drag to pan (arrow keys pan too), and
-click or hover a resident or a block for its card. Pause, **+ day** and
-the three paces work exactly as they do on the plan page.
+click or hover a resident, a block or a fixture for its card; a click also
+names the ground cell under the pointer, so a lawn, the water or a path has
+a card too. Pause, **+ day**, **⛶ full** and the three paces are in the
+bottom-left panel. The panel above them has three tabs: **the day** (one
+row per ticked day, quiet days included), **who lives here** (households by
+kind and people by role) and **☾ watcher** (the chronicle). The top-right
+panel carries the clock, the weather, the population, the watcher's last
+word and the model's voice line.
 
 For screenshots and headless checks:
 
@@ -144,43 +155,43 @@ For screenshots and headless checks:
   are the clock the HUD and the light are reading (the fraction is 0..1
   and keeps moving), `seated` is how many residents are on a bench now,
   `outside` how many are not in a flat, `walking` how many the page is
-  gliding between cells, and `perimeter` how many are out on the estate's
+  walking between cells, and `perimeter` how many are out on the estate's
   edge.
 
 Three.js **r170** (MIT) is vendored in `estate/page3d/vendor/` together
 with `OrbitControls` and the licence; the page's import map resolves
 `three` locally. Nothing is fetched from a CDN at runtime and there is no
-build step, so the 3D view works offline like the plan. If WebGL is not
-available the page says so and links back to the plan at `/`.
+build step, so the view works fully offline. If WebGL is not available the
+page says why and shows the server's own glyph map from `/api/plain` in a
+scrollable `<pre>`, refreshed while the estate ticks.
 
 ### Headless checks
 
-The pages are checked without a browser. Each check takes the server's own
-two payloads — the static ground and the day's state — either as files or
-from a running server. They need Node; the Python suite skips the wrappers
-when `node` is not on `PATH`.
+The view is checked without a browser. Each check takes the server's own
+two payloads — the static ground and the day's state — either as files or,
+for the router, from a running server. They need Node; the Python suite
+skips the wrappers when `node` is not on `PATH`.
 
 ```sh
 python3 -m estate web &            # in one shell
 curl -s localhost:8787/api/ground > /tmp/g.json
 curl -s localhost:8787/api/state  > /tmp/s.json
 
-node tools/pixi_check.js /tmp/g.json /tmp/s.json
+node tools/hud_check.js  /tmp/g.json /tmp/s.json
 node tools/walk_check.js /tmp/g.json /tmp/s.json
 node tools/walk_check.js http://localhost:8787
 node tools/clock_check.js
 ```
 
-- **`pixi_check.js`** runs the plan page's own scripts against a stub
-  PixiJS: the layer order (the tint under the lamplight, or a lamp the
-  night darkens is not a lamp), that a warm frame draws nothing, and that
-  the weather falls in the plan's box and not the window's. It also checks
-  the day feed has at least five rows, so the estate must have been
-  **ticked by the web runner for five or more days**, not merely stepped:
-  `estate step` leaves the feed with one day. On a step-only estate the
-  feed check fails; start the server and let it run (or press **+ day**
-  five times) before dumping the state.
-- **`walk_check.js`** is the router's test (`page/walk.js`): every door
+- **`hud_check.js`** runs `page3d/hud.js` against a stub DOM: the header,
+  the day feed (one row per day, and not the empty-state message), the
+  census and watcher tabs, a card for a resident, a fixture, a block and a
+  cell, and the escaping of every string that comes from the world. It
+  also refuses two functions of one name in a classic script. The feed
+  must have more than a day in it, so pass it a state from a server that
+  has been running (or press **+ day** five times); the Python wrapper
+  ticks six days itself.
+- **`walk_check.js`** is the router's test (`page3d/walk.js`): every door
   reaches every fixture with no nulls, no string-pulled segment crosses a
   building, the water or a solid fixture, an enclosed target returns null
   and terminates, endpoints off the plan or in a wall return null, a route
@@ -266,16 +277,19 @@ A world of met needs is a dead world. Three loops prevent it:
 | `estate/world.py` | state containers, the calendar, the one rng |
 | `estate/gen.py` | seeded estate generation (no LLM) |
 | `estate/render.py` | the terminal view: the plan and the day's lines |
-| `estate/web.py` | the dashboard's server: the page, the state API, the tick thread |
+| `estate/web.py` | the dashboard's server: the 3D page, the state API, the tick thread |
 | `estate/watcher.py` | the watcher: the menu, the digest, the validator |
 | `estate/llm.py` | the Ollama client: one voice, one chain, never raises |
 | `estate/chronicler.py` | the estate's record of its own days, with and without a model |
 | `estate/engine/households.py` | ageing, births, deaths, emigration, the letting office |
 | `estate/engine/effects.py` | the watcher's fates: what lands, what lasts, what ages |
-| `estate/page/` | the dashboard: PixiJS scene, panels, and the vendored engine |
-| `estate/page3d/` | the second view: Three.js scene, HUD, vendored r170 engine |
+| `estate/page3d/` | the view: Three.js scene, HUD, vendored r170 engine |
+| `estate/page3d/viewer.js` | the page's spine: fetch, poll, pick and the camera's controls |
+| `estate/page3d/world.js` | the solid estate: ground, blocks, fixtures, people, weather and light |
+| `estate/page3d/hud.js` | the panels and cards, pure DOM (no THREE), shared with the Node check |
+| `estate/page3d/walk.js` | the router, pure (no THREE), served as a classic script and shared with its check |
 | `estate/page3d/clock.js` | the day's clock and light table, pure (no THREE), shared with the Node check |
-| `tools/pixi_check.js` | the page's headless check: the layer order, a warm frame, the weather's box |
+| `tools/hud_check.js` | the HUD's check: the feed, the census, the watcher, the cards and escaping |
 | `tools/walk_check.js` | the router's check: doors to fixtures, no crossing, nulls, sample and duration |
 | `tools/clock_check.js` | the day clock's check: no jump at the turn or on a poll, the pins, a frozen day |
 | `estate/db.py` | SQLite: the estate as one blob, plus its census |
@@ -358,6 +372,10 @@ bench.
 The gate's fingerprint moved `010d3b9656ef8a9d` → `9a968319c0c5f992`
 because this is a deliberate chooser change. Every law holds, with friction
 between 1.33 and 1.44 and distinctness between 8.00 and 8.13.
+
+The gate's current fingerprint is `d5ddd81da91d9e58`. The single 3D view
+changed the server's routes and the page, not the engine or the simulation,
+so the estate's behaviour — and its fingerprint — is unchanged.
 
 Nineteen faults are recorded in `docs/BUGS.md` under Grove's sixteen
 classes. Almost none of them crashed anything. They were found by asking

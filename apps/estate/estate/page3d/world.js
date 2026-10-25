@@ -1,20 +1,19 @@
 /* world — the estate in three dimensions.
  *
- * The plan page draws the estate in isometric because a block's height is
- * the fact the whole interior model rests on. This page draws the same fact
- * with a real camera: the blocks are solid, the light moves across them, and
- * a person walks from a door to a bench on the ground rather than sliding
- * across a picture.
+ * The estate is drawn in three dimensions because a block's height is the
+ * fact the whole interior model rests on. A real camera makes it solid: the
+ * light moves across the blocks, and a person walks from a door to a bench
+ * on the ground rather than sliding across a picture.
  *
  * Nothing here is decided. The ground, the blocks, the flats, the people and
  * their positions all arrive from the server; this file only gives them a
  * body. Where a fact is missing it draws nothing rather than inventing one,
  * because a guess in a renderer is a second copy of a fact the engine owns.
  *
- * The five phases of the day are the same five the PixiJS scene uses —
- * dawn, morning, afternoon, evening, night — and they are equal fifths of
- * one continuous clock. `dayFraction` turns the wall time since the day's
- * turn into a fraction of the day; the light table is keyed by that
+ * The five phases of the day are dawn, morning, afternoon, evening and
+ * night — equal fifths of one continuous clock. `dayFraction` turns the wall
+ * time since the day's turn into a fraction of the day; the light table is
+ * keyed by that
  * fraction and eased between its keys, so the sun crosses the sky and the
  * lamps, windows and fog arrive and leave over a long dawn and dusk rather
  * than stepping when the server's `day` changes. The clock's wrap from 1
@@ -24,8 +23,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from '/3d/vendor/OrbitControls.js';
 
-/* The router is a classic script (`/walk.js`) so the plan page can inline the
- * same file; see page/walk.js. If it ever fails to load, the page still draws
+/* The router is a classic script (`/3d/walk.js`) loaded before this module;
+ * see walk.js beside it. If it ever fails to load, the page still draws
  * everyone — as a straight line, which is what it used to do always. */
 const Walk = (typeof globalThis !== 'undefined' && globalThis.EstateWalk) ||
              null;
@@ -68,9 +67,8 @@ const BUILDING_STYLE = {
   shop: { wall: 0xcf9f60, roof: 0x7c4038, trim: 0xf0c98a },
 };
 
-/* The same role colours the plan page uses. A person is coloured by what
- * they are, never by which household they belong to: two children in one
- * family are two children. */
+/* A person is coloured by what they are, never by which household they
+ * belong to: two children in one family are two children. */
 const ROLE_COLOUR = { child: 0xf2c14e, adult: 0x9ecbf0, elder: 0xd9b8e8 };
 const SKIN = [0xf1d5b5, 0xe8c39a, 0xc68863, 0x8d5524];
 
@@ -624,37 +622,71 @@ export function createWorld(ground, canvas, opts) {
 
   /* ---------------------------------------------------------- lamplight */
 
+  /* The lamps' light is a field, not a set of objects: the engine sends a
+   * value per cell (0-9) and that is what is drawn. It used to be drawn as
+   * a flat disc stamped on every lit cell at one opacity, which read as a
+   * grid of hard-edged circles rather than pools of light. Now the field is
+   * baked into one texture: a cell per pixel, scaled up with smoothing and
+   * blurred, so the light is brightest under the lamp, fades to nothing at
+   * its reach, and two lamps' pools merge where they overlap. It lies on
+   * the ground as one plane, added to whatever is under it, and `dark`
+   * scales it, so it comes up through the dusk with the windows. */
+  const GLOW_PX = 16;                 // texture pixels per tile
+  const glowCanvas = document.createElement('canvas');
+  glowCanvas.width = W * GLOW_PX;
+  glowCanvas.height = H * GLOW_PX;
+  const glowCells = document.createElement('canvas');
+  glowCells.width = W;
+  glowCells.height = H;
+  const glowTex = new THREE.CanvasTexture(glowCanvas);
+  glowTex.colorSpace = THREE.NoColorSpace;  // an amount of light, not a colour
+  glowTex.minFilter = THREE.LinearFilter;
+  glowTex.magFilter = THREE.LinearFilter;
+  glowTex.generateMipmaps = false;
   const glowMat = new THREE.MeshBasicMaterial({
-    color: 0xffca7a, transparent: true, opacity: 0, depthWrite: false,
-    blending: THREE.AdditiveBlending, fog: false });
-  /* a circle, not a square: a pool of lamplight has no corners */
-  const glowGeo = new THREE.CircleGeometry(0.5, 12);
+    color: 0xffbf66, map: glowTex, transparent: true, opacity: 0,
+    depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+  const glowGeo = new THREE.PlaneGeometry(W, H);
   glowGeo.rotateX(-Math.PI / 2);
-  const glow = new THREE.InstancedMesh(glowGeo, glowMat, Math.max(1, W * H));
-  glow.frustumCulled = false;
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  glow.position.set(W / 2, TILE_TOP + 0.02, H / 2);
   glow.renderOrder = 2;
+  glow.visible = false;
   scene.add(glow);
 
   let glowCount = 0;
+  let glowKey = '';
   function buildGlow(st) {
     const light = (st && st.light) || [];
+    const key = light.join(',');
+    if (key === glowKey) return;       // the field changes when a lamp does
+    glowKey = key;
+    const small = glowCells.getContext('2d');
+    const img = small.createImageData(W, H);
     let n = 0;
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        const v = light[y * W + x] || 0;
-        if (!v) continue;
-        const s = 1.35 + v * 0.2;
-        dummy.position.set(x + 0.5, TILE_TOP + 0.02, y + 0.5);
-        dummy.rotation.set(0, 0, 0);
-        dummy.scale.set(s, 1, s);
-        dummy.updateMatrix();
-        glow.setMatrixAt(n, dummy.matrix);
-        n++;
-      }
+    for (let i = 0; i < W * H; i++) {
+      const v = Math.max(0, Math.min(9, Number(light[i]) || 0)) / 9;
+      if (v) n++;
+      /* eased a little so the rim of a pool is a fade, not a ledge: the
+       * field steps 0-9 per cell and this keeps the low steps faint */
+      const a = Math.round(255 * Math.pow(v, 1.3));
+      img.data[i * 4] = 255;
+      img.data[i * 4 + 1] = 255;
+      img.data[i * 4 + 2] = 255;
+      img.data[i * 4 + 3] = a;
     }
-    glow.count = n;
+    small.putImageData(img, 0, 0);
+    const big = glowCanvas.getContext('2d');
+    big.clearRect(0, 0, glowCanvas.width, glowCanvas.height);
+    big.imageSmoothingEnabled = true;
+    big.imageSmoothingQuality = 'high';
+    /* the blur takes the corners off the smoothing's diamonds; a browser
+     * without canvas filters still gets the smooth upscale */
+    if ('filter' in big) big.filter = `blur(${GLOW_PX * 0.6}px)`;
+    big.drawImage(glowCells, 0, 0, glowCanvas.width, glowCanvas.height);
+    if ('filter' in big) big.filter = 'none';
+    glowTex.needsUpdate = true;
     glowCount = n;
-    glow.instanceMatrix.needsUpdate = true;
   }
 
   /* --------------------------------------------------------- windows lit */
@@ -763,10 +795,10 @@ export function createWorld(ground, canvas, opts) {
   const offX = [], offZ = [], roleScale = [];
   /* 0 stands, 1 sits on the bench, 2 stands beside it because it is full */
   const sitMode = [], seatFx = [], seatFz = [];
-  /* Each walker's route (from page/walk.js) and when its walk began. A route
-   * is built when a person's cell changes, not once a frame and not once a
-   * poll: the state repeats between days, and rebuilding on every poll
-   * restarted the walk before it had got anywhere. */
+  /* Each walker's route (from walk.js beside this file) and when its walk
+   * began. A route is built when a person's cell changes, not once a frame
+   * and not once a poll: the state repeats between days, and rebuilding on
+   * every poll restarted the walk before it had got anywhere. */
   const routes = [], routeT0 = [], routeDur = [];
   const facing = [];
   let routesBuilt = false;
@@ -1119,6 +1151,9 @@ export function createWorld(ground, canvas, opts) {
   let fixturesBuilt = false;
   let fixtureEntries = [];
   let treeEntries = [];
+  /* the frame's own fixtures by id, so a click on a bench can return the
+   * fact the server sent rather than a second copy kept by the page */
+  let fixtureById = {};
   /* The benches, by cell, with the way each one faces. A resident on a
    * bench's cell is seated on it (up to its capacity), and `focus=bench`
    * needs to know where the benches are without inventing a second copy of
@@ -1297,10 +1332,10 @@ export function createWorld(ground, canvas, opts) {
     const key = (st.fixtures || []).map(f => f.id + ':' + f.kind).join(',');
     if (!fixturesBuilt || key !== fixtureKey) buildFixtures(st);
     syncFixtureSeason(st.season || 0);
-    const byId = {};
-    (st.fixtures || []).forEach(f => { byId[f.id] = f; });
+    fixtureById = {};
+    (st.fixtures || []).forEach(f => { fixtureById[f.id] = f; });
     fixtureEntries.forEach(fx => {
-      const f = byId[fx.id];
+      const f = fixtureById[fx.id];
       const c = f ? clamp01(f.c == null ? 1 : f.c) : 1;
       const k = 0.55 + 0.45 * c;
       fx.mats.forEach(m => {
@@ -1463,7 +1498,7 @@ export function createWorld(ground, canvas, opts) {
     headMat.emissiveIntensity = 0.06 + dark * 0.34;
     lampBulbMat.emissiveIntensity = 0.05 + dark * 2.6;
     shopSignMat.emissiveIntensity = 0.1 + dark * 1.8;
-    glowMat.opacity = dark * 0.55;
+    glowMat.opacity = dark * 1.1;
     glow.visible = glowCount > 0 && dark > 0.02;
 
     updateResidents(now);
@@ -1484,24 +1519,59 @@ export function createWorld(ground, canvas, opts) {
 
   /* -------------------------------------------------------------- pick */
 
-  function pick(clientX, clientY, rect) {
+  /* `withGround` is the click's privilege: a hover asks only what is on
+   * top of the ground, while a click may also name the cell that was hit.
+   * Raycasting every tile on every pointer move would be wasted work. */
+  function pick(clientX, clientY, rect, withGround) {
     if (!clock.haveState) return null;
     ndc.set(((clientX - rect.left) / rect.width) * 2 - 1,
             -((clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
+    /* Whatever is nearest is what was clicked. A fixture standing in front
+     * of a block must win over the block behind it, so the three pickable
+     * layers are compared by distance rather than checked in an order. */
+    let best = null;
     if (bodyMesh) {
       /* the head is a person too: without it a click on the most visible
        * part of a figure fell through to whatever stood behind */
       const hits = raycaster.intersectObjects([bodyMesh, headMesh], false);
       if (hits.length) {
         const p = personAt[hits[0].instanceId];
-        if (p) return { kind: 'resident', person: p };
+        if (p) best = { d: hits[0].distance,
+                        hit: { kind: 'resident', person: p } };
       }
     }
     const bh = raycaster.intersectObjects(buildingBodies, false);
-    if (bh.length) {
+    if (bh.length && (!best || bh[0].distance < best.d)) {
       const id = bh[0].object.userData.pick.id;
-      return { kind: 'building', id, building: buildingById[id] };
+      best = { d: bh[0].distance,
+               hit: { kind: 'building', id, building: buildingById[id] } };
+    }
+    /* a fixture's own group carries the id; the ray lands on a mesh inside
+     * it, so walk back up to the group that owns the pick */
+    const fh = raycaster.intersectObjects(fixtureGroup.children, true);
+    if (fh.length) {
+      let o = fh[0].object;
+      while (o && !o.userData.pick) o = o.parent;
+      const mark = o && o.userData.pick;
+      if (mark && (!best || fh[0].distance < best.d)) {
+        best = { d: fh[0].distance,
+                 hit: { kind: 'fixture', id: mark.id,
+                        fixture: fixtureById[mark.id] ||
+                                 { id: mark.id, kind: 'a place' } } };
+      }
+    }
+    if (best) return best.hit;
+    /* the ground itself: an instanced tile knows its own cell, so a click
+     * on a lawn or the water can say which one it was */
+    if (withGround) {
+      const th = raycaster.intersectObject(tiles, false);
+      if (th.length && th[0].instanceId !== undefined) {
+        const i = th[0].instanceId;
+        const x = i % W, y = (i - x) / W;
+        return { kind: 'cell', x, y,
+                 cell: { x, y, site: ground.codes[ground.rows[y][x]] } };
+      }
     }
     return null;
   }

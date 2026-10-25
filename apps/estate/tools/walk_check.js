@@ -1,7 +1,7 @@
 /* The router's check.
  *
  * `walk.js` is the half of the plan the engine does not have: the engine
- * walks its people cell by cell, and both pages ask this file for the same
+ * walks its people cell by cell, and the 3D page asks this file for the
  * search over the same ground. It had no committed test — the Python
  * replica in a commit message was not in the repo, and a replica that is
  * not run is not a test.
@@ -29,11 +29,11 @@ const vm = require('vm');
 const http = require('http');
 const https = require('https');
 
-const WALK = path.join(__dirname, '..', 'estate', 'page', 'walk.js');
+const WALK = path.join(__dirname, '..', 'estate', 'page3d', 'walk.js');
 
-/* The page is classic scripts, so walk.js publishes itself on `globalThis`
- * rather than exporting. Load it in a context of its own, exactly as the
- * plan page inlines it. */
+/* walk.js is a classic script, so it publishes itself on `globalThis` rather
+ * than exporting. Load it in a context of its own, exactly as the 3D page
+ * loads it before its module. */
 function loadWalk(file) {
   const src = fs.readFileSync(file, 'utf8');
   const ctx = {};

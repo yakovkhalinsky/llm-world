@@ -8,9 +8,9 @@
  * `light(0) == light(1)`, a pinned clock or phase, a paused day frozen) are
  * therefore properties of a pure module, not of a renderer.
  *
- * It publishes itself as a classic script, like `page/walk.js`: the 3D page
- * loads it before its module, and `tools/clock_check.js` requires it in
- * Node.
+ * It publishes itself as a classic script, like `walk.js` beside it: the 3D
+ * page loads it before its module, and `tools/clock_check.js` requires it
+ * in Node.
  */
 (function (root) {
   'use strict';

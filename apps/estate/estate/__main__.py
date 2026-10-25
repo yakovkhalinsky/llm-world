@@ -3,7 +3,7 @@
   estate new [--seed 42] [--size 40x30]     plant an estate (no LLM)
   estate step N                             advance N days in batch
   estate map                                draw the plan once
-  estate web [--port 8787]                  serve the dashboard (pixijs)
+  estate web [--port 8787]                  serve the dashboard (the 3D view)
   estate status                             census history
   estate rules [--template FILE]            the live ruleset
 
