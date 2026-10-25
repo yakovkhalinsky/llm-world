@@ -61,6 +61,8 @@ const S = {
   state: null,
   world: null,
   selected: null,       // {kind:'animal'|'plant', id} or {kind:'cell', x, y}
+  ledger: null,         // the card's /api/bio ask: {id, state, b}
+  ledgerTick: null,     // the week it was asked in
   follow: false,
   pointerX: 0,
   pointerY: 0,
@@ -134,29 +136,61 @@ function phaseLabel(info) {
 /* ------------------------------------------------------------- the card */
 
 let bioAsked = 0;
+/* how long the card waits on the ledger before it says it did not answer */
+const BIO_TIMEOUT_MS = 4000;
 
 function drawCard() {
-  const open = HUD ? HUD.card(S.state, S.selected) : false;
+  const open = HUD ? HUD.card(S.state, S.selected, S.ledger) : false;
   if (!HUD) $('card').classList.remove('on');
   $('followBtn').hidden = !(S.selected && S.selected.kind === 'animal');
   $('followBtn').classList.toggle('on', S.follow);
   return open;
 }
 
-/* The biography is the ledger's: asked once when a creature or a plant is
- * clicked, and its answer written only if that is still the one open. */
-function askBio(sel) {
+/* The biography is the ledger's: asked when a creature or a plant is
+ * clicked (and again, quietly, each new week while it stays open). The
+ * answer is kept in `S.ledger`, so the card's every redraw — one per frame
+ * poll — carries it; a slow or failed ask ends in a plain line, never a
+ * spinner that stays. */
+function askBio(sel, quiet) {
   if (!sel || (sel.kind !== 'animal' && sel.kind !== 'plant')) return;
   const ask = ++bioAsked;
   const id = Number(sel.id);
-  fetchJSON('/api/bio?id=' + encodeURIComponent(id)).then(b => {
-    if (ask !== bioAsked || !S.selected || S.selected.id !== id) return;
-    if (HUD) HUD.bio(b, sel.name);
-  }).catch(() => {});
+  const mine = () => ask === bioAsked && S.selected &&
+    Number(S.selected.id) === id;
+  S.ledgerTick = S.state ? S.state.tick : null;
+  if (!quiet || !S.ledger || S.ledger.id !== id) {
+    S.ledger = { id, state: 'wait' };
+  }
+  const ctl = typeof AbortController !== 'undefined'
+    ? new AbortController() : null;
+  const timer = window.setTimeout(() => { if (ctl) ctl.abort(); },
+                                  BIO_TIMEOUT_MS);
+  fetch('/api/bio?id=' + encodeURIComponent(id),
+        { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+    .then(r => {
+      if (!r.ok) throw new Error('/api/bio → ' + r.status);
+      return r.json();
+    })
+    .then(b => {
+      if (!mine()) return;
+      S.ledger = { id, state: 'ok', b };
+      drawCard();
+    })
+    .catch(() => {
+      if (!mine()) return;
+      /* a quiet re-ask that fails keeps the rows it already has */
+      if (!(quiet && S.ledger && S.ledger.state === 'ok')) {
+        S.ledger = { id, state: 'fail' };
+      }
+      drawCard();
+    })
+    .finally(() => window.clearTimeout(timer));
 }
 
 function select(sel) {
   S.selected = sel;
+  S.ledger = null;
   if (!sel || sel.kind !== 'animal') S.follow = false;
   if (drawCard()) askBio(sel);
   if (S.world) S.world.follow(S.follow && sel ? sel.id : null);
@@ -260,7 +294,10 @@ function poll() {
     if (!S.world && !first(st)) return;
     S.world.setState(st);
     updateHUD(st);
-    if (S.selected) drawCard();
+    if (S.selected) {
+      drawCard();
+      if (S.ledger && st.tick !== S.ledgerTick) askBio(S.selected, true);
+    }
     if (!ready) {
       phaseLabel(S.world.frame(performance.now()));
       publishReady();
