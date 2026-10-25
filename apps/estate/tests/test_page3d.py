@@ -80,6 +80,17 @@ class Page3dTest(unittest.TestCase):
         self.assertTrue(data)
         self.assertEqual(ctype, "application/javascript; charset=utf-8")
 
+    def test_the_no_webgl_fallback_shows_the_glyph_map(self):
+        """Without WebGL the page still has to show the estate. The server's
+        glyph map at `/api/plain` is that view; there is no second page to
+        link to any more."""
+        page = web._page3d("index.html")[0].decode()
+        viewer = web._page3d("viewer.js")[0].decode()
+        self.assertIn('id="plain"', page)
+        self.assertIn("/api/plain", viewer)
+        self.assertNotIn("2D plan", page)
+        self.assertNotIn('href="/"', page)
+
     def test_vendored_licence_resolves(self):
         got = web._page3d("vendor/LICENSE")
         self.assertIsNotNone(got)

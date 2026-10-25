@@ -236,13 +236,31 @@ button.on { background: rgba(255, 202, 122, 0.18); border-color: var(--lamp); }
   inset: 0;
   display: grid;
   place-items: center;
+  padding: 20px;
+  overflow: auto;
   background: #0b0e12;
 }
 #nogl[hidden] { display: none; }
-.noglbox { position: static; max-width: 380px; }
+.noglbox {
+  position: static;
+  max-width: min(720px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+}
 .noglbox h3 { margin: 0 0 8px; font-weight: 600; }
 .noglbox p { color: var(--dim); font-size: 13px; }
-.noglbox a { color: var(--lamp); }
+.noglhint { margin: 12px 0 6px; }
+#plain {
+  margin: 0;
+  padding: 10px 12px;
+  font: 12px/1.15 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--paper);
+  white-space: pre;
+  overflow-x: auto;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+}
 
 body.nogl #view, body.nogl .hud { display: none; }
 

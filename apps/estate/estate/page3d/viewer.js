@@ -119,10 +119,25 @@ function webglAvailable() {
   }
 }
 
+let plainTimer = 0;
+
 function fallback(why) {
   document.body.classList.add('nogl');
   $('nogl').hidden = false;
   $('noglWhy').textContent = why || 'this browser has no WebGL';
+  /* The estate is still here without a renderer: `/api/plain` is the
+   * server's own glyph map of the same world, so the fallback draws
+   * nothing and asks for one frame of the truth. */
+  const redraw = () => fetch('/api/plain', { cache: 'no-store' }).then(r => {
+    if (!r.ok) throw new Error('/api/plain → ' + r.status);
+    return r.text();
+  }).then(text => {
+    $('plain').textContent = text;
+  }).catch(() => {
+    $('plain').textContent = 'the glyph map is not answering.';
+  });
+  redraw();
+  if (!plainTimer) plainTimer = setInterval(redraw, 1400);
 }
 
 /* --------------------------------------------------------------- the HUD */
