@@ -47,15 +47,19 @@
    * it. The colour says the hour; the elevation stays high enough for the
    * light to fall like light.
    *
+   * Dusk has a key of its own at 0.90 — a dim mauve between the orange
+   * evening and the blue night — so the last fifth of the day does not
+   * fall from sunset to moonlight in one ease.
+   *
    * The night is lit by the moon, not by the sky: the hemisphere fill is
-   * low (0.35) and a deep blue, so a night has depth and the warm lamps
-   * and the grove's few glows carry it, rather than a flat blue wash. By
+   * lower than by day (0.5) and a deep blue, so a night has depth and
+   * the warm lamps and the grove's few glows carry it, rather than a flat blue wash. By
    * day the sun is the strong key and the fill is held at 0.55, so blocks
    * and trees have a shadow side. */
   var LIGHT = [
-    { at: 0.00, sun: 0xa8b8d8, sunI: 0.35,
-      offset: [-20, 28, -28], sky: 0x0e1526, hemiSky: 0x3a4a6e,
-      hemiGround: 0x14171c, hemiI: 0.35, dark: 1.0 },
+    { at: 0.00, sun: 0xa8b8d8, sunI: 0.5,
+      offset: [-20, 28, -28], sky: 0x131d36, hemiSky: 0x4a5d88,
+      hemiGround: 0x1c2129, hemiI: 0.5, dark: 1.0 },
     { at: 0.20, sun: 0xffb27a, sunI: 1.15,
       offset: [28, 20, 20], sky: 0xe6b28c, hemiSky: 0xffd6ae,
       hemiGround: 0x4a4034, hemiI: 0.55, dark: 0.35 },
@@ -68,15 +72,19 @@
     { at: 0.80, sun: 0xff8a4c, sunI: 1.35,
       offset: [-30, 20, -14], sky: 0xd98a62, hemiSky: 0xffc9a8,
       hemiGround: 0x40372e, hemiI: 0.48, dark: 0.50 },
-    { at: 1.00, sun: 0xa8b8d8, sunI: 0.35,
-      offset: [-20, 28, -28], sky: 0x0e1526, hemiSky: 0x3a4a6e,
-      hemiGround: 0x14171c, hemiI: 0.35, dark: 1.0 },
+    { at: 0.90, sun: 0xc89a9a, sunI: 0.6,
+      offset: [-25, 24, -21], sky: 0x3a2c3e, hemiSky: 0x8a7a98,
+      hemiGround: 0x2e2b2c, hemiI: 0.42, dark: 0.8 },
+    { at: 1.00, sun: 0xa8b8d8, sunI: 0.5,
+      offset: [-20, 28, -28], sky: 0x131d36, hemiSky: 0x4a5d88,
+      hemiGround: 0x1c2129, hemiI: 0.5, dark: 1.0 },
   ];
 
-  /* ACES exposure: a little over by day, a little under at night, eased by
-   * `dark` — the warm lamps stay strong against a darker night. */
+  /* ACES exposure: a little over by day, level at night, eased by `dark`
+   * — the night reads as moonlit rather than murky, and the warm lamps
+   * still stand out against it. */
   var EXPOSURE_DAY = 1.1;
-  var EXPOSURE_NIGHT = 0.95;
+  var EXPOSURE_NIGHT = 1.0;
   /* The fog leans this far from the sky's colour toward the hemisphere's
    * ground colour by day, so the horizon sits a little darker than the sky
    * and the board does not float. It goes to nothing as `dark` comes on: a

@@ -75,14 +75,21 @@ ok('night is the darkest hour and noon the lightest',
 
 /* Iris's review: a moonlit night (dim, blue, never a wash), a crisper day
  * (a stronger sun over a lower fill), the exposure easing from 1.1 by day
- * to 0.95 at night, and a fog leaned toward the ground by day only. */
+ * to 1.0 at night, and a fog leaned toward the ground by day only. */
 function hexIs(v, hex) { return v === hex; }
 for (const k of [Clock.LIGHT[0], Clock.LIGHT[Clock.LIGHT.length - 1]]) {
   ok('night key ' + k.at + ' is moonlight, not a wash',
-     k.hemiI === 0.35 && k.sunI === 0.35 &&
-     hexIs(k.hemiSky, 0x3a4a6e) && hexIs(k.hemiGround, 0x14171c) &&
-     hexIs(k.sun, 0xa8b8d8) && hexIs(k.sky, 0x0e1526),
+     k.hemiI === 0.5 && k.sunI === 0.5 &&
+     hexIs(k.hemiSky, 0x4a5d88) && hexIs(k.hemiGround, 0x1c2129) &&
+     hexIs(k.sun, 0xa8b8d8) && hexIs(k.sky, 0x131d36),
      JSON.stringify(k));
+}
+{
+  const k9 = Clock.LIGHT.find(k => k.at === 0.9);
+  ok('a dusk key at 0.90 steps evening down to the night',
+     k9 && k9.hemiI === 0.42 && k9.sunI === 0.6 &&
+     hexIs(k9.sky, 0x3a2c3e) && k9.dark === 0.8,
+     JSON.stringify(k9));
 }
 {
   const k4 = Clock.LIGHT.find(k => k.at === 0.4);
@@ -98,20 +105,20 @@ ok('exposure is 1.1 by day', Clock.EXPOSURE_DAY === 1.1 &&
    Math.abs(Clock.lightAt(0.5).exposure - 1.1) < 1e-12 &&
    Math.abs(Clock.lightAt(0.4).exposure - 1.1) < 1e-12,
    Clock.lightAt(0.5).exposure);
-ok('exposure is 0.95 at night', Clock.EXPOSURE_NIGHT === 0.95 &&
-   Math.abs(at0.exposure - 0.95) < 1e-12 &&
-   Math.abs(at1.exposure - 0.95) < 1e-12, at0.exposure);
+ok('exposure is 1.0 at night', Clock.EXPOSURE_NIGHT === 1.0 &&
+   Math.abs(at0.exposure - 1.0) < 1e-12 &&
+   Math.abs(at1.exposure - 1.0) < 1e-12, at0.exposure);
 ok('exposure follows the dark, and stays between its ends', (() => {
   for (let f = 0; f <= 1; f += 0.001) {
     const l = Clock.lightAt(f);
-    const want = 1.1 + (0.95 - 1.1) * l.dark;
+    const want = 1.1 + (1.0 - 1.1) * l.dark;
     if (Math.abs(l.exposure - want) > 1e-9) return false;
-    if (l.exposure < 0.95 - 1e-12 || l.exposure > 1.1 + 1e-12) return false;
+    if (l.exposure < 1.0 - 1e-12 || l.exposure > 1.1 + 1e-12) return false;
   }
   return true;
 })());
 ok('exposure clamps a dark outside 0..1',
-   Clock.exposureAt(-1) === 1.1 && Clock.exposureAt(2) === 0.95);
+   Clock.exposureAt(-1) === 1.1 && Clock.exposureAt(2) === 1.0);
 ok('the fog leans 15% toward the ground by day, none at night',
    Clock.FOG_GROUND === 0.15 && Clock.fogGroundMix(0) === 0.15 &&
    Clock.fogGroundMix(1) === 0 &&

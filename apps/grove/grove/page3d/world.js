@@ -249,10 +249,11 @@ export function createWorld(first, canvas, opts) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(Clock.LIGHT[3].sky);
-  /* the fog starts just inside the grove's own size, so the floor's apron
-   * is already fogging where it reaches the frame's corners; its colour is
+  /* the fog starts at three quarters of the grove's size and is whole by
+   * 2.2, so the floor's apron has gone into the sky before it reaches the
+   * frame's corners — no hard world edge; its colour is
    * the sky's, leaned a little toward the ground by day (updateSky) */
-  scene.fog = new THREE.Fog(Clock.LIGHT[3].sky, N * 0.9, N * 2.6);
+  scene.fog = new THREE.Fog(Clock.LIGHT[3].sky, N * 0.75, N * 2.2);
 
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 300);
   camera.position.set(centre.x + N * 0.55, N * 0.72, centre.z + N * 0.95);
@@ -502,9 +503,10 @@ export function createWorld(first, canvas, opts) {
    * field from those rings itself, with the server's arithmetic, rather
    * than painting the server's field of every mushroom. */
   const GLOW_PX = 12;
-  /* the pool's strength at full dark: low, so a lit ring is a pool of
-   * mint light on the floor and the night around it stays blue */
-  const GLOW_OPACITY = 0.17;
+  /* the pool's strength at full dark: enough that a lit ring reads as a
+   * pool of mint light on the floor, low enough that the night around it
+   * stays blue */
+  const GLOW_OPACITY = 0.28;
   const glowCanvas = document.createElement('canvas');
   glowCanvas.width = GW * GLOW_PX;
   glowCanvas.height = GW * GLOW_PX;

@@ -3,7 +3,7 @@
  * The server sends every mushroom (a cell's fourth field) and a light field
  * built from all of them (`web.glow_field`). Lit all at once they washed the
  * whole canopy green; the night should be mostly dark blue with a few pools
- * of green. So the page lights only about one ring in four, and builds its
+ * of green. So the page lights only about one ring in three, and builds its
  * own field from those rings with the server's own formula.
  *
  * A ring is a patch of mushroom cells touching one another (the eight
@@ -24,7 +24,7 @@
 (function (root) {
   'use strict';
 
-  var SHARE = 0.25;           // about one ring in four glows on a night
+  var SHARE = 0.33;           // about one ring in three glows on a night
   /* the server's `GLOW_REACH` and `GLOW_STEPS` (grove/web.py), so a ring's
    * pool here is the pool the server would have sent for it */
   var REACH = 2.6;

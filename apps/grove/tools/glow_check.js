@@ -14,7 +14,8 @@
  *     none passes, the one ring closest to passing (never just the first);
  *   - a night with rings lights at least one, and in a big grove neither
  *     one ring nor all of them on most nights;
- *   - over many nights about one ring in four glows (0.2–0.3), each ring
+ *   - over many nights about one ring in three glows (0.30–0.36 on a
+ *     big sample; the target is fixed here, not read from glow.js), each ring
  *     takes its turn about as often, a ring lit tonight is no likelier
  *     to be lit 1–4 nights on (no rota), and nights differ;
  *   - a cell glows only within reach of a lit ring.
@@ -161,15 +162,18 @@ if (extremeNights > NIGHTS * 0.05) {
   fail('most nights light one ring or every ring', extremeNights + ' of ' + NIGHTS);
 }
 const share = ringSum ? litSum / ringSum : 0;
-if (ringSum >= 1000 ? (share < 0.2 || share > 0.3)
-                    : (rings.length >= 4 && (share < 0.1 || share > 0.45))) {
-  fail('lit share is not about one in four', share.toFixed(3));
+/* the art direction's share: one ring in three. Over >= 5000 ring-nights
+ * the share's s.d. is under 0.007, so 0.30–0.36 rejects 0.25 and 0.40 */
+const TARGET = 1 / 3;
+const band = ringSum >= 5000 ? 0.03 : ringSum >= 1000 ? 0.06 : 0.15;
+if (rings.length >= 4 && Math.abs(share - TARGET) > band) {
+  fail('lit share is not about one in three', share.toFixed(3));
 }
-/* each ring takes its turn: over 400 nights a fair ring is lit on 25%
- * ± 2.2%, so 10–42% is a wide band that a stuck ring still misses */
+/* each ring takes its turn: over 400 nights a fair ring is lit on 33%
+ * ± 2.4%, so 18–50% is a wide band that a stuck ring still misses */
 litBy.forEach((row, k) => {
   const s = row.reduce((a, b) => a + b, 0) / NIGHTS;
-  if (s < 0.1 || s > 0.42) fail('a ring is lit far from one night in four', 'ring ' + rings[k].key + ' ' + s.toFixed(3));
+  if (s < 0.18 || s > 0.5) fail('a ring is lit far from one night in three', 'ring ' + rings[k].key + ' ' + s.toFixed(3));
 });
 /* no rota: lit tonight says nothing about the next few nights */
 const lagShare = [];
@@ -180,7 +184,7 @@ for (let lag = 1; lag <= LAGS; lag++) {
   });
   const p = lit ? again / lit : 0;
   lagShare.push(Number(p.toFixed(3)));
-  if (lit >= 200 && (p < 0.15 || p > 0.35)) {
+  if (lit >= 200 && Math.abs(p - TARGET) > 0.1) {
     fail('lit tonight predicts lit ' + lag + ' nights on', p.toFixed(3));
   }
 }

@@ -21,7 +21,7 @@ from tests.helpers import ROOT, make_grove
 NODE = shutil.which("node")
 CHECK = os.path.join(ROOT, "tools", "glow_check.js")
 GLOW = os.path.join(ROOT, "grove", "page3d", "glow.js")
-SHARE = "var SHARE = 0.25;"
+SHARE = "var SHARE = 0.33;"
 DRAW = "var h = score(ring.key, night);"
 FALLBACK = "if (!lit.length && best) lit.push(best);"
 CARRY = ("        if (wasLit) { lit.push(ring); continue; }\n"
@@ -97,15 +97,15 @@ class GlowCheckTest(unittest.TestCase):
                 mush = [c for c in s["cells"] if c and c[3]]
                 self.assertGreater(len(mush), 20)
 
-    def test_the_page_lights_about_one_ring_in_four(self):
+    def test_the_page_lights_about_one_ring_in_three(self):
         for pa, pb, _a, _b in self.snaps:
             r = self.run_check(snap=pa, nxt=pb)
             self.assertEqual(r.returncode, 0, pa + r.stdout + r.stderr)
             rep = json.loads(r.stdout)
             self.assertTrue(rep["serverFieldMatch"])
             self.assertGreaterEqual(rep["rings"], 20)
-            self.assertGreater(rep["litShare"], 0.2)
-            self.assertLess(rep["litShare"], 0.3)
+            self.assertGreater(rep["litShare"], 0.3)
+            self.assertLess(rep["litShare"], 0.36)
 
     def test_a_weeks_rebuild_in_the_dark_flips_no_ring(self):
         """The page rebuilds its rings every week; through a night the
@@ -144,9 +144,13 @@ class GlowCheckTest(unittest.TestCase):
         self.rejects("fallback is not the ring closest to passing",
                      (FALLBACK, "if (!lit.length && all.length) lit.push(all[0]);"))
 
-    def test_rejects_share_035(self):
-        self.rejects("lit share is not about one in four",
-                     (SHARE, "var SHARE = 0.35;"))
+    def test_rejects_the_old_share_025(self):
+        self.rejects("lit share is not about one in three",
+                     (SHARE, "var SHARE = 0.25;"))
+
+    def test_rejects_share_040(self):
+        self.rejects("lit share is not about one in three",
+                     (SHARE, "var SHARE = 0.40;"))
 
     def test_rejects_a_lit_ring_missing_its_last_cell(self):
         self.rejects("a lit ring has a dark cell", (
@@ -215,7 +219,7 @@ class GlowCheckTest(unittest.TestCase):
             "for (var j = 0; j < lit[q].cells.length - (carry ? 1 : 0); j++)"))
 
     def test_rejects_a_ring_lit_every_night(self):
-        self.rejects("a ring is lit far from one night in four", (
+        self.rejects("a ring is lit far from one night in three", (
             DRAW, "var h = r === 0 ? 0 : score(ring.key, night);"))
 
     def test_rejects_a_draw_that_is_not_the_score(self):
