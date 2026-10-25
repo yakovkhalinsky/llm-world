@@ -47,9 +47,11 @@
    * it. The colour says the hour; the elevation stays high enough for the
    * light to fall like light.
    *
-   * Dusk has a key of its own at 0.90 — a dim mauve between the orange
-   * evening and the blue night — so the last fifth of the day does not
-   * fall from sunset to moonlight in one ease.
+   * Dusk has a key of its own at 0.90 — a dusky rose between the orange
+   * evening and the blue night, still lit about halfway between the two —
+   * so the last fifth of the day steps down evenly (frame brightness
+   * roughly 70, 55, 38 at 0.80, 0.85, 0.90, and 19 at night) rather than
+   * falling from sunset to moonlight in one ease.
    *
    * The night is lit by the moon, not by the sky: the hemisphere fill is
    * lower than by day (0.5) and a deep blue, so a night has depth and
@@ -72,9 +74,9 @@
     { at: 0.80, sun: 0xff8a4c, sunI: 1.35,
       offset: [-30, 20, -14], sky: 0xd98a62, hemiSky: 0xffc9a8,
       hemiGround: 0x40372e, hemiI: 0.48, dark: 0.50 },
-    { at: 0.90, sun: 0xc89a9a, sunI: 0.6,
-      offset: [-25, 24, -21], sky: 0x3a2c3e, hemiSky: 0x8a7a98,
-      hemiGround: 0x2e2b2c, hemiI: 0.42, dark: 0.8 },
+    { at: 0.90, sun: 0xd8a08c, sunI: 0.85,
+      offset: [-25, 24, -21], sky: 0x5a3c4e, hemiSky: 0x9a86a4,
+      hemiGround: 0x36302e, hemiI: 0.58, dark: 0.8 },
     { at: 1.00, sun: 0xa8b8d8, sunI: 0.5,
       offset: [-20, 28, -28], sky: 0x131d36, hemiSky: 0x4a5d88,
       hemiGround: 0x1c2129, hemiI: 0.5, dark: 1.0 },
