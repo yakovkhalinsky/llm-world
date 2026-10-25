@@ -32,6 +32,8 @@ class StaticFilesTest(unittest.TestCase):
                             "application/javascript; charset=utf-8"),
                            ("forest.js",
                             "application/javascript; charset=utf-8"),
+                           ("glow.js",
+                            "application/javascript; charset=utf-8"),
                            ("style.css", "text/css; charset=utf-8")):
             with self.subTest(rel=rel):
                 got = web._page3d(rel)
@@ -60,7 +62,8 @@ class StaticFilesTest(unittest.TestCase):
     def test_the_page_loads_its_classic_scripts_before_the_module(self):
         page = web._page3d("index.html")[0].decode()
         at = page.index("/3d/viewer.js")
-        for rel in ("walk.js", "clock.js", "field.js", "forest.js", "hud.js"):
+        for rel in ("walk.js", "clock.js", "field.js", "forest.js", "glow.js",
+                    "hud.js"):
             with self.subTest(rel=rel):
                 self.assertIn('src="/3d/' + rel + '"', page)
                 self.assertLess(page.index("/3d/" + rel), at)

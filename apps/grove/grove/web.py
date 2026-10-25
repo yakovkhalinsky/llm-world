@@ -216,7 +216,12 @@ def glow_field(w):
 
     It is the grove's lamplight — the view paints it as one smooth field
     at night rather than a disc per mushroom. Pure: it reads the cells and
-    writes nothing, so the sim cannot be moved by it."""
+    writes nothing, so the sim cannot be moved by it.
+
+    The 3D page no longer paints this field: it lights about one ring in
+    four and builds their pools itself (`page3d/glow.js`). It is still sent
+    as the reference that page's arithmetic is checked against
+    (`tools/glow_check.js` compares the two with every ring lit)."""
     size = w["size"]
     out = [0] * (size * size)
     srcs = [(x, y) for y in range(size) for x in range(size)

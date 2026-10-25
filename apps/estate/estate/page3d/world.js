@@ -186,16 +186,21 @@ export function createWorld(ground, canvas, opts) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  /* set every frame from the clock (lightAt's exposure) */
+  renderer.toneMappingExposure = Clock.EXPOSURE_DAY;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const maxDim = Math.max(W, H);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(Clock.LIGHT[3].sky);
-  /* Fog turns the ground past the estate into sky. It starts beyond the
-   * estate's own footprint so the blocks stay crisp, and its colour is the
-   * sky's every frame. */
-  scene.fog = new THREE.Fog(Clock.LIGHT[3].sky, maxDim * 1.3, maxDim * 2.8);
+  /* Fog turns the ground past the estate into sky. It starts at 0.8
+   * of the estate's size and is whole by 2.2, so the apron is gone into
+   * the sky before it reaches the frame's corners (further out, it showed
+   * through as a grey-green blotch, a hard world edge), while the blocks
+   * themselves — well inside the near distance from the camera's usual
+   * framing — stay crisp. Its colour is the sky's every frame, leaned a little toward
+   * the ground by day (see updateSky). */
+  scene.fog = new THREE.Fog(Clock.LIGHT[3].sky, maxDim * 0.8, maxDim * 2.2);
 
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
   /* from the south-east, where both views look in, and high enough to
@@ -743,7 +748,12 @@ export function createWorld(ground, canvas, opts) {
     hemi.color.copy(hemiSky);
     hemi.groundColor.copy(hemiGround);
     scene.background.copy(skyColour);
-    scene.fog.color.copy(skyColour);
+    /* the horizon a little below the sky's value by day, so the estate
+     * sits on the ground rather than floating; at night the fog is the
+     * night sky's own colour (clock.js fogGroundMix) */
+    scene.fog.color.copy(skyColour)
+      .lerp(hemiGround, Clock.fogGroundMix(darkNow));
+    renderer.toneMappingExposure = l.exposure;
 
     /* the sun's arc: east and high at dawn, overhead by morning, west and
      * low by evening, then the moon's blue from the north. The floor on

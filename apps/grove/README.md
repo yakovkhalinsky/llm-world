@@ -75,7 +75,10 @@ the light, `?clock=0.2` pins the day's fraction, `?static=1` draws the
 first state and stops (for screenshots), `?view=top` looks straight down.
 The page's headless checks: `node tools/hud_check.js` (every model string
 escaped), `node tools/route_check.js <state.json>` (no walk crosses a
-trunk or water), and `python3 -m unittest discover -s tests`.
+trunk or water), `node tools/glow_check.js <state.json>
+[<next-week.json>]` (about one mushroom ring in three glows on a night,
+deterministically, with the server's light arithmetic, and the lit set
+holds through a night's weekly rebuilds), and `python3 -m unittest discover -s tests`.
 
 ```sh
 ./grove.sh web                  # loopback only (for an ssh tunnel)
@@ -195,7 +198,7 @@ all species must persist).
 |---|---|
 | `grove/engine/` | the tick's domains: weather/soil, plants, animals, the population's nets, the operator's fates |
 | `grove/biomes/` | a world's nature as packs: `grove.py`, `desert.py` (species, recipes, words, colours, shapes) |
-| `grove/page3d/` | the 3D dashboard: `index.html`, `style.css`, `hud.js` (panels, all text escaped), `forest.js` (trunks and the walk grid), `world.js` (the Three.js scene), `viewer.js` (polling and input); the shared clock, router, light field and Three.js come from `apps/shared/page3d/` |
+| `grove/page3d/` | the 3D dashboard: `index.html`, `style.css`, `hud.js` (panels, all text escaped), `forest.js` (trunks and the walk grid), `glow.js` (which mushroom rings glow tonight), `world.js` (the Three.js scene), `viewer.js` (polling and input); the shared clock, router, light field and Three.js come from `apps/shared/page3d/` |
 | `grove/world.py` | state containers, species-table aliases, helpers |
 | `grove/gen.py` | seeded worldgen (no LLM) |
 | `grove/sim.py` | the tick engine + validated operator effects |
@@ -213,6 +216,7 @@ all species must persist).
 | `tools/balance.py` | the ecologist's gate: seeded worlds × years, all must pass |
 | `tools/hud_check.js` | the HUD's escaping check: hostile strings in every field must come out inert |
 | `tools/route_check.js` | the walk check: every creature's route on a snapshot avoids trunks and water |
+| `tools/glow_check.js` | the glow check: tonight's lit rings on a snapshot — deterministic, about one in three with no rota, never none, whole rings, the server's field when all are lit; given next week's snapshot too, no surviving ring flips in the dark |
 | `tests/` | the server's routes and headers, the light field, and the two checks above (with mutants) |
 | `tools/render_svg.py` | the README's scene, rendered from the live world |
 | `docs/ARCHITECTURE.md` | how it all works: tick order, contracts, threads |
