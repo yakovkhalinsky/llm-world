@@ -44,12 +44,21 @@ export function page3dIndex(html: string): string {
   swap(/<script type="module" src="\/3d\/viewer\.js"><\/script>/, '<script type="module" src="/src/main.ts"></script>');
   swap(/(src|href)="\/3d\//g, '$1="3d/');
   swap(/(<script type="importmap">)([\s\S]*?)(<\/script>)/, (_m, open, map, close) => {
-    const imports: Record<string, string> = JSON.parse(map!).imports;
+    const parsed: Record<string, unknown> = JSON.parse(map!);
+    const extra = Object.keys(parsed).filter((k) => k !== "imports");
+    // scopes, integrity…: their URLs would need rewriting too; say so, not drop them
+    if (extra.length) throw new Error(`page3d's import map has ${extra.join(", ")}, which this rewrite does not carry`);
+    const imports = parsed.imports as Record<string, string>;
     for (const [k, v] of Object.entries(imports)) if (v.startsWith("/3d/")) imports[k] = `.${v}`;
     // world.js imports the vendored controls root-relative
     imports["/3d/"] = "./3d/";
-    return `${open}\n${JSON.stringify({ imports })}\n${close}`;
+    // a value with </script> in it must not close the tag it is written in
+    return `${open}\n${JSON.stringify({ imports }).replace(/</g, "\\u003c")}\n${close}`;
   });
+  // any /3d/ reference left (quoted another way, or unquoted) would break
+  // the page on a sub-path: fail here rather than ship it
+  const left = /(?:src|href)\s*=\s*['"]?\/3d\//i.exec(html);
+  if (left) throw new Error(`page3d's index.html has a /3d/ reference the rewrite does not cover: ${left[0]}`);
   return html;
 }
 
@@ -71,7 +80,13 @@ function page3d(): Plugin {
       server.middlewares.use((req, res, next) => {
         const path = (req.url ?? "").split("?")[0]!;
         if (!path.startsWith("/3d/")) return next();
-        const p = find(decodeURIComponent(path.slice(4)));
+        let p: string | null;
+        try {
+          // a malformed %-escape or a NUL byte is not a page3d file
+          p = find(decodeURIComponent(path.slice(4)));
+        } catch {
+          return next();
+        }
         if (!p) return next();
         res.setHeader("Content-Type", TYPES[extname(p)] ?? "application/octet-stream");
         res.end(readFileSync(p));

@@ -16,3 +16,6 @@ export type FromWorker =
   | ({ type: "opened"; id: number } & Opened)
   | { type: "api"; id: number; status: number; contentType: string; body: string }
   | { type: "error"; id: number | null; message: string };
+
+/** The requests page3d makes that the worker answers; anything else is fetched. */
+export const API_PATHS: ReadonlySet<string> = new Set(["/api/ground", "/api/state", "/api/plain", "/api/control"]);
