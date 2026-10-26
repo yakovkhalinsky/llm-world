@@ -17,8 +17,9 @@ it("serves page3d's page from any sub-path, with main.ts starting the viewer", (
   expect(html).toContain('<script type="module" src="/src/main.ts"></script>');
   const map = JSON.parse(/<script type="importmap">([\s\S]*?)<\/script>/.exec(html)![1]!);
   expect(map.imports).toEqual({ three: "./3d/vendor/three.module.min.js", "/3d/": "./3d/" });
-  // everything else is page3d's own page, untouched
-  expect(html.split("\n").length).toBe(original.split("\n").length);
+  for (const id of ["seedIn", "plantBtn", "againBtn", "seedNote"]) expect(html).toContain(`id="${id}"`);
+  // the seed row and its style are the only lines added
+  expect(html.split("\n").length).toBe(original.split("\n").length + 14);
 });
 
 it("fails loudly when page3d's page no longer has what it rewrites", () => {
