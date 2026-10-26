@@ -28,14 +28,14 @@ const Clock = G.Page3DClock || null;
 const Field = G.Page3DField || null;
 const Forest = G.GroveForest || null;
 const Glow = G.GroveGlow || null;
+/* index.html always loads water.js before the module; the floor and the
+ * water are water.js's, with no second copy here */
+const Water = G.GroveWater;
 const SUB = (Forest && Forest.SUB) || 2;
 
-/* the floor: a cell is a world unit; the engine's elevation is lifted by
- * ELEV, the water's bed sunk below its surface */
-const ELEV = 1.1;
-const LAND_MIN = 0.06;
-const WATER_Y = 0.0;
-const WATER_BED = -0.34;
+/* the floor: a cell is a world unit; the water's one level (the floor's
+ * heights, the beds under the water, are water.js's `cellHeight`) */
+const WATER_Y = Water.Y;
 const MARGIN = 10;            // cells of wild forest floor beyond the grove
 const SEG = 2;                // ground vertices per cell, each way
 
@@ -281,7 +281,8 @@ export function createWorld(first, canvas, opts) {
   /* ------------------------------------------------------------- the floor */
 
   /* The height of a cell's centre: the engine's elevation for land, the
-   * bed for water. Between centres the floor is bilinear, so a bank slopes
+   * bed for water, and a ford's stones just under the creek, so the creek
+   * runs on over them. Between centres the floor is bilinear, so a bank slopes
    * into the water and a ridge is a ridge, not a staircase. */
   const cellH = new Float32Array(N * N);
   const isWater = new Uint8Array(N * N);
@@ -294,8 +295,7 @@ export function createWorld(first, canvas, opts) {
       isWater[i] = c[0] === 'w' ? 1 : 0;
       waterKind[i] = c[6] === 'c' ? 1 : c[6] === 'f' ? 3
         : isWater[i] ? 2 : 0;
-      cellH[i] = isWater[i] ? WATER_BED
-        : Math.max(LAND_MIN, 0.12 + (Number(c[5]) || 0) * ELEV);
+      cellH[i] = Water.cellHeight(c);
     }
   }
   readCells(first);
@@ -321,6 +321,9 @@ export function createWorld(first, canvas, opts) {
     if (e > 0) h = h * (1 - e) + 0.12 * e;
     return h;
   }
+  /* where anything standing stands: the floor, or the water over it (a
+   * ford's stones are under the creek, and the sim grows plants there) */
+  function standAt(x, z) { return Water.standAt(heightAt, x, z); }
 
   const GW = N + MARGIN * 2;           // the floor's span, in cells
   const VN = GW * SEG + 1;             // vertices along a side
@@ -376,23 +379,15 @@ export function createWorld(first, canvas, opts) {
   base.receiveShadow = true;
   scene.add(base);
 
-  /* The water: a sheet per water cell, at one level. A pond lies still,
-   * dark and glossy; a creek is lighter and runs — its sheets carry a
-   * ripple texture turned down the creek (the snapshot's `creeks`, each
-   * from source to mouth) that scrolls every frame; over a ford the creek
-   * runs thin and clear across the stones. Terrain does not change in a
-   * world's life, so this is built once, from the first frame. */
-  const flowDir = new Float32Array(N * N * 2);
-  (first.creeks || []).forEach(path => {
-    for (let k = 0; k < path.length; k++) {
-      const a = path[Math.max(0, k - 1)], b = path[Math.min(path.length - 1, k + 1)];
-      const x = path[k][0], y = path[k][1];
-      if (!(x >= 0 && y >= 0 && x < N && y < N)) continue;
-      const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1;
-      flowDir[(y * N + x) * 2] = dx / l;
-      flowDir[(y * N + x) * 2 + 1] = dz / l;
-    }
-  });
+  /* The water: one merged surface per kind of water, at one level (each
+   * cell a square edge to edge with its neighbours, never turned, and any
+   * corner two diagonal cells of water share joined with a wedge; see
+   * water.js). A pond lies still, dark and glossy; a creek is lighter and
+   * runs: its ripple texture lies in the creek's own frame, down it from
+   * source to mouth (the snapshot's `creeks`), the same at every corner so
+   * the stream has no seams, and scrolls every frame; over a ford the creek
+   * runs on, thin and clear across the stones. Terrain does not change in
+   * a world's life, so this is built once, from the first frame. */
   function rippleTexture() {
     if (typeof document === 'undefined') return null;
     const cv = document.createElement('canvas');
@@ -425,31 +420,25 @@ export function createWorld(first, canvas, opts) {
     opacity: 0.84, map: flowTex });
   const fordMat = new THREE.MeshStandardMaterial({
     color: CREEK_TINT, roughness: 0.2, metalness: 0.05, transparent: true,
-    opacity: 0.42, map: flowTex, depthWrite: false });
-  const waterGeo = new THREE.PlaneGeometry(1.02, 1.02);
-  waterGeo.rotateX(-Math.PI / 2);
-  function waterSheet(mat, kind, lift) {
-    let count = 0;
-    for (let i = 0; i < N * N; i++) if (waterKind[i] === kind) count++;
-    const mesh = new THREE.InstancedMesh(waterGeo, mat, Math.max(1, count));
+    opacity: 0.6, map: flowTex, depthWrite: false });
+  const sheets = Water.surfaces(first);
+  function waterSheet(mat, kind) {
+    const buf = Water.buffers(sheets[kind]);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(buf.position, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(buf.normal, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(buf.uv, 2));
+    geo.setIndex(new THREE.BufferAttribute(buf.index, 1));
+    /* the bounds the culling tests (the mesh is never moved) */
+    geo.computeBoundingSphere();
+    const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
-    let n = 0;
-    for (let i = 0; i < N * N; i++) {
-      if (waterKind[i] !== kind) continue;
-      const x = i % N, y = (i - x) / N;
-      const dx = flowDir[i * 2], dz = flowDir[i * 2 + 1];
-      /* the sheet's -z (the texture's +v) turned down the creek */
-      const yaw = dx || dz ? Math.atan2(-dx, -dz) : 0;
-      const y0 = lift ? heightAt(x + 0.5, y + 0.5) + lift : WATER_Y;
-      mesh.setMatrixAt(n++, place(x + 0.5, y0, y + 0.5, 1, 1, 1, yaw));
-    }
-    mesh.count = n;
     scene.add(mesh);
     return mesh;
   }
-  const water = waterSheet(waterMat, 2, 0);
-  const creek = waterSheet(creekMat, 1, 0);
-  const ford = waterSheet(fordMat, 3, 0.035);
+  const water = waterSheet(waterMat, 2);
+  const creek = waterSheet(creekMat, 1);
+  const ford = waterSheet(fordMat, 3);
 
   /* rocks: a few stones on every rock cell, where they always were */
   const stoneGeo = new THREE.IcosahedronGeometry(1, 0);
@@ -554,7 +543,8 @@ export function createWorld(first, canvas, opts) {
           const px = x + (along ? v : u), pz = y + (along ? u : v);
           const r = 0.09 + h01(i, 120 + s) * 0.05;
           _c1.copy(pal.rock).multiplyScalar(0.95 + h01(i, 130 + s) * 0.3);
-          stones.add(place(px, heightAt(px, pz) + r * 0.25, pz,
+          /* breaking the creek's surface */
+          stones.add(place(px, standAt(px, pz) + r * 0.25, pz,
                            r * 1.2, r * 0.45, r, h01(i, 140 + s) * 6.28),
                      _c1, null);
         }
@@ -800,7 +790,7 @@ export function createWorld(first, canvas, opts) {
     for (const p of list) {
       const sp = p.sp;
       const spot = spotOf(p);
-      const gy = heightAt(spot.x, spot.z);
+      const gy = standAt(spot.x, spot.z);
       const yaw = h01(p.id, 3) * Math.PI * 2;
       /* a tree in the way of what the camera watches goes to the ghosts */
       const T = faded[p.id] ? GH : B;
@@ -993,7 +983,7 @@ export function createWorld(first, canvas, opts) {
         for (let m = 0; m < 3; m++) {
           const px = x + 0.2 + h01(i, 90 + m) * 0.6;
           const pz = y + 0.2 + h01(i, 95 + m) * 0.6;
-          const gy = heightAt(px, pz);
+          const gy = standAt(px, pz);
           const r = 0.07 + h01(i, 99 + m) * 0.05;
           B.stem.add(place(px, gy, pz, r * 0.45, r * 1.4, r * 0.45, 0),
                      _c1.setHex(0xe8e0cc), null);
@@ -1004,7 +994,7 @@ export function createWorld(first, canvas, opts) {
       }
       if (c[4]) {
         const px = x + 0.5, pz = y + 0.5;
-        B.mound.add(place(px, heightAt(px, pz) + 0.04, pz, 0.5, 0.18, 0.34,
+        B.mound.add(place(px, standAt(px, pz) + 0.04, pz, 0.5, 0.18, 0.34,
                           h01(i, 7) * 6.28), _c1.setHex(0x6b5a4c), null);
       }
     }
@@ -1194,7 +1184,8 @@ export function createWorld(first, canvas, opts) {
       const b = beasts[i];
       const moving = crowdMove[i];
       const px = crowdF ? crowdF.x[i] : b.x, pz = crowdF ? crowdF.z[i] : b.z;
-      const gy = heightAt(px, pz);
+      /* on a ford's stones, not under the creek */
+      const gy = standAt(px, pz);
       const ph = h01(b.id, 31) * 6.28;
       let y = gy, wing = 0;
       if (b.fly) {
