@@ -135,7 +135,13 @@ def cmd_step(args):
     last_chron_week = -9
     for _ in range(args.n):
         evs, notable = g.step()
-        if not (args.narrate and g.llm and g.llm.enabled):
+        if not (args.narrate and g.llm):
+            continue
+        # decide=rules: the soul's choice is made in code and lands whether
+        # or not a model answers (the web path does the same), so a dead
+        # or busy Ollama changes the words, never the world. decide=llm
+        # needs the model to choose at all.
+        if not g.llm.enabled and g.llm.decide != "rules":
             continue
         w = g.world
         # the pending soul decision applies at the next tick inside sim.tick
@@ -156,7 +162,7 @@ def cmd_step(args):
                                       temperature=0.8, job="op")
                 w["pending_effect"] = operator.validate(raw)
         items = chronicler.batch(notable, w)
-        if items and w["tick"] - last_chron_week >= 4:
+        if items and g.llm.enabled and w["tick"] - last_chron_week >= 4:
             for item in items[:5]:    # one flat call per event
                 item["eid"] = "e0"
                 recents = [r[2] for r in g.db.chronicle_lines(5)]
