@@ -62,7 +62,10 @@ const BASE = (() => {
 export class PyRandom {
   private mt = new Uint32Array(N);
   private mti = N;
-  /** how far the pending twist has got, or -1 when none is pending */
+  /** how far the pending twist has got, or -1 when none is pending.
+   * Anything that reads or copies `mt` whole — a getstate(), a clone —
+   * must finish the pending twist first (words tw..N-1 are still the old
+   * state's), or it captures a state no CPython generator was ever in. */
   private tw = -1;
 
   constructor(seed: string) {
@@ -171,6 +174,9 @@ export class PyRandom {
     return start + this.randbelow(width);
   }
 
+  /** Only for widths below 2**32: randbelow draws from one 32-bit word,
+   * where CPython's would go on to wider getrandbits. The engine's widest
+   * is a few thousand; randbelow refuses rather than diverge. */
   randint(a: number, b: number): number {
     return this.randrange(a, b + 1);
   }
