@@ -1,7 +1,10 @@
 name: estate-web
 
 # The browser port and its parity bar: typecheck, the tests (which run
-# apps/estate's Python beside the port and compare hashes), and the static build.
+# apps/estate's Python beside the port and compare hashes), two seeds
+# across two year-turns, and the static build. Once a week, and by hand,
+# the full bar: the balance fingerprint on both sides — three years of
+# eight estates — and every seed ticked a year.
 on:
   push:
     branches: [main]
@@ -14,27 +17,64 @@ on:
       - "apps/estate-web/**"
       - "apps/estate/**"
       - ".github/workflows/estate-web.yml"
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   test:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
     defaults:
       run:
         working-directory: apps/estate-web
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/estate-web/package-lock.json
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
       - run: npm ci
       - run: npm test
+      # two years and a day, so both year-turns (364, 728) are crossed
+      - run: npm run parity -- --seeds 1,42 --days 735 --every 91 --watch 3
       - run: npm run build
+
+  full:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: apps/estate-web
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/estate-web/package-lock.json
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.13"
+      - run: npm ci
+      - run: npm run parity -- --days 364 --every 91 --watch 3
+      - name: balance fingerprint, both sides
+        run: |
+          py=$(cd ../estate && python tools/balance.py --fingerprint)
+          ts=$(npm run --silent balance -- --fingerprint)
+          echo "python $py"
+          echo "ts     $ts"
+          test -n "$py" && test "$py" = "$ts"
