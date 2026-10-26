@@ -18,6 +18,12 @@ PATCH = os.path.join(ROOT, "..", "shared", "page3d", "patch.js")
 
 # (what is broken, text in patch.js, what it becomes)
 MUTANTS = [
+    # Acid Burn D: a selection that collapses lands the held write at once
+    ("a collapsed selection waits for the timer",
+     "if (waiting.length && !(s && !s.isCollapsed)) flush();",
+     "if (waiting.length && !(s && !s.isCollapsed)) later();"),
+    ("a collapsed selection lands nothing",
+     "if (waiting.length && !(s && !s.isCollapsed)) flush();", ""),
     # Patch.key (Acid Burn F1, grove): the key is the week and the words
     ("a row's key ignores its words",
      "if (text === undefined || text === null) return k;", "return k;"),

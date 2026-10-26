@@ -298,10 +298,24 @@ ok('a selection left behind stops holding after a few seconds',
 handlers.selectionchange();                                        // a new selection
 P.write(listA, rows(5));
 ok('a fresh selection holds again', listA.innerHTML === rows(4), listA.innerHTML);
+const tC = timers.length;
+selection = { isCollapsed: true, anchorNode: listA, focusNode: listA };
+handlers.selectionchange();                                        // a click collapses it
+ok('a selection that collapses lands the held write at once, no timer',
+   listA.innerHTML === rows(5) && timers.length === tC,
+   [listA.innerHTML, timers.length - tC]);
+selection = { isCollapsed: false, anchorNode: listA, focusNode: listA };
+handlers.selectionchange();                                        // a new selection
+P.write(listA, rows(6));
+ok('(held by the new selection)', listA.innerHTML === rows(5), listA.innerHTML);
+panelA.fire('pointerdown');
 selection = null;
 handlers.selectionchange();
-P.flush();
-ok('and lets go when it is cleared', listA.innerHTML === rows(5), listA.innerHTML);
+ok('a collapse while the pointer is still pressed waits for the pointer',
+   listA.innerHTML === rows(5), listA.innerHTML);
+panelA.fire('pointerup');
+ok('and lands when it lets go', listA.innerHTML === rows(6), listA.innerHTML);
+P.write(listA, rows(5));
 
 /* --- a dropped list starts afresh --- */
 panelA.fire('pointerdown');

@@ -262,13 +262,14 @@
       box._scrolledAt = now();
       later();
     }, { passive: true });
-    /* a selection that ends lets its list catch up */
+    /* a selection that ends lets its list catch up at once, not when the
+     * hold's timer runs out (a list still held or moving waits on) */
     if (root.document && root.document.addEventListener && !hold.sel) {
       hold.sel = true;
       root.document.addEventListener('selectionchange', function () {
         selAt = now();
         var s = root.getSelection && root.getSelection();
-        if (waiting.length && !(s && !s.isCollapsed)) later();
+        if (waiting.length && !(s && !s.isCollapsed)) flush();
       });
     }
   }
