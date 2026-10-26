@@ -265,6 +265,15 @@ el.scrollTop = 40;                                                   // the seco
 P.write(el, feed(['n', 'a', 'x', 'x', 'x', 'b']), { newestFirst: true });
 ok('without a key, a row of repeated words is placed by a one-off row near it',
    el.scrollTop === 60, el.scrollTop);
+/* two identical rows, one above the reader's and one at it, and no row
+ * that appears once: the reader's is the first at or below where it was,
+ * never the copy above it (Acid Burn X) */
+el = new El('twins');
+P.write(el, feed(['x', 'y', 'x', 'y']), { newestFirst: true });
+el.scrollTop = 40;                                                   // the second x at the top
+P.write(el, feed(['z', 'x', 'y', 'x', 'y']), { newestFirst: true });
+ok('two identical rows: the reader keeps theirs, not the one above',
+   el.scrollTop === 60, el.scrollTop);
 
 /* --- a selection holds only its own panel, and not for long --- */
 drain();

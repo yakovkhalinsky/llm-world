@@ -18,6 +18,9 @@ PATCH = os.path.join(ROOT, "..", "shared", "page3d", "patch.js")
 
 # (what is broken, text in patch.js, what it becomes)
 MUTANTS = [
+    # Acid Burn X: the same words twice, the first match at or below wins
+    ("two identical rows: the first anywhere is taken",
+     "if (i >= a.index) break;", "break;"),
     # Acid Burn D: a selection that collapses lands the held write at once
     ("a collapsed selection waits for the timer",
      "if (waiting.length && !(s && !s.isCollapsed)) flush();",
