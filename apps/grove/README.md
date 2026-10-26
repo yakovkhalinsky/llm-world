@@ -70,15 +70,17 @@ same day clock as the estate: a page day lasts a few grove weeks, and the
 sun crosses the sky continuously. After dark the mushroom rings glow, and
 there's rain, snow, lightning in storms, and fireflies over summer water.
 
-Drag to orbit, wheel to zoom, right-drag to pan.
+Drag to orbit, wheel to zoom, right-drag or the arrow keys to pan.
 
 - **Top left:** the soul's latest move and the model's status line, for
-  example `tier local · qwen3:4b-instruct-2507 (op, review) · gemma3:4b
-  (chron, voice, ask) · choices by rules`.
+  example `AI · qwen3:4b-instruct-2507 (op, review) · gemma3:4b (chron,
+  voice, ask) · choices by rules`, or `AI off · pure deterministic sim`
+  with `--offline`. The raw line, with its tier, is `llm.status` in
+  `/api/state`.
 - **Top right:** the week, season and weather, a chip per species with
   its count, and the phase of the day.
 - **Bottom left, three tabs:** **events** (the chronicle, newest first),
-  **animals** (each species counted week by week) and **⚖ rules** (the
+  **animals** (every species, animals and plants, counted week by week) and **⚖ rules** (the
   steward's suggested rule changes, to accept or dismiss).
 - **Controls:** **⏸ pause**, **next week**, **☾ wake soul** (one change
   by the soul, only while paused), **⛶ full**, and *ask the grove a
@@ -129,8 +131,14 @@ cloud.
 The rest of the model flags (tiers, `--keep-alive`, `--resident`,
 `--model-lock`, `--lock-wait`, and how the grove and the estate share one
 Ollama on a small box) are shared with the estate and described once in
-the [root README](../../README.md#model-flags). `--offline`, or an
-unreachable model, gives the same world with template prose.
+the [root README](../../README.md#model-flags). An unreachable Ollama
+gives the same world with template prose: the soul's moves and the
+steward's amendments still come from rules. `--offline` gives a
+different world, with no soul moves and no steward at all, only the
+ecology.
+
+`--host URL` points the grove at another Ollama (default
+`http://127.0.0.1:11434`). It's on `run`, `step` and `web`.
 
 ## The ecology
 

@@ -95,10 +95,10 @@ These are on `web` in both apps, and on `run` and `step` in the grove too.
 | `--decide` | `rules` | `rules`: choices are made in code; `llm`: the model picks from the menu too |
 | `--keep-alive` | `2m` | Ollama's `keep_alive` on every call (`0` unloads at once) |
 | `--resident` | `one` | `one`: unload this app's other local chat model before loading a different one; `many`: leave that to Ollama |
-| `--model-lock` | `/tmp/llm-world-ollama-<uid>.lock` | a file every llm-world process of this user locks around a call, so the two apps take turns; `''` = this process only |
+| `--model-lock` | `/tmp/llm-world-ollama-<uid>.lock` | a file every llm-world process of this user locks around a call, so the two apps take turns; `''` = this process only, which lets one app unload the other's model mid-call, so they thrash |
 | `--lock-wait` | `60` | seconds a call waits for its turn before giving up and keeping its template |
-| `--model NAME` | none | pin every chat job to one model |
-| `--offline` | off | no model at all |
+| `--model NAME` | `auto` | `auto`: the per-job defaults above; a name pins every chat job to that one model |
+| `--offline` | off | no model at all, and no watcher, soul or steward either. Only an *unreachable* Ollama keeps them running on rules |
 
 Pull the local defaults once (there's no bare `qwen3:4b-instruct-2507`
 tag, so use the quantised one):
@@ -111,7 +111,7 @@ ollama pull nomic-embed-text      # the grove's ask box
 
 **A missing model says so.** Each job's chain is filtered to what Ollama
 has installed. The HUD's status line and the `models` block in
-`/api/state` name each job's model, and a job whose model isn't
+`/api/state` (under `llm.models` in the grove) name each job's model, and a job whose model isn't
 installed shows up as `not installed: … (jobs on templates)`. It doesn't
 fail silently. A model that keeps failing moves its job along the chain.
 If every model in the chain fails, the job reads **failing** and is

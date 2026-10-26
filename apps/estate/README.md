@@ -107,9 +107,11 @@ Once it's drawn, the page publishes `window.__estate3d` (`ready`,
 
 ## The model
 
-The estate runs without a model (`--offline`, or no Ollama): the watcher
-sends fates from the same rules, and the chronicle keeps its templates.
-With one:
+Without a reachable Ollama the estate keeps going: the watcher still
+sends its fates from the same rules, and the chronicle keeps its
+templates. `--offline` is different. It turns the watcher off entirely,
+so no fates arrive, only the estate itself (`web.py`'s `_maybe_watch`
+returns at once with no model). With a model:
 
 | job | kind | default model |
 |---|---|---|
@@ -232,6 +234,7 @@ seed-42 estate for them.
 | `estate/engine/` | the tick's domains: the sky, the plan, the people, households, the weekday, the watcher's fates |
 | `estate/biomes/estate.py` | the estate's nature as a pack |
 | `estate/rules.py` | the live ruleset, pack folding, JSON overrides |
+| `estate/sim.py` | the engine's face: one import for callers (`tick`, `wetness`, `roll_weather`) |
 | `estate/world.py`, `gen.py`, `db.py` | state and calendar; seeded generation (no LLM); SQLite |
 | `estate/watcher.py`, `decide.py` | the watcher's menu, digest and validator; its choice made in code |
 | `estate/llm.py` | the Ollama client: a model per job, status, one call at a time, never raises |
