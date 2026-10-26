@@ -1,0 +1,678 @@
+{
+ "world": {
+  "width": 40,
+  "height": 30,
+  "days_per_season": 91,
+  "phases": [
+   "dawn",
+   "morning",
+   "afternoon",
+   "evening",
+   "night"
+  ]
+ },
+ "sites": {
+  "road": {
+   "walk": 1.0,
+   "noise": 0.55,
+   "glyph": "⬛"
+  },
+  "path": {
+   "walk": 1.0,
+   "noise": 0.08,
+   "glyph": "⬜"
+  },
+  "paved": {
+   "walk": 1.1,
+   "noise": 0.04,
+   "glyph": "🔲"
+  },
+  "lawn": {
+   "walk": 2.0,
+   "noise": 0.0,
+   "glyph": "🟩"
+  },
+  "play": {
+   "walk": 1.6,
+   "noise": 0.3,
+   "glyph": "🟨"
+  },
+  "water": {
+   "walk": null,
+   "noise": 0.0,
+   "glyph": "🌊"
+  },
+  "yard": {
+   "walk": null,
+   "noise": 0.12,
+   "glyph": "🏫"
+  },
+  "building": {
+   "walk": null,
+   "noise": 0.0,
+   "glyph": "🏢"
+  }
+ },
+ "needs": {
+  "food": {
+   "urge": 1.0,
+   "rate": 0.3,
+   "glyph": "🍞",
+   "phases": {
+    "dawn": 1.7,
+    "morning": 1.3,
+    "evening": 1.7,
+    "night": 0.4
+   },
+   "weekend": 0.9
+  },
+  "rest": {
+   "urge": 0.9,
+   "rate": 0.26,
+   "glyph": "🛏",
+   "phases": {
+    "afternoon": 0.8,
+    "night": 2.3
+   },
+   "weekend": 1.25,
+   "home": true
+  },
+  "company": {
+   "urge": 0.7,
+   "rate": 0.22,
+   "glyph": "👥",
+   "phases": {
+    "afternoon": 1.2,
+    "evening": 1.7
+   },
+   "weekend": 1.5
+  },
+  "play": {
+   "urge": 0.8,
+   "rate": 0.34,
+   "glyph": "🎈",
+   "roles": [
+    "child"
+   ],
+   "phases": {
+    "afternoon": 1.9,
+    "evening": 1.1,
+    "night": 0.1
+   },
+   "weekend": 1.7
+  },
+  "quiet": {
+   "urge": 0.6,
+   "rate": 0.0,
+   "glyph": "🤫",
+   "from": "noise",
+   "phases": {
+    "night": 1.9
+   },
+   "weekend": 0.85,
+   "home": true
+  }
+ },
+ "fixtures": {
+  "bench": {
+   "affords": {
+    "rest": 0.55,
+    "company": 0.25,
+    "quiet": 0.18
+   },
+   "capacity": 2,
+   "hard_capacity": true,
+   "decay": 0.0003,
+   "loud": 0.015,
+   "carry": 2,
+   "perimeter_bonus": {
+    "rest": 0.55,
+    "company": 0.25,
+    "quiet": 0.18
+   },
+   "upkeep": 1.0,
+   "break_prob": 0.0034,
+   "glyph": "🪑"
+  },
+  "playground": {
+   "affords": {
+    "play": 0.95
+   },
+   "capacity": 12,
+   "decay": 0.0004,
+   "loud": 0.11,
+   "carry": 12,
+   "upkeep": 1.6,
+   "break_prob": 0.0028,
+   "glyph": "🛝"
+  },
+  "table": {
+   "affords": {
+    "company": 0.6,
+    "rest": 0.2
+   },
+   "capacity": 4,
+   "decay": 0.00025,
+   "loud": 0.03,
+   "carry": 3,
+   "upkeep": 1.0,
+   "break_prob": 0.0022,
+   "glyph": "♟"
+  },
+  "shop": {
+   "affords": {
+    "food": 0.85,
+    "company": 0.4
+   },
+   "capacity": 12,
+   "decay": 0.0002,
+   "stock": 238,
+   "supplied": true,
+   "loud": 0.035,
+   "carry": 5,
+   "upkeep": 3.0,
+   "break_prob": 0.0005,
+   "glyph": "🏪"
+  },
+  "lamp": {
+   "affords": {},
+   "capacity": 0,
+   "decay": 0.00012,
+   "light": 0.55,
+   "upkeep": 1.2,
+   "break_prob": 0.0018,
+   "glyph": "💡"
+  },
+  "tree": {
+   "affords": {},
+   "decay": 6e-05,
+   "storm_fall": 0.02,
+   "glyph": "🌳",
+   "living": true
+  },
+  "school": {
+   "affords": {},
+   "capacity": 0,
+   "decay": 0.0001,
+   "upkeep": 2.0,
+   "break_prob": 0.0,
+   "glyph": "🏫"
+  },
+  "bus_stop": {
+   "affords": {},
+   "capacity": 0,
+   "decay": 0.00015,
+   "upkeep": 1.0,
+   "break_prob": 0.0012,
+   "glyph": "🚏"
+  }
+ },
+ "households": {
+  "family": {
+   "members": [
+    3,
+    5
+   ],
+   "children": [
+    1,
+    3
+   ],
+   "drains": {
+    "food": 1.15,
+    "play": 1.0,
+    "quiet": 0.95
+   },
+   "glyph": "👨‍👩‍👧"
+  },
+  "couple": {
+   "members": [
+    2,
+    2
+   ],
+   "children": [
+    0,
+    0
+   ],
+   "drains": {
+    "company": 1.15
+   },
+   "glyph": "🧑‍🤝‍🧑"
+  },
+  "single": {
+   "members": [
+    1,
+    1
+   ],
+   "children": [
+    0,
+    0
+   ],
+   "drains": {
+    "company": 1.35
+   },
+   "glyph": "🧍"
+  },
+  "elder": {
+   "members": [
+    1,
+    2
+   ],
+   "children": [
+    0,
+    0
+   ],
+   "drains": {
+    "quiet": 1.45,
+    "rest": 1.2
+   },
+   "mobility": 0.62,
+   "glyph": "🧓"
+  },
+  "flat_share": {
+   "members": [
+    2,
+    4
+   ],
+   "children": [
+    0,
+    0
+   ],
+   "drains": {
+    "food": 1.2,
+    "rest": 1.1,
+    "quiet": 1.1
+   },
+   "glyph": "👥"
+  }
+ },
+ "people": {
+  "ages": {
+   "adult": 18,
+   "elder": 68
+  }
+ },
+ "gen": {
+  "layout": "row",
+  "blocks": 2,
+  "block_floors": [
+   7,
+   9
+  ],
+  "units_per_floor": [
+   4,
+   5
+  ],
+  "block_gap": 2,
+  "road_width": 2,
+  "playgrounds": 1,
+  "benches": 7,
+  "perimeter_path": true,
+  "perimeter_benches": 10,
+  "tables": 2,
+  "trees": 16,
+  "lamps": 9,
+  "shop": true,
+  "pond": true,
+  "school": true,
+  "bus_stop": true,
+  "founding": {
+   "family": 4,
+   "couple": 3,
+   "single": 4,
+   "elder": 3,
+   "flat_share": 2
+  },
+  "waiting": 6
+ },
+ "presentation": {
+  "world_word": "the estate",
+  "seasons": [
+   "spring",
+   "summer",
+   "autumn",
+   "winter"
+  ],
+  "weekdays": [
+   "Monday",
+   "Tuesday",
+   "Wednesday",
+   "Thursday",
+   "Friday",
+   "Saturday",
+   "Sunday"
+  ],
+  "season_lines": {
+   "0": "Spring comes to the estate; the lawns give up their green.",
+   "1": "High summer on the estate, and the courtyard is loud.",
+   "2": "Autumn: the planes yellow, and the bins fill faster.",
+   "3": "Winter holds the estate; the lamps come on by four."
+  },
+  "watcher_role": "a housing estate",
+  "resident_names": [
+   "Ada",
+   "Bram",
+   "Cleo",
+   "Dev",
+   "Esme",
+   "Fen",
+   "Greta",
+   "Hal",
+   "Ines",
+   "Jonas",
+   "Kit",
+   "Lena",
+   "Mo",
+   "Nia",
+   "Ossian",
+   "Pia",
+   "Quill",
+   "Rosa",
+   "Sam",
+   "Tess",
+   "Una",
+   "Vik",
+   "Wren",
+   "Yusuf",
+   "Zeta",
+   "Ari",
+   "Blaise",
+   "Corrie",
+   "Dara",
+   "Emil",
+   "Faye",
+   "Gus",
+   "Hana",
+   "Ivo",
+   "Junie",
+   "Kai",
+   "Lior",
+   "Marta",
+   "Noor",
+   "Otto",
+   "Priya",
+   "Rui",
+   "Sasha",
+   "Tam",
+   "Ula",
+   "Vesna",
+   "Wim"
+  ],
+  "watcher_system": "You are the presence that watches a small housing estate — the slow, fate-bearing thing behind its weather and its fortunes. Every so often you are given a digest of how the estate is doing, and you choose ONE thing to send it, from the menu at the foot of that digest. You do not own the estate and you do not manage it: the people living there decide what happens day to day, and you are the weather and the luck. Read the digest first; be sparing; often the right answer is `quiet`, which sends nothing at all and is always allowed. Send a thing because the estate's day asks for it, not because days are passing.\nThe menu is the whole of what you may send: a fate that is not on it does not exist here, and a region not listed beside a fate is not somewhere that fate happens. In `why`, write one plain sentence, under 120 characters, in the voice of the place itself — not a report about it.",
+  "edge_name": "the ring road"
+ },
+ "pop": {
+  "roster": [
+   "family",
+   "couple",
+   "single",
+   "elder",
+   "flat_share"
+  ],
+  "letting_after": 21,
+  "waiting_size": 6,
+  "crowding": 1.0,
+  "fill_to": 0.8,
+  "birth_prob": 0.22,
+  "death_prob": 0.06,
+  "unhappy_rise": 0.5,
+  "unhappy_decay": 0.97,
+  "emigrate_at": 3.0,
+  "move_away_prob": 0.0024
+ },
+ "weather": {
+  "outdoor": {
+   "clear": 1.0,
+   "rain": 0.68,
+   "storm": 0.3,
+   "heat": 1.0,
+   "frost": 0.62
+  },
+  "rain_prob": {
+   "0": 0.3,
+   "1": 0.18,
+   "2": 0.32,
+   "3": 0.2
+  },
+  "storm_prob": {
+   "0": 0.02,
+   "2": 0.05
+  },
+  "heat_prob": {
+   "1": 0.08
+  },
+  "frost_week": 3,
+  "soften": 0.55
+ },
+ "gate": {
+  "seeds": 8,
+  "years": 3,
+  "residents_min": 40,
+  "residents_max": 220,
+  "occupancy_min": 0.55,
+  "friction": [
+   0.6,
+   3.0
+  ],
+  "distinct_min": 2.5,
+  "use_min": 1
+ },
+ "fates": {
+  "rain": {
+   "weather": "rain",
+   "days": [
+    1,
+    3
+   ],
+   "glyph": "🌧",
+   "why": "the sky opens over the estate"
+  },
+  "storm": {
+   "weather": "storm",
+   "days": [
+    1,
+    2
+   ],
+   "glyph": "⛈",
+   "why": "a storm crosses the estate"
+  },
+  "heat": {
+   "weather": "heat",
+   "days": [
+    2,
+    4
+   ],
+   "glyph": "🔥",
+   "why": "a still, close heat settles on the estate"
+  },
+  "frost": {
+   "weather": "frost",
+   "days": [
+    1,
+    3
+   ],
+   "glyph": "❄",
+   "why": "the estate wakes white"
+  },
+  "delivery": {
+   "stock": true,
+   "days": [
+    1,
+    1
+   ],
+   "glyph": "📦",
+   "why": "the shop is restocked, shelves full"
+  },
+  "roadworks": {
+   "walk_mult": 2.2,
+   "days": [
+    4,
+    9
+   ],
+   "glyph": "🚧",
+   "regions": [
+    "all",
+    "north",
+    "south"
+   ],
+   "why": "the road is up and the way round is long"
+  },
+  "power_cut": {
+   "stair_mult": 2.0,
+   "days": [
+    1,
+    3
+   ],
+   "glyph": "🔌",
+   "regions": [
+    "all",
+    "north",
+    "south"
+   ],
+   "why": "the power is out and the lifts are down"
+  },
+  "tranquillity": {
+   "noise_mult": 0.45,
+   "days": [
+    2,
+    5
+   ],
+   "glyph": "🤫",
+   "why": "the estate goes quiet for a few days"
+  },
+  "damage": {
+   "damage": 0.6,
+   "days": [
+    1,
+    1
+   ],
+   "glyph": "🛠",
+   "regions": [
+    "all",
+    "courtyard"
+   ],
+   "why": "something breaks and the estate notices"
+  },
+  "quiet": {
+   "days": [
+    1,
+    1
+   ],
+   "glyph": "·",
+   "why": "nothing — the estate is left to its own day"
+  }
+ },
+ "regions": {
+  "all": {},
+  "north": {
+   "y": [
+    0,
+    13
+   ]
+  },
+  "courtyard": {
+   "y": [
+    13,
+    17
+   ]
+  },
+  "south": {
+   "y": [
+    17,
+    30
+   ]
+  }
+ },
+ "engine": {
+  "scan": 48,
+  "steps_per_phase": 14,
+  "congestion": 1.0,
+  "arrive_restore": 1.0,
+  "stress_decay": 0.9,
+  "busy_wear": 2.0,
+  "repair": 0.075,
+  "urge_floor": 0.35,
+  "need_max": 4.0,
+  "stress_at": 3.2,
+  "travel_cost": 0.055,
+  "stair_step": 0.35,
+  "habit_bonus": 0.22,
+  "whim": 0.18,
+  "home_rest": 0.62,
+  "quiet_gain": 0.09
+ },
+ "families": {
+  "young_under": 10,
+  "guardian_from": 16,
+  "near": 1,
+  "older_places": [
+   "playground",
+   "shop"
+  ],
+  "older_range": 14,
+  "older_daytime": [
+   "dawn",
+   "morning",
+   "afternoon"
+  ],
+  "evening_range": 10,
+  "home_by": [
+   "night"
+  ]
+ },
+ "school": {
+  "ages": [
+   5,
+   16
+  ],
+  "days": [
+   0,
+   1,
+   2,
+   3,
+   4
+  ],
+  "run": "dawn",
+  "hours": [
+   "morning"
+  ],
+  "meets": {
+   "food": 0.6,
+   "company": 0.7,
+   "play": 0.6
+  },
+  "per_yard_cell": 2
+ },
+ "work": {
+  "share": 0.6,
+  "commute": "dawn",
+  "shift": [
+   "morning",
+   "afternoon"
+  ],
+  "school_hours": [
+   "morning"
+  ],
+  "meets": {
+   "food": 0.5,
+   "company": 0.5
+  }
+ },
+ "pacing": {
+  "day_seconds": [
+   60.0,
+   20.0,
+   5.0
+  ],
+  "watcher_gap": [
+   60,
+   120
+  ],
+  "watcher_gap_cloud": [
+   40,
+   80
+  ],
+  "reprobe_seconds": 900,
+  "chronicle_need": 3
+ },
+ "bounds": {}
+}
