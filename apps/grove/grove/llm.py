@@ -453,6 +453,12 @@ class LLM:
             t0 = time.time()
             content, status = self._stream_chat(payload)
             self.latency = time.time() - t0
+            if status == "busy":
+                # waiting on another caller says nothing about the model:
+                # no failure counted, no swap, no retry
+                self.last_fail = {"job": job, "why": "model busy",
+                                  "model": model, "raw": ""}
+                return None
             if status == 404:
                 self.reason = f"model not installed: {model}"
                 self.last_fail = {"job": job, "why": "model not installed",
@@ -499,7 +505,7 @@ class LLM:
         return payload
 
     def _stream_chat(self, payload):
-        """(text | None, http status | None). Reasoning chunks may carry
+        """(text | None, http status | "busy" | None). Reasoning chunks may carry
         text in `thinking` — never treated as the answer. The deadline
         starts once the model is ours: a call that waited its turn is not
         then sent and thrown away."""
@@ -526,6 +532,9 @@ class LLM:
                         if part.get("done"):
                             self._meter(part)
                             break
+        except ModelBusy as e:
+            self.reason = f"waiting for the model lock: {e}"
+            return None, "busy"
         except urllib.error.HTTPError as e:
             self.reason = f"call failed: {e}"
             return None, e.code

@@ -151,6 +151,20 @@ class ModelLockTest(unittest.TestCase):
         self.assertEqual(self.fake.chats, 0)     # never sent unlocked
         self.assertIn("holds the model", llm.reason)
 
+    def test_waiting_for_the_lock_is_not_a_model_failure(self):
+        self._held(3.0)
+        llm = llmm.LLM(tier="local", host=self.fake.host,
+                       lock_path=self.lock, resident="many", timeout=30,
+                       lock_wait=0.2)
+        before = dict(llm.job_models)
+        for _ in range(3):
+            self.assertIsNone(llm.chat_json("s", "u", {"type": "object"},
+                                            job=llmm.LEAD_JOB, retries=1))
+        self.assertEqual(llm.job_fails.get(llmm.LEAD_JOB, 0), 0)
+        self.assertEqual(llm.job_models, before)    # no swap
+        self.assertEqual(llm.last_fail["why"], "model busy")
+        self.assertEqual(self.fake.chats, 0)
+
     def test_the_deadline_starts_once_the_lock_is_ours(self):
         self._held(1.5)
         llm = llmm.LLM(tier="local", host=self.fake.host,
