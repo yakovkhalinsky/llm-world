@@ -141,7 +141,8 @@ kind has its own flag and default:
 | `--decide` | `rules` | `rules`: the choice is made in code (`decide.py`); `llm`: the model picks from the menu, as before |
 | `--keep-alive` | `2m` | sent as Ollama's `keep_alive` on every call (`0` unloads at once) |
 | `--resident` | `one` | `one`: unload the other local chat model before switching; `many`: leave that to Ollama |
-| `--model-lock` | `/tmp/llm-world-ollama.lock` | the file every llm-world process locks around a call; empty = in-process only |
+| `--model-lock` | `/tmp/llm-world-ollama-<uid>.lock` | the file every llm-world process of this user locks around a call; empty = in-process only |
+| `--lock-wait` | `60` | seconds a call waits its turn for the model before giving up (no call is made; the job keeps its template) |
 | `--model NAME` | — | pin every chat job to exactly one model (any tag Ollama has, cloud or local) |
 
 `--tier cloud` (the default) puts the cloud model in front of each job and
@@ -171,12 +172,20 @@ and their fingerprints are unchanged.
 **A missing model says so.** Each job's chain is filtered to what Ollama
 has installed (`/api/tags`; a bare name matches `:latest`, a `:cloud` name
 may be confirmed by `/api/show`). The status line in the HUD and the
-`models` block in `/api/state` name each job's model, and a job whose
+`llm.models` block in `/api/state` name each job's model, and a job whose
 model is not installed is reported — `not installed: gemma3:4b (jobs on
 templates)` — instead of failing as a silent 404. A 404 mid-run marks the
 model missing and moves the job along its chain. An unreachable Ollama is
-re-probed every 60 s; a model pulled while it runs is picked up the same
-way.
+re-probed every 60 s, on a background thread — the sim never waits on
+Ollama to ask whether it is ready; a model pulled while it runs is picked
+up the same way. A failed `/api/show` (a cloud tag's confirmation) is
+retried with backoff, 30 s doubling to 15 min, rather than on every call.
+A model that answers HTTP 500 again and again is swapped along its chain;
+when every model of a job has failed the job is reported **failing** —
+`failing: chron (every model failing (last gemma3:4b: HTTP 500), on its
+template)` — and it is tried again a minute later rather than on every
+call. Waiting for another caller's turn at the model is not a failure:
+it never swaps a model or counts against one.
 
 **Request shape.** Schemas go in `format`. `think: false` is sent only to
 local tags that would otherwise think (qwen3 tags without `instruct`,
@@ -190,13 +199,29 @@ together, plus nomic, plus the sims, pushes the Pi into swap and every
 call crawls. So:
 
 - calls are **serialised** — one at a time within a process (a lock), and
-  across the estate and the grove by an `flock` on `--model-lock`;
+  across the estate and the grove by a lock on `--model-lock`. Waiters
+  take turns (a turnstile byte in the same file), and every wait is
+  bounded by `--lock-wait`: a caller that runs out of patience makes no
+  call at all. The file is per-user (`/tmp/llm-world-ollama-<uid>.lock`),
+  opened without following symlinks and checked to be this user's own
+  regular file; if it is not, the status line says so (`model lock … is
+  a symlink; this process only`) and the process falls back to its own
+  lock;
 - with `--resident one` the other local chat model is unloaded (via
   `keep_alive: 0`) before a different one is used, so qwen and gemma are
-  never both loaded; the embedder (small) and cloud models are exempt;
+  never both loaded; the embedder (small) and cloud models are exempt, and
+  only models on this app's own job chains are unloaded — another program's model
+  on the same Ollama is left alone;
 - `--keep-alive 2m` lets a model go two minutes after its last call
   rather than Ollama's default five. On a bigger box, `--resident many
   --keep-alive 10m` keeps both warm.
+- with `--resident one`, two apps on **different** chat models swap them
+  on every turn (each unloads the other's to load its own): that is the
+  price of never holding both, and on the Pi a load is seconds. With
+  `--model-lock ''` (in-process only) it is worse — nothing orders the
+  two, so one can unload the model under the other's call and they
+  thrash. Share the default lock, put both apps' jobs on the same model,
+  or use `--resident many` on a box with the memory for it.
 
 - The world never waits on the model: the sim ticks happily while the
   soul ponders, and results land at the next week boundary.
