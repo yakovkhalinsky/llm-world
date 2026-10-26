@@ -159,6 +159,66 @@ def validate(raw):
     return effect
 
 
+# ---------------------------------------------- decide, then the words
+
+WORDS_SCHEMA = {
+    "type": "object",
+    "properties": {"intent": {"type": "string"},
+                   "destiny": {"type": "string"}},
+    "required": ["intent"],
+}
+
+
+def choose(world):
+    """The soul's move, chosen in code (decide.operator) and passed through
+    the same validator a model's answer is. Its intent and destiny are
+    templates until `with_words` replaces them."""
+    from . import decide
+    pick = decide.operator(world)
+    eff = validate(pick)
+    if pick["action"] == "destiny":
+        eff["destiny"] = pick["destiny"]
+    eff["confidence"] = pick["confidence"]
+    return eff
+
+
+def words_prompt(world, effect, recent_lines):
+    """The digest, with the move already made: the model is asked only
+    for the words — the intent, and a destiny's text."""
+    act = effect["action"]
+    what = f"{act} over {effect['region']} at strength {effect['strength']}"
+    if effect.get("species"):
+        what += f" ({effect['species']})"
+    ask = "In one short sentence, in your own voice, write your intent."
+    shape = '{"intent": "<one short sentence>"}'
+    if act == "destiny":
+        a = world["animals"].get(str(effect.get("target")))
+        nm = (world["names"].get(str(effect.get("target"))) or
+              (a or {}).get("name") or f"the {(a or {}).get('sp', 'soul')}")
+        what = f"a destiny for id {effect.get('target')} — {nm}"
+        ask += (f" Then write the destiny: what {nm} will do, in under "
+                f"twelve words (now: \"{effect.get('destiny', '')}\").")
+        shape = '{"intent": "<one short sentence>", "destiny": "<under twelve words>"}'
+    return (f"{digest(world, recent_lines)}\n\nYou have decided: {what}.\n"
+            f"{ask}\nReply ONLY as JSON: {shape}")
+
+
+def with_words(effect, raw):
+    """The chosen effect, with a model's words where it gave usable ones.
+    Nothing a model writes can change the move."""
+    out = {k: v for k, v in effect.items()
+           if k not in ("confidence", "decided")}
+    if isinstance(raw, dict):
+        intent = raw.get("intent")
+        if isinstance(intent, str) and intent.strip():
+            out["intent"] = " ".join(intent.split())[:140]
+        dest = raw.get("destiny")
+        if out["action"] == "destiny" and isinstance(dest, str) and \
+                dest.strip():
+            out["destiny"] = " ".join(dest.split())[:90]
+    return out
+
+
 def _quiet(intent):
     return {"action": "quiet", "region": "all", "strength": 1,
             "species": None, "intent": intent}

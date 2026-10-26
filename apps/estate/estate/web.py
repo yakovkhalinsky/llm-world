@@ -72,6 +72,8 @@ class SimRunner(threading.Thread):
         self.span = 0                # days since the last chronicle entry
         self.chronicle = []
         self.next_watch = 0.0
+        self.why_busy = False        # a watcher why is being written
+        self.chron_busy = False      # a chronicle entry is being written
         self.stop = threading.Event()
 
     def snapshot_prev(self):
@@ -108,25 +110,52 @@ class SimRunner(threading.Thread):
         """Write the estate's record of a stretch of days.
 
         The deterministic lines are gathered under the lock and the prose
-        is written outside it — a model must never stall the estate — and
-        the fallback is the lines themselves, so the record is complete
-        whether or not anyone was awake to phrase it.
+        is written on a thread of its own — a model must never stall the
+        estate, and a hung Ollama would otherwise freeze the sim for the
+        whole call timeout. The fallback is the lines themselves, so the
+        record is complete whether or not anyone was awake to phrase it.
+        While an entry is being written the days go on gathering lines for
+        the next one.
         """
-        if not chronicler.worth_writing(self.span):
+        if self.chron_busy or not chronicler.worth_writing(self.span):
             return
         with self.lock:
             w = self.est.world
+            # what narrate reads, copied: the world moves on meanwhile
+            view = {"width": w["width"], "height": w["height"],
+                    "day": w["day"], "weather": w["weather"],
+                    "residents": dict(w["residents"]),
+                    "households": dict(w["households"])}
             lines = list(self.lines)
             span = self.span
+            day = w["day"]
             recent = [c["text"] for c in self.chronicle[-2:]]
-        text = chronicler.narrate(self.llm, w, lines, span, recent)
+            self.lines = []
+            self.span = 0
+        if self.llm is None or not self.llm.ready():
+            # no model to wait on: the template, here and now
+            self._land_chronicle(day, chronicler.fallback(lines, span))
+            return
+        self.chron_busy = True
+        threading.Thread(target=self._write_chronicle,
+                         args=(view, lines, span, day, recent),
+                         daemon=True, name="chronicle").start()
+
+    def _write_chronicle(self, view, lines, span, day, recent):
+        try:
+            text = chronicler.narrate(self.llm, view, lines, span, recent)
+        except Exception:                  # the record is never lost
+            text = chronicler.fallback(lines, span)
+        try:
+            self._land_chronicle(day, text)
+        finally:
+            self.chron_busy = False
+
+    def _land_chronicle(self, day, text):
         with self.lock:
-            day = self.est.world["day"]
             self.est.db.add_chronicle(day, text)
-        self.chronicle.append({"day": day, "text": text})
-        del self.chronicle[:-40]
-        self.lines = []
-        self.span = 0
+            self.chronicle.append({"day": day, "text": text})
+            del self.chronicle[:-40]
 
     def _maybe_watch(self):
         """Invite the watcher on its cadence, if there is one and it is
@@ -137,13 +166,37 @@ class SimRunner(threading.Thread):
         living while the model thinks. Grove lost a world to that (b9/b17)
         and it is not repeated here.
         """
-        if self.llm is None or not self.llm.enabled:
+        if self.llm is None:
+            return
+        rules_decide = self.llm.decide == "rules"
+        if not rules_decide and not self.llm.ready():
             return
         now = time.time()
         if now < self.next_watch:
             return
         lo, hi = self.llm.watch_gap()
         self.next_watch = now + lo + random.random() * (hi - lo)
+        if rules_decide:
+            # the choice is code (decide.py): it lands now, under the lock,
+            # and the sim thread never waits on a model. The why is words,
+            # written afterwards on a thread of its own — the pack's line
+            # stands until (and unless) the model's arrives.
+            with self.lock:
+                w = self.est.world
+                recent = [render.say(e) for e in self.events[-8:]]
+                intent = watcher.choose(w)
+                prompt = watcher.why_prompt(w, intent, recent)
+                watcher.queue(w, intent)
+                self.est.save()
+                intent["day"] = w["day"]
+            self.last_watch = intent
+            if intent["fate"] != watcher.QUIET and not self.why_busy and \
+                    self.llm.ready():
+                self.why_busy = True
+                threading.Thread(target=self._write_why,
+                                 args=(intent, prompt), daemon=True,
+                                 name="watcher-why").start()
+            return
         with self.lock:
             recent = [render.say(e) for e in self.events[-8:]]
             text = watcher.digest(self.est.world, recent)
@@ -156,6 +209,18 @@ class SimRunner(threading.Thread):
             self.est.save()
         intent["day"] = self.est.world["day"]
         self.last_watch = intent
+
+    def _write_why(self, intent, prompt):
+        """The watcher's why, off the sim thread. Words only: the fate has
+        already landed, so nothing here can change the world."""
+        try:
+            why = watcher.clean_why(self.llm.chat_json(
+                watcher.system(), prompt, watcher.WHY_SCHEMA,
+                max_tokens=80, job="watch"))
+            if why:
+                intent["why"] = why
+        finally:
+            self.why_busy = False
 
 
 class Estate:
@@ -183,8 +248,7 @@ class Estate:
         # model the estate still runs, because the model never owned any of
         # it. `invite` returns quiet and the days go on.
         if not getattr(args, "offline", False):
-            self.llm = llmm.LLM(model=getattr(args, "model", "auto") or "auto",
-                                tier=getattr(args, "tier", "cloud"))
+            self.llm = llmm.from_args(args)
 
     def save(self, evs=()):
         self.db.save_world(self.world)
@@ -410,6 +474,9 @@ def snapshot(est, runner, lock):
             "watcher": dict(runner.last_watch),
             "chronicle": list(runner.chronicle[-8:]),
             "llm": llmm.status_line(runner.llm),
+            # the same, as data: which model each job is on and what is
+            # not installed (None with --offline)
+            "models": runner.llm.model_status() if runner.llm else None,
         }
 
 

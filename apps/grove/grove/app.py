@@ -84,12 +84,14 @@ class Grove:
         self.worker = None          # only in `run`/`web` mode
         self.soul_line = None
         self.soul_tick = -1
+        self.op_words = None        # decide=rules: the landed op awaiting words
         self.pending_chron = {}     # eid -> chronicler batch item
         self.eid = 0
         # live counters, exposed on the dashboard for diagnosis
         self.jobs = {"op": 0, "chron": 0, "voice": 0, "review": 0,
                      "amend": 0, "op_applied": 0, "chron_ok": 0,
-                     "chron_rejected": 0, "last_reject": None,
+                     "chron_rejected": 0, "op_words": 0,
+                     "last_reject": None,
                      "last_review": None}
 
     # -- lifecycle ----------------------------------------------------------
@@ -109,10 +111,11 @@ class Grove:
             self.world["next_review"] = self.world["tick"] + evw
 
     def init_llm(self):
-        self.llm = None if self.args.offline else llmm.LLM(
-            model=self.args.model, tier=getattr(self.args, "tier", "auto"),
-            host=self.args.host)
-        if self.llm and self.llm.enabled and self.args.cmd in ("run", "web"):
+        self.llm = None if self.args.offline else llmm.from_args(self.args)
+        # the worker runs whenever there is an LLM object, reachable or
+        # not: with --decide rules the soul and the steward still choose
+        # (in code), and a missing model only means template words
+        if self.llm is not None and self.args.cmd in ("run", "web"):
             self.worker = SoulWorker(self.llm)
             self.worker.start()
 
@@ -123,8 +126,18 @@ class Grove:
         # the web view can glide them between weekly states
         for a in w["animals"].values():
             a["px"], a["py"] = a["x"], a["y"]
+        landing = w.get("pending_effect")
         evs = sim.tick(w)
         notable = evm.notable(evs)
+        held = self.op_words
+        if held is not None and landing is not None \
+                and landing is held["effect"]:
+            # the op landed before its words came back: remember its
+            # chronicle line so late words can still be written into it
+            for e in evs:
+                if e.get("kind") == "op":
+                    held["key"] = evm.event_key(e)
+                    break
         self.db.add_events(evs)
         self.db.save_world(w)
         self.db.add_stats(w["tick"], W.counts(w), W.plant_counts(w))
@@ -176,15 +189,28 @@ class Grove:
 
     # -- scheduling (run mode) ----------------------------------------------
     def maybe_schedule(self, notable):
-        if self.worker is None or not self.llm.enabled:
+        if self.worker is None:
             return
         w = self.world
+        rules_decide = self.llm.decide == "rules"
+        op_due = w["tick"] >= w["next_op"] and \
+            time.time() >= getattr(self, "next_op_wall", 0)
+        # decide=rules: the move is code's, so it lands at its tick even
+        # while the model is still busy with last week's prose; only its
+        # words wait in the queue (a slow model changes words, never when)
+        if rules_decide and op_due:
+            self._invite_operator()
+            lo, hi = self.llm.soul_gap()
+            self.next_op_wall = time.time() + random.uniform(lo, hi)
+            return
         if self.worker.busy:
+            return
+        ready = self.llm.ready()
+        if not (ready or rules_decide):
             return
         # the soul is first; then prose follows its backlog; naming fills
         # the rest. A fast (cloud) tier speaks far more often.
-        if w["tick"] >= w["next_op"] and \
-                time.time() >= getattr(self, "next_op_wall", 0):
+        if op_due:
             self._invite_operator()
             lo, hi = self.llm.soul_gap()
             self.next_op_wall = time.time() + random.uniform(lo, hi)
@@ -194,6 +220,8 @@ class Grove:
         # the only road from the world's own census to its constitution
         if w["tick"] >= w.get("next_review", 0):
             self._invite_review()
+            return
+        if not ready:                # prose needs a model; choices do not
             return
         if len(self.pending_chron) > 8:      # cap: drop oldest, keep fresh
             for eid in list(self.pending_chron)[:len(self.pending_chron) - 8]:
@@ -212,6 +240,28 @@ class Grove:
 
     def _invite_review(self):
         """The steward's yearly reading of the world's own constitution."""
+        if self.llm.decide == "rules":
+            # the moves are chosen now, from the ledger; the model is only
+            # asked for the verdict, and the moves are recorded with it
+            amends = reviewer.choose(self.world, self.db, 48)
+            job = {"kind": "review", "system": reviewer.REVIEW_SYSTEM,
+                   "user": reviewer.verdict_prompt(self.world, self.db,
+                                                   amends, 48),
+                   "schema": reviewer.VERDICT_SCHEMA, "max_tokens": 80,
+                   "temperature": 0.6, "extra": {"amendments": amends},
+                   "retries": 1}
+            if not self.llm.ready():
+                self._apply_review({"kind": "review", "ok": False,
+                                    "data": None, "extra": job["extra"]})
+                submitted = True
+            else:
+                submitted = self.worker.submit(job)
+            if submitted:
+                w = self.world
+                w["next_review"] = w["tick"] + \
+                    rules.R["review"]["every_weeks"]
+                self.jobs["review"] += 1
+            return
         submitted = self.worker.submit({
             "kind": "review", "system": reviewer.REVIEW_SYSTEM,
             "user": reviewer.digest(self.world, self.db, 48),
@@ -245,6 +295,24 @@ class Grove:
         # provisional schedule; sim._apply_effect sets the real one on apply
         self.world["next_op"] = self.world["tick"] + 8
         self.jobs["op"] += 1
+        if self.llm.decide == "rules":
+            # the move is chosen now, in code, and lands now — at the next
+            # tick, whatever the model is doing — with the template words.
+            # The model only writes better words, which reach the effect
+            # if it is still pending and the chronicle line if not.
+            effect = operator.choose(self.world)
+            landed = operator.with_words(effect, None)
+            self._land_op(landed)
+            held = {"effect": landed, "key": None}
+            self.op_words = held
+            if self.llm.ready():
+                self.worker.submit({
+                    "kind": "op", "system": operator.system(),
+                    "user": operator.words_prompt(self.world, effect, recent),
+                    "schema": operator.WORDS_SCHEMA, "max_tokens": 100,
+                    "temperature": 0.8,
+                    "extra": {"effect": effect, "words_for": held}})
+            return
         self.worker.submit({
             "kind": "op", "system": operator.system(),
             "user": operator.digest(self.world, recent),
@@ -308,12 +376,15 @@ class Grove:
     def _apply_one(self, res):
         kind = res["kind"]
         if kind == "op":
-            effect = operator.validate(res["data"])
-            self.world["pending_effect"] = effect
-            self.soul_line = (f"{effect['action']} {effect['region']}"
-                              f" — {effect['intent']}")
-            self.soul_tick = self.world["tick"]
-            self.jobs["op_applied"] += 1
+            extra = res.get("extra") or {}
+            if extra.get("words_for") is not None:
+                self._op_words_arrive(extra["words_for"], extra["effect"],
+                                      res["data"] if res["ok"] else None)
+                return
+            chosen = extra.get("effect")
+            effect = operator.with_words(chosen, res["data"]) if chosen \
+                else operator.validate(res["data"])
+            self._land_op(effect)
         elif kind == "chron":
             text = None
             if res["ok"]:
@@ -342,12 +413,54 @@ class Grove:
         elif kind == "review":
             self._apply_review(res)
 
+    def _land_op(self, effect):
+        self.world["pending_effect"] = effect
+        self._soul_says(effect)
+        self.soul_tick = self.world["tick"]
+        self.jobs["op_applied"] += 1
+
+    def _soul_says(self, effect):
+        self.soul_line = (f"{effect['action']} {effect['region']}"
+                          f" — {effect['intent']}")
+
+    def _op_words_arrive(self, held, effect, data):
+        """decide=rules: the model's words for an op that has already been
+        chosen and queued (maybe already landed). Words never move it."""
+        landed = held["effect"]
+        words = operator.with_words(effect, data)
+        new = {k: words[k] for k in ("intent", "destiny")
+               if words.get(k) and words[k] != landed.get(k)}
+        if not new:
+            return
+        if self.world.get("pending_effect") is not landed:
+            # landed already: the destiny it made and its chronicle line
+            if "destiny" in new:
+                for d in self.world.get("destinies", []):
+                    if d.get("id") == landed.get("target") and \
+                            d.get("text") == landed.get("destiny"):
+                        d["text"] = new["destiny"]
+            if "intent" in new and held.get("key"):
+                self.db.update_text(held["key"], new["intent"])
+        landed.update(new)           # still pending: the tick reads these
+        if self.op_words is held:
+            self._soul_says(landed)
+        self.jobs["op_words"] += 1
+
     def _apply_review(self, res):
         """The steward's word: validated against the bounds' hard law and
         kept as offers for the viewer — or applied at once, and written
         into the world's own constitution, when the world was started
         with --auto-tune."""
         data = res["data"] if res["ok"] else None
+        extra = res.get("extra") or {}
+        if "amendments" in extra:
+            # decide=rules: the moves were chosen from the ledger; the
+            # model's verdict is words only, and a template stands in
+            amends = extra["amendments"]
+            verdict = str((data or {}).get("verdict") or "").strip()[:180] \
+                if isinstance(data, dict) else ""
+            data = {"verdict": verdict or reviewer.template_verdict(amends),
+                    "amendments": amends, "nothing": not amends}
         if not isinstance(data, dict):
             return
         verdict = str(data.get("verdict") or "").strip()[:180]

@@ -61,6 +61,39 @@ REVIEW_SCHEMA = {
 }
 
 
+VERDICT_SCHEMA = {
+    "type": "object",
+    "properties": {"verdict": {"type": "string"}},
+    "required": ["verdict"],
+}
+
+
+def choose(world, db, weeks=48):
+    """The year's amendments, chosen in code from the ledger
+    (decide.amendments) — still validated by `record` like any other."""
+    from . import decide
+    return decide.amendments(_year_ledger(world, db, weeks))
+
+
+def verdict_prompt(world, db, amendments, weeks=48):
+    """The ledger and the year's moves, already chosen: the model writes
+    only the steward's one-sentence verdict."""
+    if amendments:
+        moves = "\n".join(f"  - {a['rule']} -> {a['value']}: {a['why']}"
+                          for a in amendments)
+    else:
+        moves = "  - nothing: the grove is left as it is"
+    return (f"{digest(world, db, weeks)}\n\nThis year's amendments, "
+            f"already decided:\n{moves}\nIn one sentence, in the voice "
+            f"of a keeper of a living world, give the year's verdict.\n"
+            'Reply ONLY as JSON: {"verdict": "..."}')
+
+
+def template_verdict(amendments):
+    return ("a small change, to be judged in a year" if amendments
+            else "the grove needs nothing from its steward this year")
+
+
 def _year_ledger(world, db, weeks=48):
     """The reviewed year's census: per-species peak/trough/end + the
     crises the world recorded."""
