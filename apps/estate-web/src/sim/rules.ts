@@ -87,7 +87,10 @@ export interface Rules {
     share: number; commute: string; shift: string[]; school_hours: string[];
     meets: Record<string, number>;
   };
-  pacing: Record<string, unknown>;
+  pacing: {
+    day_seconds: number[]; watcher_gap: Pair; watcher_gap_cloud: Pair;
+    reprobe_seconds: number; chronicle_need: number;
+  };
   bounds: Record<string, unknown>;
 }
 

@@ -8,7 +8,8 @@
  */
 import * as dec from "./decide.ts";
 import { R } from "./rules.ts";
-import type * as W from "./world.ts";
+import * as W from "./world.ts";
+import { pyRound } from "../py/num.ts";
 
 export const QUIET = "quiet";
 
@@ -70,4 +71,21 @@ export function queue(w: W.World, intent: Intent): Intent | null {
   if (intent.fate === QUIET) return null;
   w.pending.push({ kind: intent.fate, region: intent.region ?? "all" });
   return intent;
+}
+
+/**
+ * The watcher's cadence in days. The Python runner invites the watcher
+ * every R.pacing.watcher_gap wall seconds (60–120 s); a browser tab's wall
+ * clock pauses, throttles and sleeps, so here the same gap is counted in
+ * days at the pack's default pace (the middle of `day_seconds`, 20 s a
+ * day: 3–6 days) and rolled from the seed. The estate's whole timeline is
+ * then a function of its seed and how many days it has lived, at any
+ * speed. `tools/parity.py worlds --watch-seeded` runs this same rule.
+ */
+export function gapDays(seed: number, day: number): number {
+  const pace = R.pacing.day_seconds[1]!;
+  const [lo, hi] = R.pacing.watcher_gap;
+  const a = Math.max(1, pyRound(lo / pace));
+  const b = Math.max(a, pyRound(hi / pace));
+  return W.rngFor(seed, day, "watch:gap").randint(a, b);
 }
