@@ -469,7 +469,8 @@ function wire() {
     const hit = S.world.pick(ev.clientX, ev.clientY, r, true);
     if (!hit) { select(null); return; }
     if (hit.kind === 'animal' || hit.kind === 'plant') {
-      select({ kind: hit.kind, id: hit.entity.id, name: hit.entity.n });
+      select({ kind: hit.kind, id: hit.entity.id, name: hit.entity.n,
+               sp: hit.entity.sp });
     } else {
       select({ kind: 'cell', x: hit.x, y: hit.y });
     }

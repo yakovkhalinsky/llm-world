@@ -394,11 +394,14 @@
         return x.id === Number(sel.id);
       })[0];
       if (!e) {
+        /* the ledger of the gone keeps no kind, so the pick's is kept: "a
+         * fox, gone", never "a thing, gone" */
+        var sp = String((b && b.sp) || sel.sp || '');
+        var nm = (b && b.name) || sel.name;
         return {
-          name: b ? (b.name ? b.name + (b.sp ? ' · ' + b.sp : '')
-                    : article(b.sp || 'thing') + (b.sp || 'thing') +
-                      ', gone')
-            : (sel.name || 'one of the grove'),
+          name: nm ? nm + (sp ? ' · ' + sp : '')
+            : sp ? article(sp) + sp + (b ? ', gone' : '')
+            : 'one of the grove' + (b ? ', gone' : ''),
           state: b ? 'remembered in the chronicle' : 'gone',
           rows: ledgerRows(led),
         };

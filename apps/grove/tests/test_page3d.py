@@ -88,6 +88,12 @@ class StaticFilesTest(unittest.TestCase):
         self.assertIn("width: min(340px, calc(100vw - 32px));", css)
         self.assertIn(".bl > .feed { width: auto; }", css)
 
+    def test_a_pick_keeps_its_kind_for_the_card(self):
+        """Acid Burn N5: the ledger of the gone keeps no kind, so the pick
+        carries it, and the card says "a fox, gone"."""
+        viewer = web._page3d("viewer.js")[0].decode()
+        self.assertIn("sp: hit.entity.sp", viewer)
+
     def test_no_traversal_leaves_either_folder(self):
         for rel in ("../web.py", "..%2Fweb.py", "%2e%2e/web.py",
                     "../../grove/web.py", "/etc/passwd", "../../../README.md",

@@ -319,6 +319,27 @@ ok('the gone soul is remembered, its name text',
    els.cardState.innerHTML === 'remembered in the chronicle' &&
    els.cardName.textContent === 'a ' + TAG + ', gone',
    els.cardName.textContent);
+{
+  /* Acid Burn N5: the ledger of the gone keeps no kind; the pick's is
+   * kept, so the card never says "a thing, gone" */
+  const gone = { id: 71, state: 'ok', b: { id: 71, gone: true, events: [] } };
+  H.card(state, { kind: 'animal', id: 71, sp: 'owl' }, gone);
+  const a1 = els.cardName.textContent;
+  H.card(state, { kind: 'animal', id: 71 }, gone);
+  const a2 = els.cardName.textContent;
+  H.card(state, { kind: 'animal', id: 71, sp: 'fox' }, { id: 71, state: 'wait' });
+  const a3 = els.cardName.textContent;
+  H.card(state, { kind: 'animal', id: 71, sp: 'fox', name: 'Rusty' }, gone);
+  const a4 = els.cardName.textContent;
+  ok('a gone soul keeps the kind it was picked as, never "a thing"',
+     a1 === 'an owl, gone' && a2 === 'one of the grove, gone' && a3 === 'a fox' &&
+     a4 === 'Rusty · fox' && [a1, a2, a3, a4].every((t) => t.indexOf('thing') < 0),
+     [a1, a2, a3, a4]);
+}
+step('the gone soul again', () =>
+  H.card(state, { kind: 'animal', id: 70 },
+         { id: 70, state: 'ok', b: { id: 70, gone: true, sp: TAG,
+                                     events: [{ tick: 1, text: TAG }] } }));
 ok('the gone soul\'s events are there, escaped',
    els.cardRows.innerHTML.split(ESCAPED).length - 1 === 1,
    els.cardRows.innerHTML);
