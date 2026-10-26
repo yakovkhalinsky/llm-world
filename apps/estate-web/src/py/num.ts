@@ -10,7 +10,7 @@
  *   a // b         floor division (float_divmod)      → floordiv(a, b)
  *   a % b          sign follows the divisor           → mod(a, b)
  *   divmod(a, b)                                      → divmod(a, b)
- *   sum(xs)        Neumaier-compensated (3.12+)       → pySum(xs)
+ *   sum(xs)        CPython 3.12+'s int/float paths    → pySum(xs, isInt)
  *   repr(float)    '1.0', '1e-05', '1e+16'            → floatRepr(x)
  *
  * JS has one number type where Python has int and float. Integer-valued
@@ -19,9 +19,24 @@
  */
 
 /** float_divmod from Objects/floatobject.c, which int // int agrees with
- * for every value the estate holds (well inside 2**53). */
-export function divmod(vx: number, wx: number): [number, number] {
+ * in value for every value the estate holds (well inside 2**53). Only the
+ * sign of zero differs: an int has none, so divmod(0, -3) is (0, 0) where
+ * divmod(0.0, -3.0) is (-0.0, -0.0). JS can't tell the two apart, so the
+ * caller says: `ints` for Python ints (zeros come back +0). Canon never
+ * sees a zero's sign; repr does. Non-finite operands throw: the simulation
+ * never makes one, and C's NaN-is-true doesn't carry. */
+export function divmod(vx: number, wx: number, ints = false): [number, number] {
+  if (!Number.isFinite(vx) || !Number.isFinite(wx)) throw new RangeError(`divmod of non-finite ${vx}, ${wx}`);
   if (wx === 0) throw new RangeError("division by zero");
+  if (ints) {
+    if (!Number.isSafeInteger(vx) || !Number.isSafeInteger(wx)) throw new TypeError(`int divmod of ${vx}, ${wx}`);
+    const [q, m] = floatDivmod(vx, wx);
+    return [q + 0, m + 0];
+  }
+  return floatDivmod(vx, wx);
+}
+
+function floatDivmod(vx: number, wx: number): [number, number] {
   let mod = vx % wx; // C fmod
   let div = (vx - mod) / wx;
   if (mod) {
@@ -42,12 +57,12 @@ export function divmod(vx: number, wx: number): [number, number] {
   return [floordiv, mod];
 }
 
-export function floordiv(a: number, b: number): number {
-  return divmod(a, b)[0];
+export function floordiv(a: number, b: number, ints = false): number {
+  return divmod(a, b, ints)[0];
 }
 
-export function mod(a: number, b: number): number {
-  return divmod(a, b)[1];
+export function mod(a: number, b: number, ints = false): number {
+  return divmod(a, b, ints)[1];
 }
 
 /** round(x) — half to even, to an integer. */
@@ -66,8 +81,14 @@ function roundHalfEven(x: number): number {
  * only be a short, terminating expansion) is detected and sent to even.
  */
 export function pyRound(x: number, ndigits?: number): number {
-  if (ndigits === undefined) return roundHalfEven(x) + 0; // an int: round(-0.4) is 0, not -0
+  if (ndigits === undefined) {
+    // an int: round(-0.4) is 0, not -0; and there is no int nan or inf
+    if (!Number.isFinite(x)) throw new RangeError(`cannot round ${x} to an integer`);
+    return roundHalfEven(x) + 0;
+  }
   if (!Number.isFinite(x) || x === 0) return x;
+  if (!Number.isInteger(ndigits)) throw new TypeError(`ndigits must be an int, not ${ndigits}`);
+  if (Math.abs(x) >= 2 ** 52 && ndigits >= 0) return x; // already integral
   if (ndigits < 0 || ndigits > 20) throw new RangeError(`pyRound ndigits=${ndigits} not ported`);
   const ax = Math.abs(x);
   const exact = ax.toFixed(100); // exact for a tie, which terminates early
@@ -86,16 +107,51 @@ export function pyRound(x: number, ndigits?: number): number {
   return x < 0 ? -r : r;
 }
 
-/** sum() of floats, CPython 3.12+: Neumaier's compensated summation. */
-export function pySum(xs: Iterable<number>): number {
+/**
+ * sum(xs), as CPython 3.12+ adds: the int items first, exactly, while
+ * there have been no floats; the first float added to that total plainly;
+ * then Neumaier's
+ * compensated sum over the floats, with each later int added to the
+ * running total *without* compensation (`f_result += (double)value`).
+ *
+ * JS can't tell 1 from 1.0, so the caller says which items are Python
+ * ints: `isInt(x, i)`. Without it every item is taken as a float — the
+ * right reading only when every item is a float in Python (as with
+ * `float(w)` weights or the residents' needs). sum([0.1, 1, -1]) is
+ * 0.10000000000000009 in Python but 0.1 summed as all floats.
+ */
+export function pySum(xs: Iterable<number>, isInt?: (x: number, i: number) => boolean): number {
+  let i = 0;
+  let iResult = 0;
+  let floating = false;
   let f = 0.0;
   let c = 0.0;
   for (const x of xs) {
+    const asInt = isInt ? isInt(x, i) : false;
+    i++;
+    if (asInt && !Number.isSafeInteger(x)) throw new RangeError(`int ${x} outside the safe range`);
+    if (!floating) {
+      if (asInt) {
+        iResult += x;
+        if (!Number.isSafeInteger(iResult)) throw new RangeError("int sum outside the safe range");
+        continue;
+      }
+      // the first float meets the int total in a plain int + float
+      // (PyNumber_Add), uncompensated; the float loop starts from there
+      floating = true;
+      f = iResult + x;
+      continue;
+    }
+    if (asInt) {
+      f += x;
+      continue;
+    }
     const t = f + x;
     if (Math.abs(f) >= Math.abs(x)) c += f - t + x;
     else c += x - t + f;
     f = t;
   }
+  if (!floating) return iResult;
   if (c && Number.isFinite(c)) f += c;
   return f;
 }
@@ -164,3 +220,8 @@ export function range(a: number, b?: number, step = 1): number[] {
   else for (let i = a; i > b; i += step) out.push(i);
   return out;
 }
+
+/** int // int, int % int and divmod(int, int): `ints` set (see divmod). */
+export const idivmod = (a: number, b: number): [number, number] => divmod(a, b, true);
+export const ifloordiv = (a: number, b: number): number => divmod(a, b, true)[0];
+export const imod = (a: number, b: number): number => divmod(a, b, true)[1];

@@ -8,7 +8,7 @@
  * order and JS's ascending integer-key order are the same order.
  */
 import { PyRandom } from "../py/random.ts";
-import { floordiv, mod } from "../py/num.ts";
+import { ifloordiv, imod } from "../py/num.ts";
 import { R } from "./rules.ts";
 
 export const DAYS_PER_WEEK = 7;
@@ -76,19 +76,19 @@ export interface World {
 // ------------------------------------------------------------- the calendar
 
 export function seasonIndex(day: number): number {
-  return mod(floordiv(day - 1, R.world.days_per_season), 4);
+  return imod(ifloordiv(day - 1, R.world.days_per_season), 4);
 }
 export function seasonName(day: number): string {
   return R.presentation.seasons[seasonIndex(day)]!;
 }
 export function weekday(day: number): number {
-  return mod(day - 1, DAYS_PER_WEEK);
+  return imod(day - 1, DAYS_PER_WEEK);
 }
 export function weekdayName(day: number): string {
   return R.presentation.weekdays[weekday(day)]!;
 }
 export function yearOf(day: number): number {
-  return floordiv(day - 1, R.world.days_per_season * 4) + 1;
+  return ifloordiv(day - 1, R.world.days_per_season * 4) + 1;
 }
 export function phaseNames(): string[] {
   return R.world.phases;

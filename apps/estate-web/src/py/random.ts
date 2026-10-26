@@ -127,6 +127,10 @@ export class PyRandom {
   }
 
   randrange(start: number, stop?: number): number {
+    // 3.12+ refuses a non-integer outright; so does the port
+    if (!Number.isSafeInteger(start) || (stop !== undefined && !Number.isSafeInteger(stop))) {
+      throw new TypeError(`randrange() needs integers, got ${start}${stop === undefined ? "" : `, ${stop}`}`);
+    }
     if (stop === undefined) {
       if (start <= 0) throw new RangeError("empty range for randrange()");
       return this.randbelow(start);

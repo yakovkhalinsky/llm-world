@@ -1,0 +1,40 @@
+name: estate-web
+
+# The browser port and its parity bar: typecheck, the tests (which run
+# apps/estate's Python beside the port and compare hashes), and the static build.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/estate-web/**"
+      - "apps/estate/**"
+      - ".github/workflows/estate-web.yml"
+  pull_request:
+    paths:
+      - "apps/estate-web/**"
+      - "apps/estate/**"
+      - ".github/workflows/estate-web.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/estate-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/estate-web/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: npm test
+      - run: npm run build

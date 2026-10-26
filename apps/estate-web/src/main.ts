@@ -4,6 +4,7 @@
  */
 import type { FromWorker, ToWorker } from "./worker/protocol.ts";
 import { counts, type World } from "./sim/world.ts";
+import { parseSeed } from "./seed.ts";
 
 const SITE_COLOUR: Record<string, string> = {
   building: "#8a7f74", lawn: "#9cc47a", path: "#d8d2c4", paved: "#c9c3b6",
@@ -49,18 +50,24 @@ function facts(w: World, hash: string, ms: number): void {
     <p><code>world ${hash}</code> · planted in ${ms.toFixed(0)} ms</p>`;
 }
 
+let asked = 0; // the id of the latest request; older replies are stale
+
 worker.onmessage = (ev: MessageEvent<FromWorker>) => {
   const m = ev.data;
+  if (m.id !== null && m.id !== asked) return;
   if (m.type === "error") { $("status").textContent = m.message; return; }
   $("status").textContent = "";
   draw(m.world);
   facts(m.world, m.hash, m.ms);
 };
+worker.onerror = (e) => { $("status").textContent = `the simulation stopped: ${e.message}`; };
+worker.onmessageerror = () => { $("status").textContent = "the simulation's reply could not be read"; };
 
 function plant(): void {
-  const seed = Number($<HTMLInputElement>("seed").value) || 0;
+  const seed = parseSeed($<HTMLInputElement>("seed").value);
+  if (seed === null) { $("status").textContent = "invalid seed: a whole number, please"; return; }
   $("status").textContent = "planting…";
-  worker.postMessage({ type: "gen", seed } satisfies ToWorker);
+  worker.postMessage({ type: "gen", id: ++asked, seed } satisfies ToWorker);
 }
 $("plant").addEventListener("click", plant);
 plant();

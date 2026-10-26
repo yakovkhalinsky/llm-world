@@ -27,6 +27,7 @@ export function decide(questions: Record<string, Question>, rng: PyRandom): Reco
       opts = Object.entries(q.options);
     }
     opts = opts.map(([k, w]) => [k, Math.max(0.0, Number(w))]);
+    // every weight went through float() above: an all-float sum
     let total = pySum(opts.map(([, w]) => w));
     if (total <= 0) {
       opts = opts.map(([k]) => [k, 1.0]);
@@ -50,6 +51,7 @@ export function bands(w: W.World): Record<string, number> {
   const res = Object.values(w.residents);
   if (!res.length) return {};
   const out: Record<string, number> = {};
+  // needs are floats in Python, always (FLOAT_FIELDS; tests/shape.test.ts)
   for (const need of Object.keys(R.needs)) out[need] = pySum(res.map((r) => r.needs[need]!)) / res.length;
   return out;
 }

@@ -6,7 +6,7 @@
  * name. The parity test holds it to that. Sets of cells are keyed "x,y";
  * gen's sets are only ever asked for membership, never iterated.
  */
-import { divmod, floordiv, pyRound, range } from "../py/num.ts";
+import { idivmod, ifloordiv, pyRound, range } from "../py/num.ts";
 import type { PyRandom } from "../py/random.ts";
 import { moveIn } from "./engine/households.ts";
 import { R } from "./rules.ts";
@@ -39,10 +39,14 @@ function walkOf(site: string): number | null {
 }
 
 export function generate(seed: number, width?: number | null, height?: number | null): W.World {
-  const rng: PyRandom = W.rngFor(seed, 0, "gen");
-  const g = R.gen;
+  // Python's seed and sizes are ints; here they must be integers JS holds
+  // exactly, or the rng key (`${seed}:0:gen`) and the plan would differ.
+  if (!Number.isSafeInteger(seed)) throw new RangeError(`seed must be a whole number within ±(2^53 − 1), not ${seed}`);
   const w = width == null ? R.world.width : width;
   const h = height == null ? R.world.height : height;
+  if (!Number.isSafeInteger(w) || !Number.isSafeInteger(h)) throw new RangeError(`sizes must be whole numbers, not ${w}×${h}`);
+  const rng: PyRandom = W.rngFor(seed, 0, "gen");
+  const g = R.gen;
   if (w <= 0 || h <= 0) throw new RangeError("sizes must be positive");
   if (w > MAX_SIDE || h > MAX_SIDE) {
     throw new RangeError(
@@ -67,7 +71,7 @@ export function generate(seed: number, width?: number | null, height?: number | 
 
   // --- the courtyard
   const layout = g.layout ?? "quad";
-  let cy0 = floordiv(h, 2) - 2;
+  let cy0 = ifloordiv(h, 2) - 2;
   if (layout === "row") cy0 = Math.min(cy0, rw + rw + g.block_gap + 6 + 1);
   const cy1 = cy0 + 3;
   const cx0 = rw + 6;
@@ -82,7 +86,7 @@ export function generate(seed: number, width?: number | null, height?: number | 
   if (layout === "row") {
     const n = g.blocks;
     const span = n * bw + Math.max(0, n - 1) * gap;
-    const bx = floordiv(w - span, 2);
+    const bx = ifloordiv(w - span, 2);
     const by = rw + rw + gap;
     if (bx < rw * 2 || bx + span > w - rw * 2 || by + bh > h - rw * 2) {
       throw new RangeError(
@@ -117,9 +121,9 @@ export function generate(seed: number, width?: number | null, height?: number | 
     rect(cells, bx, by, bx + bw - 1, by + bh - 1, "building");
     const floors = rng.randint(g.block_floors[0], g.block_floors[1]);
     const per = rng.randint(g.units_per_floor[0], g.units_per_floor[1]);
-    const door: P = by < floordiv(h, 2)
-      ? [bx + floordiv(bw, 2), by + bh]
-      : [bx + floordiv(bw, 2), by - 1];
+    const door: P = by < ifloordiv(h, 2)
+      ? [bx + ifloordiv(bw, 2), by + bh]
+      : [bx + ifloordiv(bw, 2), by - 1];
     const bid = st.next_id; st.next_id += 1;
     const b = W.newBuilding(bid, `${BLOCK_NAMES[n % BLOCK_NAMES.length]} Block`, "block", bx, by, bw, bh, floors, door);
     for (let f = 1; f <= floors; f++) {
@@ -132,7 +136,7 @@ export function generate(seed: number, width?: number | null, height?: number | 
     }
     st.buildings[String(bid)] = b;
     buildings.push(b);
-    const edge = by < floordiv(h, 2) ? cy1 : cy0;
+    const edge = by < ifloordiv(h, 2) ? cy1 : cy0;
     rect(cells, door[0], Math.min(door[1], edge), door[0], Math.max(door[1], edge), "path");
   });
 
@@ -148,7 +152,7 @@ export function generate(seed: number, width?: number | null, height?: number | 
   }
 
   // --- the shop and the playground, apart, either side of the middle
-  const mid = floordiv(cx0 + cx1, 2);
+  const mid = ifloordiv(cx0 + cx1, 2);
   const clear = new Set<string>();
   let shopB: W.Building | null = null;
   if (g.shop) {
@@ -195,7 +199,7 @@ export function generate(seed: number, width?: number | null, height?: number | 
     }
     rect(cells, sx, sy, sx + sbw - 1, sy + sbh - 1, "building");
     rect(cells, sx + sbw, sy, sx + sbw + yw - 1, sy + sbh - 1, "yard");
-    const door: P = [sx + floordiv(sbw, 2), sy - 1];
+    const door: P = [sx + ifloordiv(sbw, 2), sy - 1];
     const gate: P = [sx + sbw, sy - 1];
     const bid = st.next_id; st.next_id += 1;
     schoolB = W.newBuilding(bid, "Highfield School", "school", sx, sy, sbw, sbh, 2, door);
@@ -295,7 +299,7 @@ export function generate(seed: number, width?: number | null, height?: number | 
       right: [range(e + 2, farY - 1).map((y) => [farX, y] as P), (p) => p[1]],
     };
     const order = ["top", "bottom", "left", "right"] as const;
-    const [base, extra] = divmod(perimeterBenches, order.length);
+    const [base, extra] = idivmod(perimeterBenches, order.length);
     const chosen: P[] = [];
     order.forEach((s, i) => {
       const want = base + (i < extra ? 1 : 0);

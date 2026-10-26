@@ -70,12 +70,7 @@ export interface Result {
 export function tsWorlds(seed: number, days = 0, every = 0, watch = 0,
   onMark?: (n: number, canonical: string) => void): Omit<PyLine, "seed">[] {
   const w = generate(seed);
-  const marks = new Set<number>([0]);
-  if (days) {
-    const e = every || days;
-    for (let n = e; n <= days; n += e) marks.add(n);
-    marks.add(days);
-  }
+  const marks = new Set(marksFor(days, every));
   const out: Omit<PyLine, "seed">[] = [];
   let evs: Ev[] = [];
   const emit = (n: number): void => {
@@ -93,36 +88,77 @@ export function tsWorlds(seed: number, days = 0, every = 0, watch = 0,
   return out;
 }
 
+/** "1-8,42,3771" → [1..8, 42, 3771], as parity.py reads it; refuses junk. */
+export function parseSeeds(spec: string): number[] {
+  const out: number[] = [];
+  for (const part of spec.split(",").map((p) => p.trim()).filter(Boolean)) {
+    const m = /^(\d+)(?:-(\d+))?$/.exec(part); // parity.py takes no negatives
+    if (!m) throw new Error(`bad seed spec: ${JSON.stringify(part)}`);
+    const a = Number(m[1]), b = m[2] === undefined ? a : Number(m[2]);
+    if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b) || b < a) throw new Error(`bad seed range: ${part}`);
+    for (let s = a; s <= b; s++) out.push(s);
+  }
+  if (!out.length) throw new Error(`no seeds in ${JSON.stringify(spec)}`);
+  return out;
+}
+
+/** The marks both sides report at: 0, every K-th day, and the last. */
+export function marksFor(days: number, every: number): number[] {
+  const m = new Set<number>([0]);
+  if (days) {
+    const e = every || days;
+    for (let n = e; n <= days; n += e) m.add(n);
+    m.add(days);
+  }
+  return [...m].sort((a, b) => a - b);
+}
+
+/**
+ * Compare every requested seed at every mark. Throws, rather than passing
+ * on nothing, when Python reports no seeds, a different set of seeds than
+ * asked, or a different set of marks for one.
+ */
 export function compare(seeds: string, days = 0, every = 0, watch = 0): Result[] {
+  const want = parseSeeds(seeds);
+  const marks = marksFor(days, every);
   const dump = mkdtempSync(join(tmpdir(), "estate-parity-"));
   const py = pythonWorlds(seeds, days, every, dump, watch);
   const bySeed = new Map<number, PyLine[]>();
   for (const p of py) bySeed.set(p.seed, [...(bySeed.get(p.seed) ?? []), p]);
+  const got = [...bySeed.keys()].sort((a, b) => a - b);
+  const asked = [...new Set(want)].sort((a, b) => a - b);
+  if (JSON.stringify(got) !== JSON.stringify(asked)) {
+    throw new Error(`python reported seeds ${JSON.stringify(got)}, asked for ${JSON.stringify(asked)}`);
+  }
   const res: Result[] = [];
-  for (const [seed, lines] of bySeed) {
-    let diffed = false;
+  for (const seed of asked) {
+    const lines = bySeed.get(seed)!;
+    const at = lines.map((l) => l.days);
+    if (JSON.stringify(at) !== JSON.stringify(marks)) {
+      throw new Error(`python seed ${seed} reported days ${JSON.stringify(at)}, expected ${JSON.stringify(marks)}`);
+    }
+    const diffs = new Map<number, string>();
     const ts = tsWorlds(seed, days, every, watch, (n, c) => {
       const p = lines.find((l) => l.days === n)!;
-      if (!diffed && hash16(c) !== p.hash) {
-        diffed = true;
+      if (!diffs.size && hash16(c) !== p.hash) {
         const pyWorld = JSON.parse(readFileSync(join(dump, `${seed}-${n}.json`), "utf8"));
-        diffs.set(`${seed}-${n}`, firstDiff(pyWorld, JSON.parse(c)) ?? "(same values, different text)");
+        diffs.set(n, firstDiff(pyWorld, JSON.parse(c)) ?? "(same values, different text)");
       }
     });
-    const diffs0 = diffs;
+    if (ts.length !== lines.length) throw new Error(`seed ${seed}: ts gave ${ts.length} marks, python ${lines.length}`);
     lines.forEach((p, i) => {
       const t = ts[i]!;
-      const ok = t.hash === p.hash && t.events === p.events && t.day === p.day;
+      const ok = t.days === p.days && t.hash === p.hash && t.events === p.events && t.day === p.day;
       const r: Result = { seed, days: p.days, python: p.hash, ts: t.hash, ok, pyEvents: p.events, tsEvents: t.events };
-      const d = diffs0.get(`${seed}-${p.days}`);
+      const d = diffs.get(p.days);
       if (d) r.diff = d;
       else if (!ok) r.diff = t.hash === p.hash ? "world matches; events differ" : "(see earlier line)";
       res.push(r);
     });
   }
+  if (!res.length) throw new Error("no comparisons made");
   return res;
 }
-const diffs = new Map<string, string>();
 
 /** Day 0 only: the planted estate. */
 export function compareGen(seeds: string): Result[] {
@@ -139,7 +175,16 @@ function main(): void {
   const days = Number(opt("--days", "0"));
   const every = Number(opt("--every", "0"));
   const watch = Number(opt("--watch", "0"));
-  const res = compare(seeds, days, every, watch);
+  for (const [k, v] of [["--days", days], ["--every", every], ["--watch", watch]] as const) {
+    if (!Number.isSafeInteger(v) || v < 0) { console.error(`${k} wants a whole number ≥ 0`); process.exit(2); }
+  }
+  let res: Result[];
+  try {
+    res = compare(seeds, days, every, watch);
+  } catch (e) {
+    console.error(`parity: ${(e as Error).message}`);
+    process.exit(2);
+  }
   let bad = 0;
   for (const r of res) {
     console.log(`seed ${String(r.seed).padStart(5)}  day ${String(r.days).padStart(4)}  python ${r.python}  ts ${r.ts}  events ${r.pyEvents}${r.tsEvents === r.pyEvents ? "" : "≠" + r.tsEvents}  ${r.ok ? "ok" : "MISMATCH"}`);
