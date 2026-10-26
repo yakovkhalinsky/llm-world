@@ -2,8 +2,11 @@
  * The canonical world form and its hash — the TS twin of
  * apps/estate/tools/parity.py's `canon` / `world_hash`.
  *
- * Sorted keys, no spaces, every integral number (under 1e16) written as an
- * integer and every other one as Python's repr. Python's int/float
+ * Sorted keys (by code point, as Python sorts), no spaces, every integral
+ * number written as an integer and every other one as Python's repr. The
+ * domain is closed at 2**53: an integral value outside ±(2**53 - 1) has no
+ * canonical form on either side (Python's canon_value raises too), so a
+ * hash mismatch is always a simulation difference, never an encoding one. Python's int/float
  * distinction is the one thing this form cannot see, and is meant not to:
  * JS has one number, and the engine never reads the difference.
  */
@@ -13,8 +16,22 @@ import { floatRepr } from "./num.ts";
 
 function num(x: number): string {
   if (!Number.isFinite(x)) throw new RangeError(`no canonical form for ${x}`);
-  if (Number.isInteger(x) && Math.abs(x) < 1e16) return Object.is(x, -0) ? "0" : String(x);
+  if (Number.isInteger(x)) {
+    if (!Number.isSafeInteger(x)) throw new RangeError(`no canonical form for ${x}: integral beyond 2**53`);
+    return Object.is(x, -0) ? "0" : String(x);
+  }
   return floatRepr(x);
+}
+
+/** Python's str order: by code point, not UTF-16 unit (they differ only
+ * for astral characters against U+E000–U+FFFF). */
+export function byCodePoint(a: string, b: string): number {
+  const x = [...a], y = [...b];
+  for (let i = 0; i < Math.min(x.length, y.length); i++) {
+    const d = x[i]!.codePointAt(0)! - y[i]!.codePointAt(0)!;
+    if (d) return d;
+  }
+  return x.length - y.length;
 }
 
 function write(v: unknown, out: string[]): void {
@@ -32,7 +49,7 @@ function write(v: unknown, out: string[]): void {
       }
       const o = v as Record<string, unknown>;
       // undefined-valued keys are absent, as they would be in Python
-      const keys = Object.keys(o).filter((k) => o[k] !== undefined).sort();
+      const keys = Object.keys(o).filter((k) => o[k] !== undefined).sort(byCodePoint);
       out.push("{");
       keys.forEach((k, i) => {
         if (i) out.push(",");

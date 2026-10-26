@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { canon, worldHash } from "../src/py/canon.ts";
 import { generate } from "../src/sim/gen.ts";
-import { ESTATE, PYTHON, compareGen, firstDiff } from "../scripts/parity.ts";
+import { ESTATE, PYTHON, compare, compareGen, firstDiff, marksFor, parseSeeds } from "../scripts/parity.ts";
 
 describe("rules.json", () => {
   it("is what the Python engine reads today (npm run rules to refresh)", () => {
@@ -48,4 +48,33 @@ describe("world generation", () => {
       "print(world_hash(gen.generate(7, 60, 44)))"], { cwd: ESTATE, encoding: "utf8" }).trim();
     expect(worldHash(generate(7, 60, 44))).toBe(py);
   });
+});
+
+describe("the harness refuses to pass on nothing", () => {
+  it("reads seed specs as parity.py does, and refuses junk", () => {
+    expect(parseSeeds("1-3,42")).toEqual([1, 2, 3, 42]);
+    for (const bad of ["", ",", "x", "3-1", "1-", "-4", "1.5"]) expect(() => parseSeeds(bad)).toThrow();
+  });
+  it("marks day 0, every K-th day and the last", () => {
+    expect(marksFor(0, 0)).toEqual([0]);
+    expect(marksFor(10, 4)).toEqual([0, 4, 8, 10]);
+  });
+  it("compares every seed it asked for, at every mark", () => {
+    const r = compare("1,3", 6, 3, 2);
+    expect(r.map((x) => [x.seed, x.days])).toEqual([[1, 0], [1, 3], [1, 6], [3, 0], [3, 3], [3, 6]]);
+  });
+});
+
+describe("the tick, the rules and the watcher", () => {
+  // Every seed, 13 weeks, a fate queued every third day: the world hash and
+  // the events since the last mark, both sides. (npm run parity -- --days
+  // 364 for the long run.)
+  const results = compare("1-8,42,3771", 91, 7, 3);
+  it("compares 140 marks", () => expect(results.length).toBe(140));
+  for (const r of results) {
+    it(`seed ${r.seed} day ${r.days}: ${r.python} / events ${r.pyEvents}`, () => {
+      expect(r.diff ?? null).toBeNull();
+      expect([r.ts, r.tsEvents]).toEqual([r.python, r.pyEvents]);
+    });
+  }
 });

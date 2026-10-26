@@ -8,7 +8,7 @@
  * order and JS's ascending integer-key order are the same order.
  */
 import { PyRandom } from "../py/random.ts";
-import { floordiv, mod } from "../py/num.ts";
+import { ifloordiv, imod } from "../py/num.ts";
 import { R } from "./rules.ts";
 
 export const DAYS_PER_WEEK = 7;
@@ -50,6 +50,11 @@ export interface Fixture {
 }
 export interface Fate { kind?: string; region?: string; [k: string]: unknown }
 
+export interface Daybook {
+  uses: Record<string, number>; out: number; noise: number; broke: number;
+  sold_out?: boolean; weather?: string;
+}
+
 export interface World {
   seed: number; day: number; width: number; height: number;
   cells: Cell[][];
@@ -61,7 +66,7 @@ export interface World {
   next_id: number;
   weather: string; weather_left: number; wet_days: number;
   waiting: { kind: string }[];
-  daybook: { uses: Record<string, number>; out: number; noise: number; broke: number };
+  daybook: Daybook;
   fates: Fate[];
   pending: Fate[];
   biome: string | null;
@@ -71,19 +76,19 @@ export interface World {
 // ------------------------------------------------------------- the calendar
 
 export function seasonIndex(day: number): number {
-  return mod(floordiv(day - 1, R.world.days_per_season), 4);
+  return imod(ifloordiv(day - 1, R.world.days_per_season), 4);
 }
 export function seasonName(day: number): string {
   return R.presentation.seasons[seasonIndex(day)]!;
 }
 export function weekday(day: number): number {
-  return mod(day - 1, DAYS_PER_WEEK);
+  return imod(day - 1, DAYS_PER_WEEK);
 }
 export function weekdayName(day: number): string {
   return R.presentation.weekdays[weekday(day)]!;
 }
 export function yearOf(day: number): number {
-  return floordiv(day - 1, R.world.days_per_season * 4) + 1;
+  return ifloordiv(day - 1, R.world.days_per_season * 4) + 1;
 }
 export function phaseNames(): string[] {
   return R.world.phases;
