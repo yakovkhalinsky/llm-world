@@ -11,11 +11,13 @@ on:
     paths:
       - "apps/estate-web/**"
       - "apps/estate/**"
+      - "apps/shared/page3d/**"
       - ".github/workflows/estate-web.yml"
   pull_request:
     paths:
       - "apps/estate-web/**"
       - "apps/estate/**"
+      - "apps/shared/page3d/**"
       - ".github/workflows/estate-web.yml"
   schedule:
     - cron: "17 3 * * 1"
