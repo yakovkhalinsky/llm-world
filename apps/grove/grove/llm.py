@@ -321,8 +321,9 @@ def status_line(llm):
         (f"tier {llm.tier} · {voice} (soul) · "
          f"{llm.job_models.get('chron')} (prose)")
     if llm.tier != "local":
-        base += f" · tokens today {llm.spend_today()}" + \
-                (f"/{llm.budget}" if llm.budget else "")
+        # counts with their commas (Iris's panels review, §4)
+        base += f" · tokens today {llm.spend_today():,}" + \
+                (f" of {llm.budget:,}" if llm.budget else "")
     if llm.notes:
         base += f" · {llm.notes[-1]}"
     return base

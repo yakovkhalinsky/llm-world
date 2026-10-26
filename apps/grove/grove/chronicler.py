@@ -27,19 +27,19 @@ _KIND_BONES = {
     "predation": ["{H} took a wild {sp} at {p}.",
                   "{H} caught a wild {sp} at {p}.",
                   "A wild {sp} fell to the {sp2} at {p}."],
-    "birth": ["{n} young {sp} {Vb} born at {p}.",
-              "{n} {sp} young entered the world at {p}.",
-              "Newborn {sp} — {n} appeared at {pp}."],
+    "birth": ["{Nn} young {sps} {Vb} born at {p}.",
+              "{Nn} young {sps} came into the world at {p}.",
+              "{Nn} newborn {sps} appeared at {pp}."],
     "fell": ["{C} {V} {L} at {p}.",
              "At {p}, {Cl} {V} {L}.",
-             "{L} {Be} fallen at {p} — {Cl}."],
-    "elder": ["{L} has reached its long years at {p}.",
-              "Age crowned {L} at {p}.",
+             "{L} came down at {p} — {Cl}."],
+    "elder": ["{L} has reached a great age at {p}.",
+              "{L} became one of the grove's elders at {p}.",
               "{L} stood its hundredth season at {p}."],
-    "oldage": ["{A} wild {sp}, grown old, lay down at {p}.",
+    "oldage": ["A wild {sp}, grown old, lay down at {p}.",
                "A wild {sp} reached the end of its years at {p}.",
                "Time took a wild {sp} gently at {p}."],
-    "starve": ["{A} wild {sp} starved at {p}.",
+    "starve": ["A wild {sp} starved at {p}.",
                "Hunger claimed a wild {sp} at {p}.",
                "A wild {sp} wasted to nothing at {p}."],
     "browsed": ["A deer browsed the young {ph} at {p}.",
@@ -47,9 +47,9 @@ _KIND_BONES = {
                 "Deer cropped the young {ph} at {p}."],
     "picked": ["Berries were picked clean off {L} at {p}.",
                "{L} gave its berries away at {p}."],
-    "recolonize": ["{n} {sp} slipped in from beyond {edge} edge.",
-                   "From the wilds beyond, {n} {sp} arrived.",
-                   "The east wind brought {n} {sp} back to us."],
+    "recolonize": ["{n} {sps} slipped in from beyond {edge} edge.",
+                   "From the wilds beyond, {n} {sps} arrived.",
+                   "The east wind brought {n} {sps} back to us."],
     "arrival": ["A visitor {sp} entered {w} at {p}.",
                 "A {sp} appeared at {p}, then lingered."],
     "departure": ["The visitor {sp} moved on, beyond {edge}."],
@@ -83,6 +83,22 @@ def _stable(*vals):
     return a
 
 
+# the plurals English does not make with an -s
+_PLURAL = {"deer": "deer", "fox": "foxes", "wolf": "wolves",
+           "stag": "stags", "grove": "grove", "sandgrouse": "sandgrouse"}
+
+
+def _plural(word, n):
+    """`word` as `n` of them: "a fox", "2 foxes", "3 deer"."""
+    if n == 1:
+        return word
+    if word in _PLURAL:
+        return _PLURAL[word]
+    if len(word) > 1 and word.endswith("y") and word[-2] not in "aeiou":
+        return word[:-1] + "ies"          # berry → berries; a jay stays jays
+    return word + ("es" if word.endswith(("h", "s", "x")) else "s")
+
+
 def _line(world, e):
     """Deterministic fallback line: variant pools picked stably so the
     same story reads differently across weeks."""
@@ -98,8 +114,10 @@ def _line(world, e):
         return rules.R["presentation"]["season_lines"].get(
             e.get("season", 0), "A season turned.")
     if kind == "germinate":
-        return (f"Old seeds remembered themselves — {e.get('n', 1)} young "
-                f"{e.get('sp')} broke the soil where the species had gone.")
+        n = e.get('n', 1)
+        return (f"Old seeds remembered themselves — {n:,} young "
+                f"{_plural(ph, n)} broke the soil where the species had "
+                f"gone.")
     if kind == "storm":
         return "A squall ran through the trees and was gone."
     if kind == "op":
@@ -111,9 +129,9 @@ def _line(world, e):
     if kind == "destiny_lost":
         return "Under the soul's watch, its creature died and the prophecy went unheard."
     if kind == "robins_left":
-        return f"The robins have gone south — {e.get('n', 0)} birds."
+        return f"The robins have gone south — {e.get('n', 0):,} birds."
     if kind == "robins_return":
-        return f"With the spring, the robins came home — {e.get('n', 0)} returned."
+        return f"With the spring, the robins came home — {e.get('n', 0):,} returned."
 
     pool = _KIND_BONES.get(kind)
     if not pool:
@@ -121,16 +139,16 @@ def _line(world, e):
     seed, tick = world.get("seed", 0), e.get("tick", 0)
     variant = pool[_stable(seed, tick, sp or 0, len(kind)) % len(pool)]
 
-    A = "An" if sp and sp[0] in "aeiou" else "A"
     H = None
     if kind == "predation":
         hunter = e.get("hunter")
         H = f"An {hunter}" if hunter == "owl" else (f"A {hunter}" if hunter else "Something")
     L = plant_label if is_plant else e.get("name") and f"{e['name']} the {sp}"
     bones_n = e.get("n", 1)
-    bones = {"sp": sp, "ph": ph, "p": place, "n": bones_n,
-             "A": A, "L": L if L else f"the {ph}",
-             "Be": "are" if bones_n > 1 else "is",
+    bones = {"sp": sp, "ph": ph, "p": place, "n": f"{bones_n:,}",
+             "sps": _plural(ph, bones_n),
+             "Nn": "A" if bones_n == 1 else f"{bones_n:,}",
+             "L": L if L else f"the {ph}",
              "Vb": "were" if bones_n > 1 else "was",
              "H": H or "It",
              "Cl": (_CAUSE_HEADS.get(
@@ -139,9 +157,9 @@ def _line(world, e):
                  e.get("cause") or "age", ("Slow decline",))[0],
              "V": _CAUSE_VERBS[_stable(seed, tick, 7) % len(_CAUSE_VERBS)]}
     if bones_n > 1 and "{L}" in variant and not name:
-        plural = ph + ("es" if ph.endswith("h") else "s")
-        bones["L"] = f"{bones_n} {plural}" if is_plant else \
-            f"{bones_n} wild {plural}"
+        plural = _plural(ph, bones_n)
+        bones["L"] = f"{bones_n:,} {plural}" if is_plant else \
+            f"{bones_n:,} wild {plural}"
     bones["w"] = rules.R["presentation"]["world_word"]
     bones["edge"] = rules.R["presentation"]["edge_name"]
     line = variant.format(**bones)

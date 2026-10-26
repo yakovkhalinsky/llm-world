@@ -4,8 +4,10 @@
 
 :root {
   --ink: #e6ecdf;
-  --dim: #9aa79a;
-  --glass: rgba(14, 22, 18, 0.72);
+  /* 0.82 glass and a lighter dim keep small text above 4.5:1 even over
+   * the sunlit sky (Iris's panels review, 4.2) */
+  --dim: #b3bfb3;
+  --glass: rgba(14, 22, 18, 0.82);
   --edge: rgba(220, 236, 214, 0.14);
   --lamp: #b8f0c8;
   --paper: #d6e0cf;
@@ -56,8 +58,19 @@ html, body {
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
 }
 
-.title {
+/* the top-left corner: the title and the soul's line, and on a phone the
+ * status box too */
+.tl {
+  position: absolute;
   top: 14px; left: 16px;
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 8px;
+  pointer-events: none;
+}
+.tl > * { pointer-events: auto; }
+.tl > .title, .tl > .souline { position: static; }
+
+.title {
   font-size: 15px;
   letter-spacing: 0.08em;
   text-transform: lowercase;
@@ -68,9 +81,12 @@ html, body {
 .title .mark { color: var(--lamp); }
 .engine-mark { font-size: 11px; color: var(--dim); letter-spacing: 0; }
 
-.idbox { top: 14px; right: 16px; }
+.idbox { position: fixed; top: 14px; right: 16px; width: 340px; }
+/* a long date pushes the weather to a line of its own, never off the end */
+.idbox > .idrow { white-space: normal; overflow: visible; flex-wrap: wrap; }
+.idrow > span { white-space: nowrap; }
 .idrow {
-  display: flex; justify-content: space-between; gap: 12px;
+  display: flex; justify-content: space-between; gap: 2px 12px;
   font-variant-numeric: tabular-nums;
 }
 .poplines { margin-top: 6px; font-size: 12px; color: var(--dim); }
@@ -96,9 +112,14 @@ html, body {
   flex-direction: column;
   align-items: flex-start;
   gap: 10px;
-  max-width: min(340px, calc(100vw - 32px));
+  /* a set width, not a cap: the five-button row no longer stretches the
+   * corner past the feed above it */
+  width: min(340px, calc(100vw - 32px));
   pointer-events: none;
 }
+/* the feed and the controls one width, so the panels line up */
+.bl > .ctl, .bl > .feed { align-self: stretch; }
+.bl > .feed { width: auto; }
 .bl > * { pointer-events: auto; }
 .bl .panel { position: static; }
 
@@ -110,9 +131,32 @@ html, body {
   min-width: 0;
 }
 
+/* The lists scroll on their own: a fling stops at the list's end rather
+ * than dragging the page or orbiting the scene under it (the canvas is
+ * touch-action:none), and the bar is thin and the grove's colour. */
+.chron, .card {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(220, 236, 214, 0.22) transparent;
+  scrollbar-gutter: stable;
+}
+.chron::-webkit-scrollbar, .card::-webkit-scrollbar { width: 6px; }
+.chron::-webkit-scrollbar-track, .card::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chron::-webkit-scrollbar-thumb, .card::-webkit-scrollbar-thumb {
+  background: rgba(220, 236, 214, 0.18); border-radius: 3px;
+}
+.chron:hover::-webkit-scrollbar-thumb, .card:hover::-webkit-scrollbar-thumb {
+  background: rgba(220, 236, 214, 0.32);
+}
+
 .chron {
   list-style: none; margin: 0; padding: 0;
-  overflow-y: auto;
+  min-height: 0;
   font-size: 12.5px;
 }
 .chron li {
@@ -131,7 +175,7 @@ html, body {
   margin-top: 8px; padding-top: 8px;
   border-top: 1px solid var(--edge);
 }
-.tabs button { flex: 1; }
+.tabs button { flex: 1; min-width: 0; }
 
 .row { display: flex; gap: 6px; flex-wrap: wrap; }
 .speedrow { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
@@ -146,35 +190,47 @@ button {
   border: 1px solid var(--edge);
   border-radius: 7px;
   padding: 5px 9px;
+  min-height: 28px;
   cursor: pointer;
+  /* a button is one line, always; a long word ends in … */
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 button:hover { background: rgba(233, 229, 220, 0.13); }
 button.on { background: rgba(184, 240, 200, 0.16); border-color: var(--lamp); }
-button:disabled { opacity: 0.45; cursor: default; }
+button:disabled { opacity: 0.6; cursor: default; }
 
 /* ----------------------------------------------------------------- card */
 
 .card {
   position: absolute;
+  z-index: 10;          /* over the panels; the tooltip (20) stays over it */
   bottom: 14px; right: 16px;
-  width: 320px;
-  max-height: 46vh;
-  overflow-y: auto;
+  width: 340px;
+  /* as tall as the screen allows below the status box */
+  max-height: calc(100vh - 190px);
   background: var(--glass);
   border: 1px solid var(--edge);
   border-radius: 10px;
-  padding: 12px;
+  padding: 0 12px 12px;
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
   display: none;
 }
 .card.on { display: block; }
+/* the card scrolls as one; its head (✕ and follow) stays */
 .cardhead {
-  display: flex; justify-content: space-between; align-items: baseline;
+  display: flex; justify-content: space-between; align-items: center;
   gap: 8px;
+  position: sticky; top: 0; z-index: 1;
+  background: rgb(14, 22, 18);
+  margin: 0 -12px; padding: 12px 12px 6px;
 }
-.cardhead h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.cardhead > span { flex: none; display: flex; gap: 4px; }
+.cardhead h3 {
+  margin: 0; font-size: 15px; font-weight: 600;
+  min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .cardhead .x { padding: 1px 7px; }
 
 .status { margin-top: 8px; font-size: 12px; color: var(--dim); }
@@ -189,7 +245,14 @@ button:disabled { opacity: 0.45; cursor: default; }
 .timeline li span:last-child {
   color: var(--dim);
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
+/* a measure: its name, a bar and a word, in columns that line up */
+.timeline li.need {
+  display: grid; grid-template-columns: 1fr 74px 9.5em;
+  align-items: center; column-gap: 10px;
+}
+.timeline li.need > span:last-child { white-space: nowrap; }
 
 /* a bar for a need, drawn rather than described */
 .bar {
@@ -215,10 +278,16 @@ button:disabled { opacity: 0.45; cursor: default; }
   border-radius: 999px;
   padding: 4px 12px;
   white-space: nowrap;
+  /* between the bottom-left panels and the card, never under them */
+  max-width: calc(100vw - 720px);
+  overflow: hidden; text-overflow: ellipsis;
 }
+@media (max-width: 1100px) { .hint.foot { display: none; } }
+.hint.foot.cut { visibility: hidden; }   /* viewer.js: it would not fit */
 
 #tip {
   position: fixed;
+  white-space: nowrap;
   z-index: 20;
   pointer-events: none;
   opacity: 0;
@@ -268,27 +337,44 @@ body.nogl #view, body.nogl .hud { display: none; }
 
 /* --------------------------------------------------------------- grove */
 
-/* the soul's line and the voices' status, under the title */
-.souline { top: 58px; left: 16px; max-width: 360px; }
+/* the soul's line and the voices' status, under the title (in .tl) */
+.souline { max-width: 360px; }
 .souline:has(.soul:empty) .llmstat { margin-top: 0; }
 .soul { color: var(--soul); font-style: italic; font-size: 13px; }
 .soul:empty { display: none; }
 .soul.pulse { animation: pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.45; } }
-.llmstat { font-size: 11px; color: var(--dim); margin-top: 4px; }
+.llmstat {
+  font-size: 11px; color: var(--dim); margin-top: 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
-.poplines .popline { display: inline-block; margin-right: 8px; }
-.poplines .pnum { color: var(--ink); font-weight: 600; margin-left: 2px; }
+/* the population chips: three to a row, most first, each one line */
+.poplines {
+  display: grid; grid-template-columns: repeat(3, auto);
+  gap: 2px 12px; justify-content: start;
+}
+.poplines .popline { white-space: nowrap; }
+.poplines .pnum { color: var(--ink); font-weight: 600; }
+#pops, .pnum, .poplines b, .chron .when, .sparkline b, .llmstat,
+.tune .when, #when, .timeline li span:last-child {
+  font-variant-numeric: tabular-nums;
+}
 
+/* the time is first in the row, floated to its first line */
 .chron li .when { float: right; color: var(--dim); font-size: 11px;
-                  margin-left: 8px; }
+                  margin-left: 8px; white-space: nowrap; }
 .mark-llm { color: var(--soul); }
 .mark-voice { color: #9cc9ff; }
 .mark-template { color: var(--dim); }
 
-.sparkline { display: flex; justify-content: space-between; gap: 8px;
-             font-size: 12px; padding: 2px 0; }
-.sparkline .spark { font-family: ui-monospace, monospace; letter-spacing: -1px;
+/* the name, the spark, the latest count: the counts make one column */
+.sparkline { display: grid; grid-template-columns: 5.5em minmax(0, 1fr) 3em;
+             align-items: center; column-gap: 10px;
+             font-size: 12px; padding: 2px 0; white-space: nowrap; }
+.sparkline b { text-align: right; color: var(--ink); }
+.sparkline .spark { min-width: 0; overflow: hidden; text-align: right;
+                    font-family: ui-monospace, monospace; letter-spacing: -1px;
                     color: var(--lamp); }
 .tune li { display: block; }
 .tune .when { color: var(--dim); font-size: 11.5px; }
@@ -305,22 +391,32 @@ button.mini { padding: 2px 7px; font-size: 11px; margin-top: 4px; }
 }
 #askout { margin-top: 6px; max-width: 300px; }
 
-.timeline .wk { color: var(--lamp); margin-right: 8px;
-                font-variant-numeric: tabular-nums; }
+.timeline .wk { color: var(--lamp); margin-right: 8px; flex: none;
+                white-space: nowrap; font-variant-numeric: tabular-nums; }
 .timeline li.ev { justify-content: flex-start; }
 
 /* 'c' clears the panels; an open card holds itself on screen */
-body.calm .hud > .panel, body.calm .bl, body.calm .hint.foot {
+body.calm .hud > .panel, body.calm .tl, body.calm .bl,
+body.calm .hint.foot {
   display: none;
 }
 
 @media (max-width: 760px) {
-  .souline { top: 52px; left: 10px; right: 10px; max-width: none; }
-  .idbox { top: auto; bottom: 76px; right: 10px; left: 10px;
-           max-width: none; }
-  .title { top: 10px; left: 10px; }
-  .bl { bottom: 10px; left: 10px; right: 10px; max-width: none; }
-  .feed { width: auto; max-height: 22vh; }
-  .card { bottom: 10px; right: 10px; width: min(320px, calc(100vw - 20px)); }
+  /* a phone: the title, the status box and the soul's line stacked
+   * top-left; the feed and the controls a sheet at the bottom; an open
+   * card in the sheet's place (viewer.js sets body.carded) */
+  .tl { top: 10px; left: 10px; right: 10px; gap: 6px; }
+  .tl > .idbox { position: static; order: 1; width: 100%; max-width: none; }
+  .tl > .souline { order: 2; width: 100%; max-width: none; }
+  .tl > .title { order: 0; }
+  /* the chips in rows, each whole; none hidden off the side */
+  .poplines { display: flex; flex-wrap: wrap; gap: 2px 12px; }
+  .bl > .feed, .bl > .ctl { width: auto; align-self: stretch; }
+  .bl { bottom: 10px; left: 10px; right: 10px; width: auto; max-width: none; }
+  .feed { width: auto; max-height: 24vh; }
+  .card { left: 10px; right: 10px; bottom: 10px; width: auto;
+          max-height: 60vh; }
+  body.carded .bl { visibility: hidden; }
+  button { min-height: 40px; }
   .hint.foot { display: none; }
 }

@@ -145,8 +145,17 @@ function drawCard() {
   const open = HUD ? HUD.card(S.state, S.selected, S.ledger) : false;
   if (!HUD) $('card').classList.remove('on');
   $('followBtn').hidden = !(S.selected && S.selected.kind === 'animal');
-  $('followBtn').classList.toggle('on', S.follow);
+  markFollow();
+  /* on a phone the card takes the bottom sheet's place (style.css) */
+  if (document.body) document.body.classList.toggle('carded', !!open);
   return open;
+}
+
+function markFollow() {
+  const b = $('followBtn');
+  b.classList.toggle('on', S.follow);
+  const word = S.follow ? '◉ following' : '◎ follow';
+  if (b.textContent !== word) b.textContent = word;
 }
 
 /* The biography is the ledger's: asked when a creature or a plant is
@@ -209,6 +218,13 @@ function askBio(sel, quiet) {
 function select(sel) {
   S.selected = sel;
   S.ledger = null;
+  /* a new pick starts its card at the top, and replaces it whole: the
+   * old selection goes and the card's lists forget what they were holding,
+   * so the new name never sits over the old state */
+  $('card').scrollTop = 0;
+  if (window.Patch && window.Patch.fresh) {
+    window.Patch.fresh([$('cardState'), $('cardRows')]);
+  }
   if (!sel || sel.kind !== 'animal') S.follow = false;
   if (drawCard()) askBio(sel);
   if (S.world) S.world.follow(S.follow && sel ? sel.id : null);
@@ -223,8 +239,9 @@ function showHover(hit) {
   if (!hit) { tip.classList.remove('on'); return; }
   if (hit.kind === 'animal' || hit.kind === 'plant') {
     const e = hit.entity;
-    tip.textContent = (e.n ? e.n + ' · ' : '') + e.sp +
-      (hit.kind === 'plant' ? ' · ' + e.st : '');
+    // as the card heads it: "🌳 a young birch", "🦊 a wild fox"
+    tip.textContent = HUD ? HUD.heading(S.state || {}, hit.kind, e)
+      : (e.n ? e.n + ' · ' : '') + e.sp;
   } else {
     tip.textContent = hit.terrain || 'the ground';
   }
@@ -392,7 +409,7 @@ function wire() {
   $('cardClose').onclick = () => select(null);
   $('followBtn').onclick = () => {
     S.follow = !S.follow;
-    $('followBtn').classList.toggle('on', S.follow);
+    markFollow();
     if (S.world) S.world.follow(S.follow && S.selected ? S.selected.id : null);
   };
   $('tabChron').onclick = () => HUD && HUD.tab('chron', S.state);
@@ -409,8 +426,19 @@ function wire() {
     if (!b) return;
     const a = b.dataset.a === 'accept' ? 'accept' : 'dismiss';
     b.disabled = true;
-    post('/api/tuning/' + a, { id: Number(b.dataset.id) }).then(loadTuning);
+    post('/api/tuning/' + a, { id: Number(b.dataset.id) }).then(r => {
+      /* a POST that failed leaves the proposal as it was: press again */
+      if (!r) b.disabled = false;
+      return loadTuning();
+    });
   });
+  /* a list under a finger, or with text selected in it, is not rewritten
+   * until it is let go (shared patch.js); the steward's buttons are in
+   * #chron, so a press is never lost to a poll's write */
+  if (window.Patch) {
+    window.Patch.hold($('chron'));
+    window.Patch.hold($('card'), [$('cardState'), $('cardRows')]);
+  }
 
   window.addEventListener('keydown', ev => {
     if (ev.target && (ev.target.tagName === 'INPUT' ||
@@ -441,17 +469,34 @@ function wire() {
     const hit = S.world.pick(ev.clientX, ev.clientY, r, true);
     if (!hit) { select(null); return; }
     if (hit.kind === 'animal' || hit.kind === 'plant') {
-      select({ kind: hit.kind, id: hit.entity.id, name: hit.entity.n });
+      select({ kind: hit.kind, id: hit.entity.id, name: hit.entity.n,
+               sp: hit.entity.sp });
     } else {
       select({ kind: 'cell', x: hit.x, y: hit.y });
     }
   });
 
+  fitHint();
   window.addEventListener('resize', () => {
+    fitHint();
     if (!S.world) return;
     S.world.resize();
     if (STATIC) S.world.frame(performance.now());
   });
+}
+
+/* The hint at the foot is one line, whole, or not there: the keys drop
+ * first when the gap between the panels is narrow, then the hint itself;
+ * it never ends in "…". */
+function fitHint() {
+  const h = $('hint');
+  if (!h || !h.querySelector || !h.classList) return;
+  const keys = h.querySelector('.keys');
+  h.classList.remove('cut');
+  if (keys) keys.hidden = false;
+  const over = () => h.scrollWidth > h.clientWidth + 1;
+  if (keys && over()) keys.hidden = true;
+  if (over()) h.classList.add('cut');
 }
 
 /* --------------------------------------------------------------- start */

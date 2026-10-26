@@ -71,6 +71,13 @@ class WalkModuleTest(unittest.TestCase):
         self.assertLess(page.index("/3d/field.js"),
                         page.index("/3d/viewer.js"))
 
+    def test_the_page_loads_patch_before_the_hud(self):
+        """The panels' writes go through the shared `patch.js`
+        (`Patch.write`, `Patch.fmt`); hud.js reads it as it loads."""
+        page = web._page3d("index.html")[0].decode()
+        self.assertIn('src="/3d/patch.js"', page)
+        self.assertLess(page.index("/3d/patch.js"), page.index("/3d/hud.js"))
+
 
 class Page3dTest(unittest.TestCase):
     def test_page_resolves(self):
@@ -98,6 +105,33 @@ class Page3dTest(unittest.TestCase):
         self.assertIn("/api/plain", viewer)
         self.assertNotIn("2D plan", page)
         self.assertNotIn('href="/"', page)
+
+    def test_a_pick_replaces_the_card_whole(self):
+        """Acid Burn F2: clicking something new must not leave the old
+        selection or the old card's held writes behind (the new name over
+        the old state, a feed frozen by a stale selection). `select()` hands
+        the card's lists to `Patch.fresh` (tested in tools/patch_check.js)
+        before it draws the new card."""
+        viewer = web._page3d("viewer.js")[0].decode()
+        body = viewer[viewer.index("function select(sel) {"):]
+        body = body[:body.index("\n}\n")]
+        fresh = body.index("window.Patch.fresh([$('cardState'), $('cardRows')]);")
+        self.assertLess(fresh, body.index("drawCard();"))
+        self.assertLess(body.index("S.selected = sel;"), fresh)
+
+    def test_round_two_nits_hold(self):
+        """Iris round 2: the sheet at 390 runs as wide as the status box and
+        card (A1); a card with no rows leaves no empty band (A2); a person's
+        tip is their name, as the card heads it (A9); a day is stepped by
+        hand only while paused, as the grove's week (A13)."""
+        css = web._page3d("style.css")[0].decode()
+        phone = css[css.index("@media (max-width: 760px)"):]
+        self.assertIn(".bl > .panel { max-width: none; }", phone)
+        self.assertIn(".card .timeline:empty { display: none; }", css)
+        viewer = web._page3d("viewer.js")[0].decode()
+        self.assertIn("tip.textContent = hit.person.name;", viewer)
+        self.assertNotIn("hit.person.name + ' · ' + hit.person.role", viewer)
+        self.assertIn("$('stepBtn').disabled = !st.paused;", viewer)
 
     def test_vendored_licence_resolves(self):
         got = web._page3d("vendor/LICENSE")
@@ -130,7 +164,7 @@ class Page3dTest(unittest.TestCase):
         (the grove's 3D view reads the same files); they are still served
         under the estate's `/3d/`, and only from that folder."""
         shared = os.path.realpath(web.SHARED3D)
-        for rel in ("clock.js", "walk.js", "field.js",
+        for rel in ("clock.js", "walk.js", "field.js", "patch.js",
                     "vendor/three.module.min.js", "vendor/OrbitControls.js"):
             with self.subTest(rel=rel):
                 got = web._page3d(rel)

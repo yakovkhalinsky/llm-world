@@ -18,6 +18,9 @@
 <canvas id="view"></canvas>
 
 <div class="hud">
+  <!-- top-left: the title, and on a phone the status box under it (the
+       box sits top-right on a desktop) -->
+  <div class="tl">
   <div class="panel title">
     <span class="mark">▤</span> highfield
     <span class="engine-mark" id="engine">loading</span>
@@ -31,34 +34,37 @@
     <div class="poplines" id="pops"></div>
     <div class="watchline" id="watch"></div>
     <div class="voiceline" id="voice"></div>
-    <div class="watchline phase">
+    <div class="watchline phase" title="the five phases of the day turn the light">
       <span class="d" id="phaseGlyph">·</span> <span id="phase">…</span>
-      <span class="dim"> · the five phases turn the light</span>
     </div>
+  </div>
   </div>
 
   <div class="bl">
     <div class="panel feed">
-      <ul class="chron" id="chron"></ul>
-      <div class="tabs">
-        <button class="on" id="tabChron">the day</button>
-        <button id="tabCensus">who lives here</button>
-        <button id="tabWatch">☾ watcher</button>
+      <ul class="chron" id="chron" aria-live="off"></ul>
+      <div class="tabs" role="tablist">
+        <button class="on" id="tabChron" role="tab" aria-selected="true"
+                title="one line a day, newest first">days</button>
+        <button id="tabCensus" role="tab" aria-selected="false"
+                title="who lives here">people</button>
+        <button id="tabWatch" role="tab" aria-selected="false"
+                title="what the watcher has written">☾ chronicle</button>
       </div>
     </div>
 
     <div class="panel ctl">
       <div class="row">
         <button id="pauseBtn">⏸ pause</button>
-        <button id="stepBtn">+ day</button>
-        <button id="fsBtn">⛶ full</button>
+        <button id="stepBtn" title="run one more day now">next day</button>
+        <button id="fsBtn" title="full screen">⛶ full</button>
       </div>
       <div class="speedrow">
         <span class="hint">a day every</span>
         <span id="speeds"></span>
       </div>
-      <div class="speedrow">
-        <span class="hint">show today at</span>
+      <div class="speedrow phases">
+        <span class="hint" title="show today at a phase of the day">today</span>
         <span id="shows"></span>
       </div>
     </div>
@@ -67,7 +73,7 @@
   <div class="card" id="card">
     <div class="cardhead">
       <h3 id="cardName">…</h3>
-      <span><button class="x" id="cardClose">✕</button></span>
+      <span><button class="x" id="cardClose" aria-label="close">✕</button></span>
     </div>
     <div class="status" id="cardState"></div>
     <ul class="timeline" id="cardRows"></ul>
@@ -93,6 +99,8 @@
      modules are deferred, so `EstateWalk` and `EstateHUD` exist by the time
      the viewer runs -->
 <script src="/3d/walk.js"></script>
+<!-- the panels' shared write-when-changed and en-AU counts; before hud.js -->
+<script src="/3d/patch.js"></script>
 <script src="/3d/hud.js"></script>
 <!-- who stands where on a shared tile; uses the router -->
 <script src="/3d/crowd.js"></script>
