@@ -85,7 +85,7 @@ def _stable(*vals):
 
 # the plurals English does not make with an -s
 _PLURAL = {"deer": "deer", "fox": "foxes", "wolf": "wolves",
-           "stag": "stags", "grove": "grove"}
+           "stag": "stags", "grove": "grove", "sandgrouse": "sandgrouse"}
 
 
 def _plural(word, n):
@@ -139,7 +139,6 @@ def _line(world, e):
     seed, tick = world.get("seed", 0), e.get("tick", 0)
     variant = pool[_stable(seed, tick, sp or 0, len(kind)) % len(pool)]
 
-    A = "An" if sp and sp[0] in "aeiou" else "A"
     H = None
     if kind == "predation":
         hunter = e.get("hunter")
@@ -149,8 +148,7 @@ def _line(world, e):
     bones = {"sp": sp, "ph": ph, "p": place, "n": f"{bones_n:,}",
              "sps": _plural(ph, bones_n),
              "Nn": "A" if bones_n == 1 else f"{bones_n:,}",
-             "A": A, "L": L if L else f"the {ph}",
-             "Be": "are" if bones_n > 1 else "is",
+             "L": L if L else f"the {ph}",
              "Vb": "were" if bones_n > 1 else "was",
              "H": H or "It",
              "Cl": (_CAUSE_HEADS.get(

@@ -46,12 +46,36 @@ class CopyTest(unittest.TestCase):
         for s in lines("recolonize", "wolf", n=3):
             self.assertIn("3 wolves", s)
 
+    def test_every_template_fills_from_the_bones(self):
+        """Every variant of every kind renders (no placeholder the bones
+        lack), and the bones carry no placeholder no template uses: `A` and
+        `Be` went once "is fallen" became "came down"."""
+        import string
+        used = set()
+        for kind, pool in chronicler._KIND_BONES.items():
+            for v in pool:
+                used |= {f for _, f, _, _ in string.Formatter().parse(v) if f}
+            for s in lines(kind, "fox", n=2, ticks=40, hunter="owl"):
+                self.assertNotIn("{", s)
+        import ast
+        import inspect
+        import textwrap
+        tree = ast.parse(textwrap.dedent(inspect.getsource(chronicler._line)))
+        keys = {k.value for n in ast.walk(tree) if isinstance(n, ast.Assign)
+                and getattr(n.targets[0], "id", None) == "bones"
+                for k in n.value.keys}
+        self.assertTrue(keys)
+        self.assertEqual(keys - used, set())
+
     def test_plurals_of_y_words(self):
         from grove.chronicler import _plural
         self.assertEqual(_plural("berry", 2), "berries")
         self.assertEqual(_plural("berry", 1), "berry")
         self.assertEqual(_plural("jay", 2), "jays")
         self.assertEqual(_plural("fox", 3), "foxes")
+        # the desert's flocks: "12 sandgrouse", never "12 sandgrouses"
+        self.assertEqual(_plural("sandgrouse", 12), "sandgrouse")
+        self.assertEqual(_plural("sandgrouse", 1), "sandgrouse")
         for s in lines("oldage", "fox", n=3):
             self.assertNotIn("foxs", s)
 
