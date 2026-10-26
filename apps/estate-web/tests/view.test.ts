@@ -13,7 +13,7 @@ import { canon, hash16 } from "../src/py/canon.ts";
 import { dayLine, full, say, commas } from "../src/view/render.ts";
 import { KEEP_EVENTS, plant, step } from "../src/view/runner.ts";
 import type { Ev } from "../src/sim/engine/events.ts";
-import { LLM_STATUS, respond } from "../src/view/api.ts";
+import { LLM_STATUS, MAX_QUEUED, SOURCE_TEXT, respond } from "../src/view/api.ts";
 import * as W from "../src/sim/world.ts";
 import { ESTATE, PYTHON } from "../scripts/parity.ts";
 
@@ -76,6 +76,37 @@ it("refuses what web.py's handler refuses", () => {
   expect(respond(s, q, "GET", "/api/nothing", null)).toMatchObject({ status: 404, body: "no such thing" });
   expect(respond(s, q, "POST", "/api/state", "{}")).toMatchObject({ status: 404 });
   expect(respond(s, q, "POST", "/api/control", "")).toMatchObject({ status: 200 });
+  expect(["3.0", "1e2"].map(err)).toEqual(Array(2).fill("the body is not a JSON object"));
+});
+
+it("reads the path as urlparse(...).path does", () => {
+  const s = plant(1);
+  const q = { step: 0 };
+  for (const p of ["/api/state?x=1", "/api/state#top", "/api/state;v=2", "/api/state?a=/b;c"]) {
+    expect(respond(s, q, "GET", p, null).status, p).toBe(200);
+  }
+  expect(respond(s, q, "POST", "/api/control?x=1", '{"step": 2}')).toMatchObject({ status: 200 });
+  expect(q.step).toBe(2);
+  expect(respond(s, q, "GET", "/api/states", null).status).toBe(404);
+});
+
+it("answers a snapshot that throws with a 500 and the error, as web.py's /api/state does", () => {
+  const s = plant(1);
+  (s as { world: unknown }).world = { ...s.world, residents: null };
+  const r = respond(s, { step: 0 }, "GET", "/api/state", null);
+  expect(r.status).toBe(500);
+  expect(JSON.parse(r.body).error).toMatch(/null/);
+});
+
+it("queues no more than MAX_QUEUED days", () => {
+  const s = plant(1);
+  const q = { step: 0 };
+  for (let i = 0; i < 150; i++) respond(s, q, "POST", "/api/control", '{"step": 100}');
+  expect(q.step).toBe(MAX_QUEUED);
+});
+
+it("can tell a float step from a whole one here (JSON.parse source text)", () => {
+  expect(SOURCE_TEXT).toBe(true);
 });
 
 describe("the event log's cap", () => {

@@ -93,6 +93,11 @@ CONTROLS = [
     {"tick_seconds": False}, {"paused": False, "step": 1}, {"speed": 1},
     {"paused": True, "nope": 1}, {"tick_seconds": 7.5, "paused": "no"},
 ]
+# bodies as the page could write them, which json.dumps would not: whole
+# numbers written as floats, and an int too big for a float
+RAW = ['{"step": 5.0}', '{"step": 1e2}', '{"step": 1.0000000000000001}', '{"step": 5E0}',
+       '{"step": -0.0}', '{"step": 7}', '{"tick_seconds": 3e1}', '{"paused": 1.0}',
+       '{"tick_seconds": 1' + '0' * 400 + '}', '{"tick_seconds": -1' + '0' * 400 + '}']
 
 
 def control(r, req):
@@ -113,6 +118,7 @@ def main():
     w = r.est.world
     r.llm = None                             # the page's view: no model
     est = SimpleNamespace(world=w)
+    bodies = [json.dumps(q) for q in CONTROLS] + RAW
     people = max(1, len(w["residents"]))
     print(json.dumps({
         "world": world_hash(w), "events": h16(r.events), "n_events": len(r.events),
@@ -123,8 +129,8 @@ def main():
         "plain": render.full(web._frame(w, r)),
         "ground": web.ground(est),
         "state": web.snapshot(est, r, threading.Lock()),
-        "controls": [json.dumps(q) for q in CONTROLS],
-        "control": [control(r, q) for q in CONTROLS],
+        "controls": bodies,
+        "control": [control(r, json.loads(b)) for b in bodies],
     }, sort_keys=True))
 
 

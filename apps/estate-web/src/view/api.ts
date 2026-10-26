@@ -151,6 +151,13 @@ export function plain(s: RunState): string {
 
 export interface Pace { paused: boolean; step: number; tick_seconds: number }
 
+/** The most days that can be queued. web.py's `step_once` has no ceiling
+ * (1,000 requests of 100 queue 100,000 days); here the extra is dropped,
+ * so a stuck button can't queue a fast-forward that outlives the tab. */
+export const MAX_QUEUED = 10_000;
+
+const FIELDS = ["paused", "step", "tick_seconds"];
+
 /**
  * A control request checked as web._control checks it: only `paused`
  * (a bool), `step` (a whole number 1..100, which pauses) and
@@ -159,18 +166,56 @@ export interface Pace { paused: boolean; step: number; tick_seconds: number }
  */
 export function control(pace: Pace, req: object): string | null {
   const o = req as Record<string, unknown>;
-  if (Object.keys(o).some((k) => !["paused", "step", "tick_seconds"].includes(k))) return "unknown field";
-  if ("paused" in o && typeof o.paused !== "boolean") return "paused must be true or false";
-  if ("step" in o && !(Number.isInteger(o.step) && (o.step as number) >= 1 && (o.step as number) <= 100)) {
+  const has = (k: string) => Object.hasOwn(o, k);
+  if (Object.keys(o).some((k) => !FIELDS.includes(k))) return "unknown field";
+  if (has("paused") && typeof o.paused !== "boolean") return "paused must be true or false";
+  // a step written as a float (5.0, 1e2) arrives as a PyFloat from parseBody
+  if (has("step") && !(Number.isInteger(o.step) && (o.step as number) >= 1 && (o.step as number) <= 100)) {
     return "step must be a whole number 1..100";
   }
-  if ("tick_seconds" in o && !(typeof o.tick_seconds === "number" && Number.isFinite(o.tick_seconds))) {
+  const pace0 = o.tick_seconds instanceof PyFloat ? o.tick_seconds.value : o.tick_seconds;
+  if (has("tick_seconds") && !(typeof pace0 === "number" && Number.isFinite(pace0))) {
     return "tick_seconds must be a number";
   }
-  if ("paused" in o) pace.paused = o.paused as boolean;
-  if ("step" in o) { pace.step += o.step as number; pace.paused = true; }
-  if ("tick_seconds" in o) pace.tick_seconds = Math.min(86400, Math.max(0.2, o.tick_seconds as number));
+  if (has("paused")) pace.paused = o.paused as boolean;
+  if (has("step")) { pace.step = Math.min(MAX_QUEUED, pace.step + (o.step as number)); pace.paused = true; }
+  if (has("tick_seconds")) pace.tick_seconds = Math.min(86400, Math.max(0.2, pace0 as number));
   return null;
+}
+
+/** A JSON number written with a fraction or an exponent: what Python's
+ * json reads as a float, which JSON.parse can't tell from an int (5.0 is
+ * 5). Boxed, so `step: 5.0` is refused as web.py refuses it. */
+export class PyFloat {
+  constructor(readonly value: number) {}
+}
+
+/** Whether JSON.parse hands a reviver the source text (ES2025; Chrome
+ * 114+, Firefox 135+, Safari 18.4+, Node 21+). Where it doesn't, 5.0
+ * reads as 5 and a float step is taken — the one known gap, and page3d
+ * only ever sends whole steps. */
+export const SOURCE_TEXT = (() => {
+  let ok = false;
+  JSON.parse("1", ((_k: string, v: unknown, ctx?: { source?: string }) => { ok = ctx?.source === "1"; return v; }) as never);
+  return ok;
+})();
+
+/** The body as Python's json.loads reads it, as far as control() cares:
+ * numbers written as floats are PyFloats. (NaN and Infinity aren't JSON
+ * to either side.) */
+export function parseBody(body: string): unknown {
+  if (!SOURCE_TEXT) return JSON.parse(body);
+  return JSON.parse(body, ((_k: string, v: unknown, ctx?: { source?: string }) =>
+    typeof v === "number" && ctx?.source !== undefined && /[.eE]/.test(ctx.source) ? new PyFloat(v) : v) as never);
+}
+
+/** The path as web.py's `urlparse(self.path).path` gives it: no query, no
+ * fragment, no `;params` on the last segment. */
+export function pathOnly(path: string): string {
+  const p = path.split(/[?#]/, 1)[0]!;
+  const slash = p.lastIndexOf("/");
+  const semi = p.indexOf(";", slash + 1);
+  return semi < 0 ? p : p.slice(0, semi);
 }
 
 export interface Reply { status: number; contentType: string; body: string }
@@ -183,20 +228,32 @@ const json = (status: number, v: unknown): Reply => ({ status, contentType: JSON
  * three GETs, and the POST that pauses, steps and paces the runner — which
  * changes `s` and `queued` (the days asked for and not yet stepped) only
  * when the whole request is good. Anything else is web.py's 404.
+ *
+ * Not ported, since nothing here is on a network: webguard.check's Host
+ * and Origin checks (403), and webguard.read_json's length rules — no
+ * Content-Length (411), more than one, not a number, a body shorter than
+ * its length (400), or over BODY_LIMIT (413).
  */
-export function respond(s: RunState, queued: { step: number }, method: string, path: string, body: string | null): Reply {
+export function respond(s: RunState, queued: { step: number }, method: string, url: string, body: string | null): Reply {
+  const path = pathOnly(url);
   if (method === "GET") {
-    if (path === "/api/ground") return json(200, ground(s.world));
-    if (path === "/api/state") return json(200, snapshot(s));
-    if (path === "/api/plain") return { status: 200, contentType: "text/plain; charset=utf-8", body: plain(s) };
+    // web.py turns a throw in /api/state into a 500 (the others would drop
+    // the connection); here all three answer, so the page sees a status
+    try {
+      if (path === "/api/ground") return json(200, ground(s.world));
+      if (path === "/api/state") return json(200, snapshot(s));
+      if (path === "/api/plain") return { status: 200, contentType: "text/plain; charset=utf-8", body: plain(s) };
+    } catch (e) {
+      return json(500, { error: String(e instanceof Error ? e.message : e) });
+    }
   } else if (method === "POST" && path === "/api/control") {
     let req: unknown;
     try {
-      req = JSON.parse(body || "{}");
+      req = parseBody(body || "{}");
     } catch {
       return json(400, { error: "the body is not JSON" });
     }
-    if (req === null || typeof req !== "object" || Array.isArray(req)) return json(400, { error: "the body is not a JSON object" });
+    if (req === null || typeof req !== "object" || Array.isArray(req) || req instanceof PyFloat) return json(400, { error: "the body is not a JSON object" });
     const pace = { paused: s.paused, step: queued.step, tick_seconds: s.tick_seconds };
     const err = control(pace, req);
     if (err) return json(400, { error: err });
