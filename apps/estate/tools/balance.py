@@ -112,8 +112,8 @@ def run_one(seed, years, days_per_year=364):
         "occupancy": round(occupied / max(1, len(w["units"])), 3),
         "emptiest_block": round(min(vacancy) if vacancy else 1.0, 3),
         "unused_fixture": unused,
-        "all_broken": [k for k in afford if k in worn
-                       and KINDS_USED.get(k, 0) == 0],
+        "all_broken": sorted(k for k in afford if k in worn
+                             and KINDS_USED.get(k, 0) == 0),
         "friction": round(statistics.mean(FRICTION) if FRICTION else 0.0, 3),
         "distinct": round(statistics.mean(distinct), 2),
         "worn": worn,
