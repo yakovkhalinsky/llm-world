@@ -95,5 +95,19 @@ class FailingTest(unittest.TestCase):
         self.assertNotIn("is not installed", line)
 
 
+class MakeRoomTest(unittest.TestCase):
+
+    def test_only_our_models_are_unloaded(self):
+        fake = FakeOllama(tags=(QWEN, GEMMA, "nomic-embed-text:latest",
+                                "someone-else:7b"),
+                          ps=(GEMMA, "someone-else:7b",
+                              "nomic-embed-text:latest"))
+        self.addCleanup(fake.close)
+        llm = llmm.LLM(host=fake.host, timeout=10, tier="local",
+                       lock_path="")
+        self.assertIsNotNone(llm.chat_json("s", "u", {}, job=LEAD))
+        self.assertEqual([u["model"] for u in fake.unloads], [GEMMA])
+
+
 if __name__ == "__main__":
     unittest.main()

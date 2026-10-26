@@ -199,6 +199,7 @@ class LLM:
         self.shown = {}                   # :cloud name -> /api/show said so
         self.show_retry = {}              # :cloud name -> (ask again at, gap)
         self.job_failing = {}             # job -> why it ran off its chain
+        self.called = set()               # local models this process used
         self.embed_ok = True
         self.budget = None                # cloud tokens per day (optional)
         self.tok = {"day": time.strftime("%Y-%m-%d"),
@@ -467,10 +468,21 @@ class LLM:
     def _serial(self):
         return LLM._Serial(self.lock_path, self.lock_wait, self)
 
+    def _ours(self, name):
+        """A chat model this app is configured for, or has called — the
+        only ones _make_room may unload. Another program's model on the
+        same Ollama is left alone."""
+        mine = set(self.called)
+        for chain in self.job_chains.values():
+            mine.update(chain)
+        mine.update(m for m in (self.choice_model, self.prose_model,
+                                self.explicit) if m)
+        return any(same_model(name, m) for m in mine)
+
     def _make_room(self, model):
-        """With --resident one, unload any other local chat model before
-        this one loads (the embedder is small and stays). Cloud models
-        load nothing here."""
+        """With --resident one, unload any other local chat model of ours
+        before this one loads (the embedder is small and stays). Cloud
+        models load nothing here."""
         if self.resident != "one" or is_cloud(model):
             return
         try:
@@ -480,7 +492,8 @@ class LLM:
         for m in ps.get("models", []):
             n = m.get("name", "") or m.get("model", "")
             if not n or same_model(n, model) or \
-                    same_model(n, self.embed_model) or is_cloud(n):
+                    same_model(n, self.embed_model) or is_cloud(n) or \
+                    not self._ours(n):
                 continue
             try:
                 self._request("POST", "/api/generate",
@@ -603,6 +616,8 @@ class LLM:
             with self._serial():
                 deadline = time.time() + self.timeout
                 self._make_room(payload["model"])
+                if not is_cloud(payload["model"]):
+                    self.called.add(payload["model"])
                 with urllib.request.urlopen(
                         req, timeout=max(1.0, min(90.0, self.timeout))) \
                         as resp:
