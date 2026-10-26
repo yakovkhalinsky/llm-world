@@ -1,325 +1,207 @@
-# Grove — a self-contained forest, given one voice by Ollama
+# Grove: a self-contained forest, given one voice by Ollama
 
-<p align="center"><img src="docs/grove.svg" alt="the grove, week by week"
- width="700"></p>
+![the grove in autumn, a storm passing over the ponds and pines](../../docs/screenshots/grove-overview.webp)
 
 A living forest biome that runs on your machine: ponds, pines, willows,
-berry glades, grass, mushrooms — and rabbits, deer, foxes, owls, robins
-and boars living, hunting, starving and being born through the seasons.
-A **World Soul** decides, roughly every minute, which fate befalls the
-woods (a storm, a drought, a blight, a bloom, a passing wolf...); a
-language model gives it words, writes the chronicle and names the
-newborns — by default `deepseek-v4.1-flash:cloud` through your own
-Ollama with small local models behind it (`qwen3:4b-instruct-2507-q4_K_M`
-for choices, `gemma3:4b` for prose), and `--tier local` keeps the whole
-forest on-box.
+berry glades, grass and mushrooms, with rabbits, deer, foxes, owls,
+robins and boars living, hunting, starving and being born through the
+seasons. A **World Soul** picks the fate that befalls the woods every
+minute or so: a storm, a drought, a blight, a bloom, a passing wolf. A
+language model gives it words, writes the chronicle, names the newborns
+and answers questions about the grove's history.
 
-No API keys, ever — even the cloud voice comes through your own Ollama.
-State lives in one SQLite file. Zero pip dependencies — the engine is
-pure Python stdlib, the model runs in Ollama.
+No API keys: even the cloud voice comes through your own Ollama. State
+lives in one SQLite file. The engine is pure Python stdlib (3.11+).
 
-```
-WEEK 41 · SPRING · 🌧 rain   🐇38 🦌16 🦊9 🦉4 🐦22 🐗6
-🌲 🌲 🌱 🟫 🌲 🟨 🌲 🌱 🌳 🌳 ... [24×24 emoji map] ...
- ☾ SOUL ▸ storm NW — "A cold wind is gathering over the western pines."
-   ▸ A fox took a wild rabbit at the pond's edge.  (1wk ago)
-   ▸ 2 boar slipped in from beyond the forest edge.  (5wk ago)
-```
+| | |
+|---|---|
+| ![a creature's card: a wild fox, its hunger and energy, its history, and a follow button](../../docs/screenshots/grove-card.webp) | ![the animals tab: each species counted week by week, and the controls](../../docs/screenshots/grove-panels.webp) |
+| A card: click a creature or a tree, then **◎ follow** | The animals tab and the controls |
+| ![the grove at dusk](../../docs/screenshots/grove-dusk.webp) | |
+| Dusk; after dark the mushroom rings glow | |
 
-## Requirements
-
-- Python 3.11+ (stdlib only)
-- [Ollama](https://ollama.com) running locally
-
-## Quick start
+## Running it
 
 ```sh
 ./grove.sh new --seed 42        # plant a grove (deterministic, no LLM)
-./grove.sh run                  # watch it live (LLM in the background)
-```
-
-Keys in watch mode: `space` pause · `s` step · `n` invite the soul now ·
-`q` quit. Nothing is ever lost — every week is saved to SQLite.
-
-## Viewing it from another device
-
-`grove web` serves a live dashboard over plain HTTP — no build step, works
-offline, hand-written files, rendered in **3D with Three.js** (r170,
-vendored and shared with the estate under `apps/shared/page3d/`). It is a
-**full-screen HUD**: the forest fills the window and the controls float as
-translucent panels over it — the chronicle, the census and the tuning tab
-**stay open**, because there is room for them beside the world; `c` clears
-them when you want the grove alone. Drag to orbit, wheel to zoom,
-right-drag to pan.
-
-The scene: the forest floor is a real surface lifted by the engine's
-elevation, with the water lying in its hollows, coloured by the season
-(the first two weeks of a season blend in from the last). Pines, birches
-and willows, ferns and berry bushes (cacti and the rest in the desert)
-stand on it at the size their stage gives them; creatures walk to their
-weekly cells **round the trunks and the water** — the estate's router on a
-quartered grid, so no deer walks through a tree — and the robins fly
-straight, hovering over theirs. The light is a **day clock** shared with
-the estate: a page day lasts a few weeks of the grove's, close to a minute
-and a half of wall time, and the sun crosses the sky continuously rather
-than stepping when a week turns. After dark the **mushrooms glow**: the
-server sends a light field (`glow` in `/api/state`) and the page lays it
-on the floor as one soft pool of light, the way the estate lays its
-lamplight. Rain, snow, lightning in storms, fireflies over the water on
-summer nights. Click a creature or a tree for its card (named souls show
-their biography, born → named → hunted → remembered) with a follow-cam;
-ask the grove questions and it answers from the world's own history.
-Keys: `space` pause · `s` step · `n` invite the soul · `f` fullscreen ·
-`c` calm. `?plain` (or no WebGL) falls back to the emoji page.
-
-Debug parameters: `?phase=dawn|morning|afternoon|evening|night` freezes
-the light, `?clock=0.2` pins the day's fraction, `?static=1` draws the
-first state and stops (for screenshots), `?view=top` looks straight down.
-The page's headless checks: `node tools/hud_check.js` (every model string
-escaped), `node tools/viewer_check.js` (the card's ledger ask: kept across
-polls, never crossed between creatures, given up after 4 s, re-asked once
-a week and never over an ask still waiting), `node tools/route_check.js <state.json>` (no walk crosses a
-trunk or water), `node tools/glow_check.js <state.json>
-[<next-week.json>]` (about one mushroom ring in three glows on a night,
-deterministically, with the server's light arithmetic, and the lit set
-holds through a night's weekly rebuilds), and `python3 -m unittest discover -s tests`.
-
-```sh
-./grove.sh web                  # loopback only (for an ssh tunnel)
-./grove.sh web --public         # reachable from any device on the LAN
-```
-
-- **Same network (LAN):** with `--public`, open `http://<this-box-ip>:8787`
-  on a phone or laptop. (`hostname -I` shows the address.)
-- **Anywhere, if you use Tailscale:** with `--public`, the box's
-  Tailscale address (`tailscale ip -4`) works from any tailnet device.
-- **Or tunnel, without opening the port:** plain `grove web` (loopback),
-  then `ssh -N -L 8787:localhost:8787 yakov@<this-box>` and open
-  `http://localhost:8787` on the other machine.
-- **No browser at all:** `ssh` in and run `./grove.sh run` inside
-  `tmux` (or `nohup ./grove.sh web > grove-web.log 2>&1 &`) — the
-  terminal view is the same world, and detach/reattach as you like.
-
-The page's buttons (pause, step, ask, accept/dismiss) are POSTs, and the
-server answers them only from the page itself: a JSON body, an `Origin`
-(if any) matching the `Host`, and a `Host` it knows. That is loopback
-always; with `--public`, also this box's LAN address and the station's
-tailnet name (`station.tail8a1a2.ts.net`) and its addresses. Opened by any
-other name, the page still shows but its buttons get a 403 — add the name
-with `--allow-host NAME` (repeatable). `web` prints the list it answers.
-
-Leave it running detached with `tmux` (recommended), or `nohup` a
-server: `nohup ./grove.sh web --public > grove-web.log 2>&1 &`; use
-`cron`/`systemd` if you want the grove to wake up on boot.
-
-```sh
-./grove.sh step 200 --offline   # simulate 8+ years headless, fast
-./grove.sh new --seed 42 --biome desert    # another nature entirely
-./grove.sh map                  # render the current map
+./grove.sh run                  # watch it in the terminal
+./grove.sh web --port 8789 --public               # the 3D view, on the LAN
+./grove.sh web --port 8789 --public --tier local  # as station runs it
+./grove.sh step 200 --offline   # simulate ~4 years headless, fast
+./grove.sh map                  # the terminal map, once
 ./grove.sh status               # population history with sparklines
-./grove.sh chronicle --all      # the whole chronicle (☾ = LLM-written)
+./grove.sh chronicle --all      # the whole chronicle (☾ = model-written)
+./grove.sh rules                # the biome's live ruleset
+python3 tools/balance.py        # the gate
+python3 -m unittest discover -s tests
 ```
 
-`grove.sh` is just `python3 -m grove`; run it from the repo root instead
-if you prefer.
+`web` defaults to port 8787, the same as the estate, so pass `--port`
+when both run on one box (station uses 8789). A week is 12 s of wall
+time by default (`--tick-seconds`). Terminal keys: `space` pause, `s`
+step, `n` invite the soul now, `q` quit. Every week is saved.
+
+**A fresh world.** `new --seed N --force` plants a new grove over an old
+one. The old database isn't deleted: it's moved aside as
+`archive-<stamp>-wk<week>.db` in the same `--data` directory (default
+`./grove_data`). `--size N` sets the map's width and height. The desert
+is another nature entirely: pass `--biome desert` before the command,
+every time (`./grove.sh --biome desert new --seed 42`).
+
+**From another device.** With `--public`, open `http://<box>:8789` on
+the LAN or the tailnet. Without it, the server binds loopback only (use
+`ssh -N -L 8789:localhost:8789 <box>` to tunnel). The page's buttons
+(pause, step, soul, ask, accept and dismiss) are POSTs. The server
+answers them only from the page itself: a JSON body, a matching
+`Origin`, and a `Host` it knows. That's loopback, plus with `--public`
+this box's LAN address and station's tailnet name. Add another name with
+`--allow-host NAME`. `tools/clean_servers.sh` ends every running grove
+server.
+
+## The view
+
+One full-window 3D view at `/` (also `/3d`), with Three.js vendored in
+[`../shared/page3d/`](../shared), no build step, and offline-safe. The
+forest floor is lifted by the engine's elevation, with water lying in its
+hollows and colours following the season. Trees and understory stand at
+the size their stage gives them. Creatures walk to their weekly cells
+round the trunks and the water, while robins fly. The light follows the
+same day clock as the estate: a page day lasts a few grove weeks, and the
+sun crosses the sky continuously. After dark the mushroom rings glow, and
+there's rain, snow, lightning in storms, and fireflies over summer water.
+
+Drag to orbit, wheel to zoom, right-drag or the arrow keys to pan.
+
+- **Top left:** the soul's latest move and the model's status line, for
+  example `AI · qwen3:4b-instruct-2507 (op, review) · gemma3:4b (chron,
+  voice, ask) · choices by rules`, or `AI off · pure deterministic sim`
+  with `--offline`. The raw line, with its tier, is `llm.status` in
+  `/api/state`.
+- **Top right:** the week, season and weather, a chip per species with
+  its count, and the phase of the day.
+- **Bottom left, three tabs:** **events** (the chronicle, newest first),
+  **animals** (every species, animals and plants, counted week by week) and **⚖ rules** (the
+  steward's suggested rule changes, to accept or dismiss).
+- **Controls:** **⏸ pause**, **next week**, **☾ wake soul** (one change
+  by the soul, only while paused), **⛶ full**, and *ask the grove a
+  question…*, answered from the world's own chronicle.
+- **Cards** (bottom right): click a creature or a tree for its state and
+  history. Named souls show their biography (born, named, hunted,
+  remembered). **◎ follow** keeps the camera on it.
+
+Keys: `space` pause, `s` step, `n` wake the soul, `f` full screen, `c`
+calm (hide the panels), `Esc` deselect. `?plain`, or a browser with no
+WebGL, falls back to the glyph page from `/api/plain`.
+
+**URL parameters:** `?phase=dawn|morning|afternoon|evening|night` freezes
+the light, `?clock=0.2` pins the day's fraction, `?static=1` draws the
+first state and stops, `?view=top` looks straight down, and `?focus=x,y`
+frames a cell. The page publishes `window.__grove3d` once it's drawn.
 
 ## The model
 
-Small-model reality: on a ~2 GHz 4-core CPU there is no GPU and inference
-is CPU-bound — ~1.9 tok/s generation on Llama-3.2-3B. The local models
-are tuned for slow silicon:
-
-**One model per kind of job.** Every call is one of three kinds, and each
-kind has its own flag and default:
-
-| flag | default | used for |
+| job | kind | default model |
 |---|---|---|
-| `--choice-model` | `qwen3:4b-instruct-2507-q4_K_M` | the World Soul's operator, the steward's review |
-| `--prose-model` | `gemma3:4b` | the chronicle, naming and diaries, ask the grove |
-| `--embed-model` | `nomic-embed-text` | ask-the-grove's chronicle vectors |
-| `--cloud-model` | `deepseek-v4.1-flash:cloud` | with `--tier cloud`, tried first for every chat job |
-| `--decide` | `rules` | `rules`: the choice is made in code (`decide.py`); `llm`: the model picks from the menu, as before |
-| `--keep-alive` | `2m` | sent as Ollama's `keep_alive` on every call (`0` unloads at once) |
-| `--resident` | `one` | `one`: unload the other local chat model before switching; `many`: leave that to Ollama |
-| `--model-lock` | `/tmp/llm-world-ollama-<uid>.lock` | the file every llm-world process of this user locks around a call; empty = in-process only |
-| `--lock-wait` | `60` | seconds a call waits its turn for the model before giving up (no call is made; the job keeps its template) |
-| `--model NAME` | — | pin every chat job to exactly one model (any tag Ollama has, cloud or local) |
+| the World Soul's operator (its intent and a destiny's text), the steward's review | choice | `qwen3:4b-instruct-2507-q4_K_M` |
+| the chronicle, names and diaries, ask the grove | prose | `gemma3:4b` |
+| ask the grove's chronicle vectors | embed | `nomic-embed-text` (`--embed-model`) |
 
-`--tier cloud` (the default) puts the cloud model in front of each job and
-falls back to that job's local model, then the other local model, then
-`llama3.2:3b` if it happens to be installed; `--tier local` never leaves
-the box. Pull the defaults once:
+**Rules decide; the model speaks.** The soul's menu is fixed: storm,
+drought, blight, bloom, migration, visitor, destiny, quiet. With
+`--decide rules` (the default), `decide.py` makes the soul's move and the
+steward's amendments from seeded weights over what the grove is showing.
+The model writes only the words. `--decide llm` lets the model pick from
+a ≤ 400-token digest, under the same validator, and nonsense comes out as
+`quiet`. With no model, the same move lands with a template line. The
+soul is invited every 60–120 s on local models, or every 40–80 s on
+cloud.
 
-```sh
-ollama pull qwen3:4b-instruct-2507-q4_K_M
-ollama pull gemma3:4b
-ollama pull nomic-embed-text
-```
+- **Chronicler:** notable events get a template line the moment they
+  happen. A background call rewrites it (☾) when the model is free,
+  rejecting lines that wander off the event, restate the data or echo
+  recent lines. Lines are cached by event signature.
+- **Voice:** newborns and elder trees get names (one word, validated,
+  with a fallback list), sometimes with a one-line diary.
+- **Steward:** once a year it suggests one rule change within set bounds.
+  By default the change applies itself (`--auto-tune`). With
+  `--no-auto-tune` it waits in the ⚖ rules tab.
+- `--token-budget N` caps cloud tokens a day. Over budget, the grove
+  thins to local narration and slows the soul.
 
-(There is no bare `qwen3:4b-instruct-2507` tag; use the quantised one.)
+The rest of the model flags (tiers, `--keep-alive`, `--resident`,
+`--model-lock`, `--lock-wait`, and how the grove and the estate share one
+Ollama on a small box) are shared with the estate and described once in
+the [root README](../../README.md#model-flags). An unreachable Ollama
+gives the same world with template prose: the soul's moves and the
+steward's amendments still come from rules. `--offline` gives a
+different world, with no soul moves and no steward at all, only the
+ecology.
 
-**Choices are made in code; the model writes the words.** With
-`--decide rules` the menu question is answered by `decide.py`: a
-deterministic, seeded weighting of what the world is showing (the
-SystemOne shape — `{type, probs, pick, confidence}` per question), passed
-through the same validator a model's answer is. The model is then asked
-only for language — the soul's intent and a destiny's text, the steward's verdict — under a small schema sent as Ollama's
-`format`. No model, a missing model or a full queue lands the same choice
-with a template line, so the world moves the same way with or without a
-model. `--offline` (AI off) never runs `decide` at all, so offline worlds
-and their fingerprints are unchanged.
-
-**A missing model says so.** Each job's chain is filtered to what Ollama
-has installed (`/api/tags`; a bare name matches `:latest`, a `:cloud` name
-may be confirmed by `/api/show`). The status line in the HUD and the
-`llm.models` block in `/api/state` name each job's model, and a job whose
-model is not installed is reported — `not installed: gemma3:4b (jobs on
-templates)` — instead of failing as a silent 404. A 404 mid-run marks the
-model missing and moves the job along its chain. An unreachable Ollama is
-re-probed every 60 s, on a background thread — the sim never waits on
-Ollama to ask whether it is ready; a model pulled while it runs is picked
-up the same way. A failed `/api/show` (a cloud tag's confirmation) is
-retried with backoff, 30 s doubling to 15 min, rather than on every call.
-A model that answers HTTP 500 again and again is swapped along its chain;
-when every model of a job has failed the job is reported **failing** —
-`failing: chron (every model failing (last gemma3:4b: HTTP 500), on its
-template)` — and it is tried again a minute later rather than on every
-call. Waiting for another caller's turn at the model is not a failure:
-it never swaps a model or counts against one.
-
-**Request shape.** Schemas go in `format`. `think: false` is sent only to
-local tags that would otherwise think (qwen3 tags without `instruct`,
-smollm3); instruct tags, gemma and cloud models get no `think` key, and
-cloud calls get extra token headroom for their hidden reasoning.
-
-**Memory on a small box.** The station is a Raspberry Pi 5 with 16 GB and
-a 2 GB swap that is already well used, and the estate and the grove share
-one Ollama. A 4B q4 model is ~2.5–3.5 GB resident, so qwen and gemma
-together, plus nomic, plus the sims, pushes the Pi into swap and every
-call crawls. So:
-
-- calls are **serialised** — one at a time within a process (a lock), and
-  across the estate and the grove by a lock on `--model-lock`. Waiters
-  take turns (a turnstile byte in the same file), and every wait is
-  bounded by `--lock-wait`: a caller that runs out of patience makes no
-  call at all. The file is per-user (`/tmp/llm-world-ollama-<uid>.lock`),
-  opened without following symlinks and checked to be this user's own
-  regular file; if it is not, the status line says so (`model lock … is
-  a symlink; this process only`) and the process falls back to its own
-  lock;
-- with `--resident one` the other local chat model is unloaded (via
-  `keep_alive: 0`) before a different one is used, so qwen and gemma are
-  never both loaded; the embedder (small) and cloud models are exempt, and
-  only models on this app's own job chains are unloaded — another program's model
-  on the same Ollama is left alone;
-- `--keep-alive 2m` lets a model go two minutes after its last call
-  rather than Ollama's default five. On a bigger box, `--resident many
-  --keep-alive 10m` keeps both warm.
-- with `--resident one`, two apps on **different** chat models swap them
-  on every turn (each unloads the other's to load its own): that is the
-  price of never holding both, and on the Pi a load is seconds. With
-  `--model-lock ''` (in-process only) it is worse — nothing orders the
-  two, so one can unload the model under the other's call and they
-  thrash. Share the default lock, put both apps' jobs on the same model,
-  or use `--resident many` on a box with the memory for it.
-
-- The world never waits on the model: the sim ticks happily while the
-  soul ponders, and results land at the next week boundary.
-
-`grove run --offline` (or a missing/unreachable model) gives the same
-world with deterministic template prose instead of LLM prose.
+`--host URL` points the grove at another Ollama (default
+`http://127.0.0.1:11434`). It's on `run`, `step` and `web`.
 
 ## The ecology
 
-A layered forest: **one tree per cell** (a grove, not a wall) with an
-understory pocket beneath it — ferns and berry bushes live in the
-canopy's shade. The food web is small and legible by design: ~24 rabbits,
-14 robins, 10 deer, 6 foxes, 3 owls, 5 boars — each one a character you
-can name, follow and lose.
+A layered forest: **one tree per cell**, with an understory of ferns and
+berry bushes in the canopy's shade. The food web is small and legible by
+design, so every animal is a character you can name, follow and lose.
 
-- **Seed bank**: every seed that fails to land sleeps in the soil
-  instead of dying; when a species dwindles, autumn lets the bank speak
-  into genuinely suitable spots (light, water, crowding aware). The soil
-  is memory, not a ledger — the forest can never lose a species forever.
-- **Succession**: birches are pioneers that open up ground, pines slow
-  and shade-tolerant, willows tied to the pond's edge, ferns shade-loving,
-  berry bushes fruiting in spring and rooting clones next door. Dead
-  trunks decay into **humus** that feeds mushrooms (the boars' winter
-  food) and tree recovery.
-- **The robin migration**: at the frost, every robin flies south; come
-  spring three of four springs they return. Winter is a season without
-  song, and the owls then live on rabbits alone.
-- **Density-dependent predation**: foxes and owls hunt less efficiently
-  when the warren is thin — the boom-bust loop that keeps collapse away.
-- `tools/balance.py` is the gate: 8 seeded worlds × 19 years must keep
-  every species alive or the change doesn't ship.
+- **Seed bank:** a seed that fails to land sleeps in the soil. When a
+  species dwindles, autumn lets the bank speak into suitable spots, so
+  the forest never loses a species for good.
+- **Succession:** birches pioneer, pines are slow and shade-tolerant,
+  willows keep to the water, and berry bushes clone next door. Dead
+  trunks decay into humus that feeds mushrooms, which are the boars'
+  winter food.
+- **Migration:** at the frost the robins fly south, and they return in
+  three springs out of four.
+- **Density-dependent predation:** foxes and owls hunt less well when the
+  warren is thin. That's the boom-bust loop that keeps collapse away.
+- **The gate:** `tools/balance.py` runs 8 seeded worlds × 19 years, and
+  every species must survive or the change doesn't ship.
 
-## How it stays robust (the one design rule)
+The engine is fully deterministic per seed. See
+[`docs/ECOLOGY.md`](docs/ECOLOGY.md) and [`docs/TUNING.md`](docs/TUNING.md)
+for the numbers.
 
-> The simulation engine owns ALL state. The LLM never holds the world in
-> context and never writes world state. It gets small, bounded jobs with
-> schema-validated outputs and deterministic fallbacks.
+## Checks
 
-- **World Soul** — roughly one decision every minute (wall time; the
-  cloud soul every 40–80 s, the offline llama every 60–120 s):
-  one choice from an enumerated menu
-  (`storm, drought, blight, bloom, migration, visitor, destiny, quiet`),
-  made in code by `decide.py` (`--decide rules`, the default) or by the
-  model from a ≤ 400-token digest (`--decide llm`), applied by validated,
-  deterministic rules. The model writes only the intent; no model → the
-  same move with a template line. Nonsense in → `quiet` out.
-- **Chronicler** — notable events are described by template lines the
-  instant they happen; a background call rewrites them when the model is
-  ready (☾), rejecting lines that hallucinate off-event, restate the
-  data, or echo recent lines. Same-week stories fold into one counted
-  line ("5 pines are fallen — great age"). Every line is cached by
-  event signature, so replays and
-  `--offline` runs cost nothing.
-- **Voice** — newborns and elder trees get names (one-word JSON, charset
-  validated, list fallback), sometimes with a one-line diary.
+The page is checked headless in Node. Most checks take a saved
+`/api/state` snapshot:
 
-The engine (`grove/sim.py`) is fully deterministic per seed: same seed +
-same actions ⇒ same world. Tuning constants sit at the top of that file;
-the food web is gated by `tools/balance.py` (many seeded worlds × years,
-all species must persist).
+```sh
+curl -s localhost:8789/api/state > /tmp/s.json
+node tools/hud_check.js                  # every model string comes out escaped
+node tools/viewer_check.js               # the card's ledger ask across polls
+node tools/route_check.js  /tmp/s.json   # no walk crosses a trunk or water
+node tools/glow_check.js   /tmp/s.json   # which mushroom rings glow tonight
+node tools/forest_check.js /tmp/s.json   # the drawn forest and see-through trees
+node tools/crowd_check.js  /tmp/s.json   # no creature inside another, or a trunk
+```
+
+`python3 -m unittest discover -s tests` covers the server's routes and
+headers, the light field, and the checks above, with mutants.
 
 ## Layout
 
 | path | role |
 |---|---|
-| `grove/engine/` | the tick's domains: weather/soil, plants, animals, the population's nets, the operator's fates |
-| `grove/biomes/` | a world's nature as packs: `grove.py`, `desert.py` (species, recipes, words, colours, shapes) |
-| `grove/page3d/` | the 3D dashboard: `index.html`, `style.css`, `hud.js` (panels, all text escaped), `forest.js` (trunks and the walk grid), `glow.js` (which mushroom rings glow tonight), `world.js` (the Three.js scene), `viewer.js` (polling and input); the shared clock, router, light field and Three.js come from `apps/shared/page3d/` |
-| `grove/world.py` | state containers, species-table aliases, helpers |
-| `grove/gen.py` | seeded worldgen (no LLM) |
-| `grove/sim.py` | the tick engine + validated operator effects |
-| `grove/events.py` | which events are chronicle-worthy |
-| `grove/operator.py` | World Soul: digest, menu schema, validation, the words |
-| `grove/decide.py` | the soul's move and the steward's amendments chosen in code |
-| `grove/chronicler.py` | narration prompts + template fallbacks |
-| `grove/voice.py` | naming |
-| `grove/memory.py` | ask-the-grove: chronicle retrieval + answer |
-| `grove/llm.py` | Ollama client: a model per job, missing-model status, one call at a time |
-| `grove/render.py` | the emoji map + header + chronicle feed |
-| `grove/db.py` | SQLite: world, stats, events, chronicle, cache, biographies |
-| `grove/app.py` | shared runner (used by CLI and web) |
-| `grove/web.py` | the dashboard's server: the state JSON, the light field, the 3D page's files |
-| `grove/__main__.py` | CLI + run loop |
-| `tools/balance.py` | the ecologist's gate: seeded worlds × years, all must pass |
-| `tools/hud_check.js` | the HUD's escaping check: hostile strings in every field must come out inert |
-| `tools/viewer_check.js` | the card's ask check: the real viewer.js with a stub DOM and clock — the ledger's answer survives polls, a late answer never lands on another card, a hung ask fails plainly |
-| `tools/route_check.js` | the walk check: every creature's route on a snapshot avoids trunks and water |
-| `tools/glow_check.js` | the glow check: tonight's lit rings on a snapshot — deterministic, about one in three with no rota, never none, whole rings, the server's field when all are lit; given next week's snapshot too, no surviving ring flips in the dark |
-| `tests/` | the server's routes and headers, the light field, and the checks above (with mutants) |
-| `tools/render_svg.py` | the README's scene, rendered from the live world |
-| `docs/ARCHITECTURE.md` | how it all works: tick order, contracts, threads |
-| `docs/ECOLOGY.md` | the field guide: how the biome's mechanics work |
-| `docs/TUNING.md` | the honest numbers: species knobs, tempo, the gate |
+| `grove/engine/` | the tick's domains: weather and soil, plants, animals, population, the operator's fates |
+| `grove/biomes/` | nature packs: `grove.py`, `desert.py` |
+| `grove/sim.py`, `world.py`, `gen.py`, `db.py` | the tick engine; state; seeded worldgen (no LLM); SQLite |
+| `grove/operator.py`, `reviewer.py`, `decide.py` | the World Soul's digest, menu and validator; the steward; choices made in code |
+| `grove/chronicler.py`, `events.py`, `voice.py`, `memory.py` | narration, what's worth telling, naming, ask the grove |
+| `grove/llm.py` | the Ollama client: a model per job, status, one call at a time |
+| `grove/app.py`, `__main__.py`, `render.py` | the shared runner; the CLI; the terminal view |
+| `grove/web.py`, `webguard.py` | the server: state JSON, light field, page files; who may press the buttons |
+| `grove/page3d/` | the 3D page: `viewer.js`, `world.js`, `forest.js`, `glow.js`, `hud.js`; shared code from [`../shared/page3d/`](../shared) |
+| `tools/` | the gate, the checks above, `render_svg.py` (a static SVG of the world), `clean_servers.sh` |
+| `docs/` | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`ECOLOGY.md`](docs/ECOLOGY.md), [`TUNING.md`](docs/TUNING.md), [`BUGS.md`](docs/BUGS.md) |
 
 ## Ideas on the shelf
 
-- playable character mode (walk in and talk to the animals)
-- the time-travel scrubber (replay any stretch of the world's past)
-- an offline soundscape: procedural wind, rain and a distant wolf
-- the book of grove: seasonal reflections + a saga export
-- seasons' effect on names ("the winter fox"), wolf packs, bear dens
+- a playable character (walk in and talk to the animals)
+- a time-travel scrubber over the world's past
+- an offline soundscape: wind, rain and a distant wolf
+- the book of the grove: seasonal reflections and a saga export
+- seasons in names ("the winter fox"), wolf packs, bear dens
