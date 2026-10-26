@@ -11,10 +11,8 @@
  *
  * Python's fingerprint is json.dumps(sort_keys=True, default=str) — so
  * floats carry repr()'s digits, ints don't, and the means are
- * statistics.mean's (exact, rounded once). One thing can't be matched:
- * `all_broken` iterates a Python set of fixture kinds, whose order is
- * PYTHONHASHSEED's; this port lists them in rules order. It only matters
- * when a run has two or more, and none of the gate's runs has any.
+ * statistics.mean's (exact, rounded once). Every list in it is sorted on
+ * both sides, so no line depends on a Python set's PYTHONHASHSEED order.
  */
 import { createHash } from "node:crypto";
 import { byCodePoint } from "../src/py/canon.ts";
@@ -97,7 +95,7 @@ export function runOne(seed: number, years: number): Row {
       occupancy: pyRound(occupied / Math.max(1, units.length), 3),
       emptiest_block: pyRound(vacancy.length ? Math.min(...vacancy) : 1.0, 3),
       unused_fixture: afford.filter((k) => (kindsUsed.get(k) ?? 0) < umin).sort(byCodePoint),
-      all_broken: afford.filter((k) => worn.includes(k) && (kindsUsed.get(k) ?? 0) === 0),
+      all_broken: afford.filter((k) => worn.includes(k) && (kindsUsed.get(k) ?? 0) === 0).sort(byCodePoint),
       friction: pyRound(friction.length ? meanFloat(friction) : 0.0, 3),
       distinct: "int" in dm ? dm : { float: pyRound(dm.float, 2) },
       worn,

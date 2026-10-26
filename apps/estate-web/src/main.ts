@@ -9,7 +9,7 @@
  * parameters (`?static=1`, `?show=…`) pass through untouched.
  */
 import { parseSeed } from "./seed.ts";
-import type { FromWorker, Opened, ToWorker } from "./worker/protocol.ts";
+import { API_PATHS, type FromWorker, type Opened, type ToWorker } from "./worker/protocol.ts";
 
 type Reply = Exclude<FromWorker, { type: "error" }>;
 type Ask = ToWorker extends infer T ? (T extends { id: number } ? Omit<T, "id"> : never) : never;
@@ -22,13 +22,35 @@ worker.onmessage = (ev: MessageEvent<FromWorker>) => {
   const m = ev.data;
   const w = m.id === null ? undefined : waiting.get(m.id);
   if (!w) {
-    if (m.type === "error") console.error("estate worker:", m.message);
+    // an error that answers no request: the estate itself stopped
+    if (m.type === "error") stopped(m.message);
     return;
   }
   waiting.delete(m.id!);
   if (m.type === "error") w.no(new Error(m.message));
   else w.ok(m);
 };
+
+/** Say on the page that the estate stopped, the way page3d says it has no WebGL. */
+function stopped(why: string): void {
+  console.error("estate worker:", why);
+  const box = document.getElementById("nogl");
+  const text = document.getElementById("noglWhy");
+  if (text) text.textContent = why;
+  if (box) box.hidden = false;
+}
+
+/** The worker died or a reply was unreadable: nothing waiting will be answered. */
+function fail(why: string): void {
+  for (const w of waiting.values()) w.no(new Error(why));
+  waiting.clear();
+  stopped(why);
+}
+worker.onerror = (e: ErrorEvent) => {
+  e.preventDefault();
+  fail(`the estate stopped: ${e.message || "the worker failed"}`);
+};
+worker.onmessageerror = () => fail("the estate's reply could not be read");
 
 function ask(m: Ask): Promise<Reply> {
   const id = nextId++;
@@ -38,15 +60,13 @@ function ask(m: Ask): Promise<Reply> {
   });
 }
 
-const API = new Set(["/api/ground", "/api/state", "/api/plain", "/api/control"]);
-
 /** page3d's four endpoints, answered by the worker; anything else is fetched. */
 function installApi(): void {
   const real = window.fetch.bind(window);
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const req = new Request(input, init);
     const url = new URL(req.url);
-    if (url.origin !== location.origin || !API.has(url.pathname)) return real(input, init);
+    if (url.origin !== location.origin || !API_PATHS.has(url.pathname)) return real(input, init);
     const body = req.method === "GET" || req.method === "HEAD" ? null : await req.text();
     const r = await ask({ type: "api", method: req.method, path: url.pathname, body });
     if (r.type !== "api") throw new TypeError("the estate answered something else");
@@ -108,8 +128,5 @@ async function boot(): Promise<void> {
 }
 
 boot().catch((e: unknown) => {
-  const box = $("nogl");
-  const why = $("noglWhy");
-  if (why) why.textContent = `the estate could not open: ${e instanceof Error ? e.message : String(e)}`;
-  if (box) box.hidden = false;
+  stopped(`the estate could not open: ${e instanceof Error ? e.message : String(e)}`);
 });

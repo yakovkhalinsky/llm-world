@@ -102,6 +102,18 @@ class ControlTest(unittest.TestCase):
                 self.assertEqual(self.post(body)[0], 400)
         self.assertEqual(self.runner.state(), before)
 
+    def test_an_int_too_big_for_a_float_is_refused(self):
+        # math.isfinite(10**400) raises OverflowError; it was uncaught, and
+        # the connection dropped with no answer at all
+        before = self.runner.state()
+        for body in (b'{"tick_seconds":1' + b"0" * 400 + b"}",
+                     b'{"tick_seconds":-1' + b"0" * 400 + b"}"):
+            with self.subTest(body=body[:24]):
+                code, out = self.post(body)
+                self.assertEqual((code, json.loads(out)),
+                                 (400, {"error": "tick_seconds must be a number"}))
+        self.assertEqual(self.runner.state(), before)
+
     def test_lengths_that_lie(self):
         good = b'{"paused":true}'
         for length, code in (("omit", 411), ("-1", 400), ("abc", 400),

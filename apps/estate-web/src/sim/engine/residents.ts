@@ -161,13 +161,22 @@ let seen = new Int32Array(0);
 let from = new Int32Array(0);
 let stamp = 0;
 
+/** For the tests: put the stamp where it is about to wrap (0x7fffffff),
+ * which otherwise takes two billion searches to reach. */
+export function setPathStamp(n: number): void {
+  stamp = n;
+}
+
 /** Breadth-first, eight ways, the target allowed even if it can't be
  * walked on: world.path. The same search as pathMap below, step for step,
  * on flat arrays — it runs for every leg of every walk, which makes it
  * the hottest loop in the day. */
 export function path(w: W.World, sx: number, sy: number, tx: number, ty: number): Pt[] | null {
   if (sx === tx && sy === ty) return [];
-  // a start off the padded plan can't be keyed; leave it to the map
+  // A start off the padded plan can't be keyed into the flat arrays (ck
+  // would wrap into the next row). Nothing walks from there today —
+  // residents and fixtures stand on the plan — but if one did, the same
+  // search on a map keyed by the cell itself still answers as Python does.
   if (sx < -1 || sy < -1 || sx > w.width || sy > w.height) return pathMap(w, sx, sy, tx, ty);
   const span = w.width + 4;
   const size = span * (w.height + 4);
@@ -210,8 +219,9 @@ export function path(w: W.World, sx: number, sy: number, tx: number, ty: number)
   return null;
 }
 
-function pathMap(w: W.World, sx: number, sy: number, tx: number, ty: number): Pt[] | null {
-  const came = new Map<number, Pt | null>();
+export function pathMap(w: W.World, sx: number, sy: number, tx: number, ty: number): Pt[] | null {
+  const ck = (_w: W.World, x: number, y: number) => `${x},${y}`;
+  const came = new Map<string, Pt | null>();
   came.set(ck(w, sx, sy), null);
   let frontier: Pt[] = [[sx, sy]];
   while (frontier.length) {
@@ -265,7 +275,7 @@ export function reach(w: W.World, sx: number, sy: number, limit: number | null =
 }
 
 function followPath(r: Res, p: Pt[], steps: number): boolean {
-  for (const [x, y] of p.slice(0, Math.max(0, steps))) {
+  for (const [x, y] of p.slice(0, steps)) { // p[:steps], a negative end included
     r.where.x = x; r.where.y = y;
   }
   return p.length <= steps;
@@ -439,12 +449,14 @@ function seatHolders(w: W.World): void {
 }
 
 export function topPress(w: W.World, r: Res, phase: string): number {
-  let m = -Infinity;
+  // Python's max(): the first value, then any strictly greater — so a NaN
+  // wins only when it comes first
   const needs = Object.keys(R.needs);
   if (!needs.length) return 0.0;
-  for (const n of needs) {
+  let m = pressure(w, r, needs[0]!, phase);
+  for (const n of needs.slice(1)) {
     const p = pressure(w, r, n, phase);
-    if (p > m || Number.isNaN(p)) m = p;
+    if (p > m) m = p;
   }
   return m;
 }
