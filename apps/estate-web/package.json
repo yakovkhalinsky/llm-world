@@ -1,0 +1,26 @@
+{
+  "name": "estate-web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Highfield, the estate, run entirely in the browser: a TypeScript port of apps/estate with no server and no model.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "rules": "python3 ../estate/tools/export_rules.py > src/sim/rules.json",
+    "parity": "tsx scripts/parity.ts"
+  },
+  "dependencies": {
+    "@noble/hashes": "^2.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "~5.9.3",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}
