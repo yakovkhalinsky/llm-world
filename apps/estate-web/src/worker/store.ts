@@ -15,7 +15,7 @@ import { canon, hash16 } from "../py/canon.ts";
 import { R } from "../sim/rules.ts";
 import type { RunState } from "../view/runner.ts";
 
-export const FORMAT = 1;
+export const FORMAT = 2;
 export const RULES = hash16(canon(R));
 
 export interface Save { seed: number; format: number; rules: string; saved: number; state: RunState }
