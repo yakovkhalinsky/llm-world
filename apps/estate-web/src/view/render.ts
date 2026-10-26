@@ -51,22 +51,23 @@ export function say(ev: Ev): string {
     case "turn": {
       const seasons = R.presentation.seasons ?? [];
       const i = ev.season as number | null | undefined;
-      return `the season turned to ${i !== undefined && i !== null && i < seasons.length ? seasons[i] : "another season"}`;
+      // Python would index a negative from the end; nothing sends one
+      return `the season turned to ${typeof i === "number" && i >= 0 && i < seasons.length ? seasons[i] : "another season"}`;
     }
     case "broke": return `${a(ev.what || "thing")} broke`;
     case "tree_down": return "a tree came down";
     case "storm": return "a storm crossed the estate";
     case "frost": return "ice on the pond";
-    case "fate": return (ev.say as string) || `the watcher sent ${ev.what === undefined ? "None" : String(ev.what)}`;
+    case "fate": return (ev.say as string) || `the watcher sent ${str(ev.what, "None")}`;
     case "moved_in": {
       const where = (ev.where as string) || "household";
-      return `${MOVER[where] ?? a(where)} moved in`;
+      return `${Object.hasOwn(MOVER, where) ? MOVER[where] : a(where)} moved in`;
     }
     case "born": return `${str(ev.who, "a child")} was born on the estate`;
     case "died": return `${str(ev.who, "someone")} died`;
     case "left": return ev.who ? `${String(ev.who)} left the estate` : "a household left the estate";
     case "grew": return `${str(ev.who, "someone")} — ${str(ev.what, "a year older")}`;
-    default: return String(k);
+    default: return str(k, "None");
   }
 }
 

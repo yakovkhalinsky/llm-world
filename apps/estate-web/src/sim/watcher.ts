@@ -81,7 +81,14 @@ export function queue(w: W.World, intent: Intent): Intent | null {
  * days at the pack's default pace (the middle of `day_seconds`, 20 s a
  * day: 3–6 days) and rolled from the seed. The estate's whole timeline is
  * then a function of its seed and how many days it has lived, at any
- * speed. `tools/parity.py worlds --watch-seeded` runs this same rule.
+ * speed.
+ *
+ * This is new behaviour, not a port: web.py rolls its gap from the
+ * unseeded `random.random()`, and with no model at all it never invites
+ * the watcher. The port matches web.py's `--decide rules` mode — the
+ * choice in code — on this seeded cadence, and tests/web_harness.py
+ * drives web.py's own runner on it. (`watcher_gap_cloud`, the cadence
+ * for a hosted model, is unused here.)
  */
 export function gapDays(seed: number, day: number): number {
   const pace = R.pacing.day_seconds[1]!;
