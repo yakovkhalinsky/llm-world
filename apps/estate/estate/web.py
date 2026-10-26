@@ -716,8 +716,12 @@ def _control(runner, req):
     if "step" in req and not (type(step) is int and 1 <= step <= 100):
         raise webguard.Refused(400, "step must be a whole number 1..100")
     pace = req.get("tick_seconds")
-    if "tick_seconds" in req and not (
-            type(pace) in (int, float) and math.isfinite(pace)):
+    try:
+        bad_pace = "tick_seconds" in req and not (
+            type(pace) in (int, float) and math.isfinite(pace))
+    except OverflowError:       # an int too big to be a float: 1e400 written out
+        bad_pace = True
+    if bad_pace:
         raise webguard.Refused(400, "tick_seconds must be a number")
     if "paused" in req:
         runner.paused = paused
