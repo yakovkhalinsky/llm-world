@@ -27,15 +27,18 @@ process, and a model pulled while the demo runs is picked up the same way.
 
 Small boxes: calls are serialised — within the process by a lock, and
 across processes (the estate and the grove on one Pi) by an flock on
-`--model-lock`. With `--resident one` (the default) a local chat model is
+`--model-lock` (per user; `--lock-wait`, default 60 s, bounds the wait,
+and waiters take turns). With `--resident one` (the default) a local chat model is
 unloaded before a different one is used, so the choice and prose models
 are never both resident; `--keep-alive` (default 2m) is sent with every
 call. chat_json NEVER raises.
 """
 
+import errno
 import fcntl
 import json
 import os
+import stat
 import threading
 import time
 import urllib.error
@@ -53,7 +56,11 @@ CLOUD_MODEL = "deepseek-v4.1-flash:cloud"
 # job's own models — it is never asked for when it is not there
 LAST_RESORT = "llama3.2:3b"
 DEFAULT_KEEP_ALIVE = "2m"
-DEFAULT_LOCK = "/tmp/llm-world-ollama.lock"
+# per user: a file another account made (or a link it planted) is never
+# opened; two demos run as one user share it
+DEFAULT_LOCK = f"/tmp/llm-world-ollama-{os.getuid()}.lock"
+DEFAULT_LOCK_WAIT = 60.0
+LOCK_POLL = 0.05
 REPROBE_MISSING_SECONDS = 60
 TAGS_TIMEOUT = 5
 
@@ -157,7 +164,9 @@ class LLM:
         self.host = host or DEFAULT_HOST
         self.timeout = timeout
         # how long a call waits for the model before giving up its turn
-        self.lock_wait = timeout if lock_wait is None else lock_wait
+        self.lock_wait = DEFAULT_LOCK_WAIT if lock_wait is None \
+            else float(lock_wait)
+        self.lock_problem = ""            # the shared lock could not be used
         self.tier = "cloud" if tier in ("cloud", "hybrid", "auto", None) \
             else tier                     # grove's old "hybrid" is cloud
         self.choice_model = choice_model or CHOICE_MODEL
@@ -343,48 +352,93 @@ class LLM:
             return json.loads(resp.read().decode())
 
     class _Serial:
-        """The process lock plus, when configured, an flock shared with
-        every other llm-world process on the box."""
+        """The process lock plus, when configured, a lock shared with every
+        other llm-world process on the box.
 
-        def __init__(self, path, wait):
+        The shared lock is two byte-range locks on one file: a turnstile at
+        byte 0 and the model at byte 1. A caller takes the turnstile, then
+        the model, then lets the turnstile go — so a process that has just
+        finished cannot take the model straight back while another is
+        waiting; they take turns. Every wait is bounded by `wait` and ends
+        in ModelBusy, never in a call made without the lock.
+
+        The file is opened without following links and must be a regular
+        file owned by this user; one that is not is left alone, the call
+        runs under the process lock only, and `owner.lock_problem` says so
+        in the status line."""
+
+        def __init__(self, path, wait, owner=None):
             self.path, self.wait, self.fd = path, wait, None
+            self.owner = owner
 
         def __enter__(self):
-            if not _CALL_LOCK.acquire(timeout=self.wait):
+            if not _CALL_LOCK.acquire(timeout=max(0.0, self.wait)):
                 raise ModelBusy("another model call is still running")
             try:
-                self._flock()
+                self._lock()
             except BaseException:
                 self._close()
                 _CALL_LOCK.release()
                 raise
             return self
 
-        def _flock(self):
-            if not self.path:
-                return
+        def _problem(self, text):
+            if self.owner is not None:
+                self.owner.lock_problem = text
+
+        def _open(self):
+            flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | \
+                getattr(os, "O_CLOEXEC", 0)
             try:
-                self.fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o666)
-            except OSError:
-                self.fd = None          # a lock we cannot make is no lock
-                return
-            end = time.time() + self.wait
+                fd = os.open(self.path, flags, 0o600)
+            except OSError as e:
+                why = "is a symlink" if e.errno == errno.ELOOP else \
+                    (e.strerror or str(e)).lower()
+                self._problem(f"model lock {self.path} {why}; "
+                              "this process only")
+                return None
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode) or st.st_uid != os.geteuid():
+                os.close(fd)
+                self._problem(f"model lock {self.path} is not this user's "
+                              "file; this process only")
+                return None
+            self._problem("")
+            return fd
+
+        def _take(self, byte, end):
             while True:
                 try:
-                    fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.lockf(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB,
+                                1, byte)
                     return
-                except BlockingIOError:
+                except OSError as e:
+                    if e.errno not in (errno.EACCES, errno.EAGAIN):
+                        raise
+                if time.time() >= end:
                     # the wait ran out: give up the turn, never go ahead
                     # without the lock (the caller sees ModelBusy)
-                    if time.time() > end:
-                        raise ModelBusy("another llm-world process holds "
-                                        "the model")
-                    time.sleep(0.2)
+                    raise ModelBusy("another llm-world process holds "
+                                    "the model")
+                time.sleep(LOCK_POLL)
+
+        def _lock(self):
+            if not self.path:
+                return
+            self.fd = self._open()
+            if self.fd is None:
+                return
+            end = time.time() + max(0.0, self.wait)
+            self._take(0, end)                  # the turnstile
+            try:
+                self._take(1, end)              # the model
+            finally:
+                fcntl.lockf(self.fd, fcntl.LOCK_UN, 1, 0)
 
         def _close(self):
             if self.fd is not None:
                 try:
-                    os.close(self.fd)   # closing releases the flock
+                    os.close(self.fd)   # closing releases the locks
                 except OSError:
                     pass
                 self.fd = None
@@ -395,7 +449,7 @@ class LLM:
             return False
 
     def _serial(self):
-        return LLM._Serial(self.lock_path, self.lock_wait)
+        return LLM._Serial(self.lock_path, self.lock_wait, self)
 
     def _make_room(self, model):
         """With --resident one, unload any other local chat model before
@@ -609,6 +663,9 @@ class LLM:
             "decide": self.decide,
             "keep_alive": self.keep_alive,
             "resident": self.resident,
+            "lock": {"path": self.lock_path or None,
+                     "wait": self.lock_wait,
+                     "problem": self.lock_problem or None},
             "models": {"choice": self.choice_model,
                        "prose": self.prose_model,
                        "embed": self.embed_model,
@@ -661,6 +718,8 @@ def status_line(llm):
     if llm.tier == "cloud" and llm.is_cloud():
         base += f" · tokens today {llm.spend_today():,}" + \
                 (f"/{llm.budget:,}" if llm.budget else "")
+    if llm.lock_problem:
+        base += f" · {llm.lock_problem}"
     if llm.notes:
         base += f" · {llm.notes[-1]}"
     return base
@@ -697,7 +756,13 @@ def add_flags(sp):
     sp.add_argument("--model-lock", default=DEFAULT_LOCK,
                     help="a file every llm-world process locks around a "
                          "model call, so two demos on one box take turns; "
-                         '"" for this process only')
+                         '"" for this process only (two apps on '
+                         'different models then thrash); default '
+                         f'{DEFAULT_LOCK}')
+    sp.add_argument("--lock-wait", type=float, default=DEFAULT_LOCK_WAIT,
+                    help="seconds a call waits its turn at the model "
+                         "before falling back to its template; default "
+                         f"{DEFAULT_LOCK_WAIT:g}")
 
 
 def from_args(args, **kw):
@@ -709,6 +774,7 @@ def from_args(args, **kw):
                embed_model=g("embed_model"), cloud_model=g("cloud_model"),
                keep_alive=g("keep_alive"), resident=g("resident", "one"),
                lock_path=g("model_lock", DEFAULT_LOCK),
+               lock_wait=g("lock_wait"),
                decide=g("decide", "rules"), **kw)
 
 

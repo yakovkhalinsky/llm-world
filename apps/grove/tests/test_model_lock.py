@@ -32,6 +32,7 @@ class Fake:
         self.inflight = 0
         self.most = 0
         self.chats = 0
+        self.order = []                   # the system prompt of each chat
         self.mu = threading.Lock()
         fake = self
 
@@ -58,11 +59,13 @@ class Fake:
 
             def do_POST(self):
                 n = int(self.headers.get("Content-Length") or 0)
-                self.rfile.read(n)
+                body = self.rfile.read(n)
                 if self.path != "/api/chat":
                     self._send(200, "{}")
                     return
+                tag = json.loads(body)["messages"][0]["content"]
                 with fake.mu:
+                    fake.order.append(tag)
                     fake.chats += 1
                     fake.inflight += 1
                     fake.most = max(fake.most, fake.inflight)
@@ -99,15 +102,15 @@ if mode == "hold":
 else:
     ok = 0
     for _ in range({n}):
-        ok += llm.chat_json("s", "u", {{"type": "object"}},
+        ok += llm.chat_json({tag!r}, "u", {{"type": "object"}},
                             job=llmm.LEAD_JOB, retries=0) is not None
     print(ok, flush=True)
 """
 
 
-def child(fake, lock, mode="calls", n=4, hold=0.0):
+def child(fake, lock, mode="calls", n=4, hold=0.0, tag="s"):
     code = CHILD.format(root=ROOT, app=APP, host=fake.host, lock=lock,
-                        mode=mode, n=n, hold=hold)
+                        mode=mode, n=n, hold=hold, tag=tag)
     return subprocess.Popen([sys.executable, "-c", code], cwd=ROOT,
                             stdout=subprocess.PIPE, text=True)
 
@@ -130,6 +133,56 @@ class ModelLockTest(unittest.TestCase):
         self.assertEqual(outs, ["4", "4"])
         self.assertEqual(self.fake.chats, 8)
         self.assertEqual(self.fake.most, 1)
+
+    def test_waiters_take_turns(self):
+        """A process calling back to back does not starve another: the
+        second gets its turn while the first still has calls to make."""
+        a = child(self.fake, self.lock, n=8, tag="A")
+        t0 = time.time()
+        while self.fake.chats < 1 and time.time() - t0 < 20:
+            time.sleep(0.02)
+        b = child(self.fake, self.lock, n=2, tag="B")
+        outs = [p.communicate(timeout=60)[0].strip() for p in (a, b)]
+        for p in (a, b):
+            p.stdout.close()
+        self.assertEqual(outs, ["8", "2"])
+        order = "".join(self.fake.order)
+        self.assertEqual(self.fake.most, 1)
+        self.assertLess(order.index("B"), order.rindex("A"), order)
+
+    def test_a_symlinked_lock_is_not_followed(self):
+        target = self.lock + ".target"
+        open(target, "w").close()
+        os.symlink(target, self.lock)
+        llm = llmm.LLM(tier="local", host=self.fake.host,
+                       lock_path=self.lock, resident="many", timeout=30,
+                       lock_wait=1)
+        out = llm.chat_json("s", "u", {"type": "object"},
+                            job=llmm.LEAD_JOB, retries=0)
+        self.assertEqual(out, {"why": "ok"})      # process lock only
+        self.assertIn("symlink", llm.lock_problem)
+        self.assertIn("symlink", llmm.status_line(llm))
+        self.assertIn("symlink", llm.model_status()["lock"]["problem"])
+
+    def test_a_lock_owned_by_someone_else_is_reported(self):
+        real = llmm.os.geteuid
+        llmm.os.geteuid = lambda: real() + 1
+        self.addCleanup(setattr, llmm.os, "geteuid", real)
+        llm = llmm.LLM(tier="local", host=self.fake.host,
+                       lock_path=self.lock, resident="many", timeout=30,
+                       lock_wait=1)
+        llm.chat_json("s", "u", {"type": "object"}, job=llmm.LEAD_JOB,
+                      retries=0)
+        self.assertIn("not this user's", llmm.status_line(llm))
+        llmm.os.geteuid = real
+        llm.chat_json("s", "u", {"type": "object"}, job=llmm.LEAD_JOB,
+                      retries=0)
+        self.assertEqual(llm.lock_problem, "")    # cleared once it works
+
+    def test_the_default_lock_is_per_user(self):
+        self.assertIn(str(os.getuid()), llmm.DEFAULT_LOCK)
+        self.assertEqual(llmm.LLM(host=self.fake.host).lock_wait,
+                         llmm.DEFAULT_LOCK_WAIT)
 
     def _held(self, seconds):
         h = child(self.fake, self.lock, mode="hold", hold=seconds)
