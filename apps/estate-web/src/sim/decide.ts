@@ -24,9 +24,16 @@ export function decide(questions: Record<string, Question>, rng: PyRandom): Reco
       const ws = q.weights && q.weights.length ? q.weights : q.levels.map(() => 1.0);
       opts = q.levels.slice(0, Math.min(q.levels.length, ws.length)).map((l, i) => [l, ws[i]!]);
     } else {
+      // Object.entries puts integer-like keys first, where a Python dict
+      // keeps insertion order; no pack has one, and one would change the
+      // roll, so refuse it rather than drift
       opts = Object.entries(q.options);
+      if (opts.some(([k]) => /^(0|[1-9]\d*)$/.test(k))) {
+        throw new TypeError(`question ${name}: option ${JSON.stringify(opts[0]![0])} looks like an array index`);
+      }
     }
-    opts = opts.map(([k, w]) => [k, Math.max(0.0, Number(w))]);
+    // Python's max(0.0, w): a NaN weight loses to 0.0, where Math.max keeps it
+    opts = opts.map(([k, w]) => { const f = Number(w); return [k, f > 0.0 ? f : 0.0]; });
     // every weight went through float() above: an all-float sum
     let total = pySum(opts.map(([, w]) => w));
     if (total <= 0) {
@@ -42,7 +49,7 @@ export function decide(questions: Record<string, Question>, rng: PyRandom): Reco
       acc += probs[k]!;
       if (roll < acc) { pick = k; break; }
     }
-    out[name] = { type: q.type ?? "choice", probs, pick, confidence: probs[pick]! };
+    out[name] = { type: Object.hasOwn(q, "type") ? q.type : "choice", probs, pick, confidence: probs[pick]! };
   }
   return out;
 }

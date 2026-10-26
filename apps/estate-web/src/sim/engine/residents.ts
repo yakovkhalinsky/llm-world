@@ -265,7 +265,7 @@ export function reach(w: W.World, sx: number, sy: number, limit: number | null =
 }
 
 function followPath(r: Res, p: Pt[], steps: number): boolean {
-  for (const [x, y] of p.slice(0, Math.max(0, steps))) {
+  for (const [x, y] of p.slice(0, steps)) { // p[:steps], a negative end included
     r.where.x = x; r.where.y = y;
   }
   return p.length <= steps;
@@ -439,12 +439,14 @@ function seatHolders(w: W.World): void {
 }
 
 export function topPress(w: W.World, r: Res, phase: string): number {
-  let m = -Infinity;
+  // Python's max(): the first value, then any strictly greater — so a NaN
+  // wins only when it comes first
   const needs = Object.keys(R.needs);
   if (!needs.length) return 0.0;
-  for (const n of needs) {
+  let m = pressure(w, r, needs[0]!, phase);
+  for (const n of needs.slice(1)) {
     const p = pressure(w, r, n, phase);
-    if (p > m || Number.isNaN(p)) m = p;
+    if (p > m) m = p;
   }
   return m;
 }
