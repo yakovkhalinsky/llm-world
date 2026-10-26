@@ -76,6 +76,12 @@ RESIDENT_MODES = ("one", "many")
 _CALL_LOCK = threading.RLock()
 
 
+class ModelBusy(TimeoutError):
+    """Another call — in this process or another llm-world process — still
+    holds the model. The call does not go ahead: a lock that gives way
+    after its wait is no lock at all."""
+
+
 def _json_from(text):
     """The one object in a model's reply, or None.
 
@@ -146,9 +152,12 @@ class LLM:
     def __init__(self, model="auto", tier="cloud", host=DEFAULT_HOST,
                  timeout=240.0, choice_model=None, prose_model=None,
                  embed_model=None, cloud_model=None, keep_alive=None,
-                 resident="one", lock_path=DEFAULT_LOCK, decide="rules"):
+                 resident="one", lock_path=DEFAULT_LOCK, decide="rules",
+                 lock_wait=None):
         self.host = host or DEFAULT_HOST
         self.timeout = timeout
+        # how long a call waits for the model before giving up its turn
+        self.lock_wait = timeout if lock_wait is None else lock_wait
         self.tier = "cloud" if tier in ("cloud", "hybrid", "auto", None) \
             else tier                     # grove's old "hybrid" is cloud
         self.choice_model = choice_model or CHOICE_MODEL
@@ -342,26 +351,35 @@ class LLM:
 
         def __enter__(self):
             if not _CALL_LOCK.acquire(timeout=self.wait):
-                raise TimeoutError("another model call is still running")
-            if self.path:
-                try:
-                    self.fd = os.open(self.path, os.O_CREAT | os.O_RDWR,
-                                      0o666)
-                    end = time.time() + self.wait
-                    while True:
-                        try:
-                            fcntl.flock(self.fd, fcntl.LOCK_EX
-                                        | fcntl.LOCK_NB)
-                            break
-                        except BlockingIOError:
-                            if time.time() > end:
-                                raise TimeoutError(
-                                    "another llm-world process holds "
-                                    "the model")
-                            time.sleep(0.2)
-                except OSError:
-                    self._close()       # a lock we cannot make is no lock
+                raise ModelBusy("another model call is still running")
+            try:
+                self._flock()
+            except BaseException:
+                self._close()
+                _CALL_LOCK.release()
+                raise
             return self
+
+        def _flock(self):
+            if not self.path:
+                return
+            try:
+                self.fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o666)
+            except OSError:
+                self.fd = None          # a lock we cannot make is no lock
+                return
+            end = time.time() + self.wait
+            while True:
+                try:
+                    fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    return
+                except BlockingIOError:
+                    # the wait ran out: give up the turn, never go ahead
+                    # without the lock (the caller sees ModelBusy)
+                    if time.time() > end:
+                        raise ModelBusy("another llm-world process holds "
+                                        "the model")
+                    time.sleep(0.2)
 
         def _close(self):
             if self.fd is not None:
@@ -377,7 +395,7 @@ class LLM:
             return False
 
     def _serial(self):
-        return LLM._Serial(self.lock_path, self.timeout)
+        return LLM._Serial(self.lock_path, self.lock_wait)
 
     def _make_room(self, model):
         """With --resident one, unload any other local chat model before
@@ -426,7 +444,6 @@ class LLM:
             self.last_fail = {"job": job, "why": "model not installed",
                               "model": None, "raw": ""}
             return None
-        deadline = time.time() + self.timeout
         for _attempt in range(retries + 1):
             model = self.job_models.get(job)
             if not model:
@@ -434,7 +451,7 @@ class LLM:
             payload = self._payload(model, system, user, schema,
                                     max_tokens, temperature)
             t0 = time.time()
-            content, status = self._stream_chat(payload, deadline)
+            content, status = self._stream_chat(payload)
             self.latency = time.time() - t0
             if status == 404:
                 self.reason = f"model not installed: {model}"
@@ -457,7 +474,6 @@ class LLM:
             self.job_fails[job] = self.job_fails.get(job, 0) + 1
             if self.job_fails[job] >= 2:
                 self._swap_job_model(job)
-                deadline = time.time() + self.timeout
                 self.job_fails[job] = 0
         return None
 
@@ -482,9 +498,11 @@ class LLM:
             payload["think"] = False
         return payload
 
-    def _stream_chat(self, payload, deadline):
+    def _stream_chat(self, payload):
         """(text | None, http status | None). Reasoning chunks may carry
-        text in `thinking` — never treated as the answer."""
+        text in `thinking` — never treated as the answer. The deadline
+        starts once the model is ours: a call that waited its turn is not
+        then sent and thrown away."""
         content = []
         data = json.dumps(payload).encode()
         req = urllib.request.Request(
@@ -492,8 +510,11 @@ class LLM:
             headers={"Content-Type": "application/json"})
         try:
             with self._serial():
+                deadline = time.time() + self.timeout
                 self._make_room(payload["model"])
-                with urllib.request.urlopen(req, timeout=90) as resp:
+                with urllib.request.urlopen(
+                        req, timeout=max(1.0, min(90.0, self.timeout))) \
+                        as resp:
                     for line in resp:
                         if time.time() > deadline:
                             self.reason = "deadline exceeded"
