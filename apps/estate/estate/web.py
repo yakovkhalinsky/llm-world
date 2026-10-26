@@ -85,7 +85,7 @@ class SimRunner(threading.Thread):
 
     def step(self):
         """One day, under the lock: tick, keep what the page reads, save.
-        (Its own method so apps/estate-web's tests can drive this runner a
+        (Its own method so highfield's tests can drive this runner a
         day at a time, without the thread or the wall clock.)"""
         with self.lock:
             self.prev = self.snapshot_prev()
