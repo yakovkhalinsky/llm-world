@@ -83,22 +83,29 @@ class SimRunner(threading.Thread):
             out[rid] = (wh["x"], wh["y"], wh["mode"], wh.get("unit"))
         return out
 
+    def step(self):
+        """One day, under the lock: tick, keep what the page reads, save.
+        (Its own method so apps/estate-web's tests can drive this runner a
+        day at a time, without the thread or the wall clock.)"""
+        with self.lock:
+            self.prev = self.snapshot_prev()
+            evs = sim.tick(self.est.world)
+            self.events.extend(evs)
+            self.lines.extend(chronicler.day_lines(self.est.world, evs))
+            self.span += 1
+            day = self.est.world["day"]
+            book = self.est.world.get("daybook") or {}
+            self.daybooks[day] = dict(book, uses=dict(book.get("uses", {})))
+            for old_day in [d for d in self.daybooks if d < day - 64]:
+                del self.daybooks[old_day]
+            del self.events[:-400]
+            self.est.save(evs)
+        return evs
+
     def run(self):
         while not self.stop.is_set():
             if not self.paused or self.step_once:
-                with self.lock:
-                    self.prev = self.snapshot_prev()
-                    evs = sim.tick(self.est.world)
-                    self.events.extend(evs)
-                    self.lines.extend(chronicler.day_lines(self.est.world, evs))
-                    self.span += 1
-                    day = self.est.world["day"]
-                    book = self.est.world.get("daybook") or {}
-                    self.daybooks[day] = dict(book, uses=dict(book.get("uses", {})))
-                    for old_day in [d for d in self.daybooks if d < day - 64]:
-                        del self.daybooks[old_day]
-                    del self.events[:-400]
-                    self.est.save(evs)
+                self.step()
                 if self.step_once:
                     self.step_once -= 1
                 self._maybe_watch()

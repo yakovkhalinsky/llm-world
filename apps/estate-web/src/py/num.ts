@@ -215,6 +215,7 @@ export function minBy<T>(xs: Iterable<T>, key: (x: T) => number): T {
 /** range(a, b) as an array. */
 export function range(a: number, b?: number, step = 1): number[] {
   if (b === undefined) { b = a; a = 0; }
+  if (step === 0) throw new RangeError("range() arg 3 must not be zero");
   const out: number[] = [];
   if (step > 0) for (let i = a; i < b; i += step) out.push(i);
   else for (let i = a; i > b; i += step) out.push(i);

@@ -20,6 +20,10 @@ the same seed — not a similar one. This prints what the port is held to:
       the reference values for the port's Python shims: random.Random
       draws, round(), //, %, sum() and repr(float). Non-finite floats are
       sent as the strings "inf", "-inf", "nan" (JSON has none).
+  python3 tools/parity.py yearturn '[[seed, year], ...]'
+      each estate moved to the eve of a year's turn with its adults at the
+      edge of the old-age rule, ticked once: the world's and the events'
+      hashes (tests/yearturn.test.ts).
 
 **The canonical form.** JSON can't tell 1.0 from 1, and JavaScript has
 only the one number, so the hash is over a form both languages can write
@@ -50,7 +54,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # the canonical domain: integral values JS holds exactly, on both sides
 SAFE = 2 ** 53 - 1
 
-from estate import gen, sim, watcher                     # noqa: E402
+from estate import gen, rules, sim, watcher              # noqa: E402
 
 
 def canon_value(v):
@@ -190,6 +194,20 @@ def cmd_vectors(_args):
         draws["long"] = [r.random() for _ in range(1500)][-5:]
         out["rng"].append(draws)
 
+    # The lazy twist's edges, word by word from a fresh seed: every word of
+    # the first 1,300 (k = 226|227 = N-M, 623|624, 1247|1248 among them),
+    # then random() — two words — from word 0 and from word 1, so draws
+    # straddle 226|227 and 623|624 and 1247|1248.
+    out["twist"] = []
+    for s in ["twist", "1:0:gen", "3771:2871:whim:17:2"]:
+        r0, r1, r2 = random.Random(s), random.Random(s), random.Random(s)
+        words = [r0.getrandbits(32) for _ in range(1300)]
+        even = [r1.random() for _ in range(650)]
+        first = r2.getrandbits(32)
+        odd = [r2.random() for _ in range(650)]
+        out["twist"].append({"seed": s, "words": words, "even": even,
+                             "first": first, "odd": odd})
+
     g = random.Random("vectors")
     edges = [0.5, 1.5, 2.5, -0.5, -1.5, -2.5, 0.125, 0.375, 2.675, 1.005,
              0.0, -0.0, 1e-7, 123456.5, 0.4999999999999999]
@@ -249,6 +267,27 @@ def cmd_vectors(_args):
     sys.stdout.write("\n")
 
 
+def cmd_yearturn(args):
+    """Each (seed, year): plant, move to the eve of that year's turn, age
+    every adult to the edge of the old-age rule (alternately elder + 7 and
+    elder + 6, by id), tick once; print the world's and the events' hashes.
+    tests/yearturn.test.ts makes the same edits on the TS side."""
+    year_len = rules.R["world"]["days_per_season"] * 4
+    ages = rules.R["people"]["ages"]
+    out = []
+    for seed, year in json.loads(args.cases):
+        w = gen.generate(seed)
+        w["day"] = year_len * year - 1
+        adults = sorted((r for r in w["residents"].values() if r["age"] >= ages["adult"]),
+                        key=lambda r: r["id"])
+        for i, r in enumerate(adults):
+            r["age"] = ages["elder"] + 7 if i % 2 == 0 else ages["elder"] + 6
+        evs = sim.tick(w)
+        out.append({"hash": world_hash(w),
+                    "events": hashlib.sha256(canon(evs).encode()).hexdigest()[:16]})
+    print(json.dumps(out))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -263,9 +302,11 @@ def main():
     ps.add_argument("--days", type=int, default=0)
     ps.add_argument("--watch", type=int, default=0)
     sub.add_parser("vectors")
+    py = sub.add_parser("yearturn")
+    py.add_argument("cases", help='JSON list of [seed, year] pairs')
     args = ap.parse_args()
     {"worlds": cmd_worlds, "vectors": cmd_vectors,
-     "shapes": cmd_shapes}[args.cmd](args)
+     "shapes": cmd_shapes, "yearturn": cmd_yearturn}[args.cmd](args)
 
 
 if __name__ == "__main__":
