@@ -249,6 +249,48 @@ class AppTest(unittest.TestCase):
         self.assertEqual(g.world["pending_effect"]["action"],
                          operator.choose(g.world)["action"])
 
+    def test_a_busy_model_does_not_hold_the_move_back(self):
+        """maybe_schedule (web/run): with decide=rules the op lands at its
+        tick even while the worker is busy; only the words are queued.
+        Two groves, one worker busy and one idle, land it the same week."""
+        tmp, _d, g2, _l, _r = helpers.make_grove(42)
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(g2.db.con.close)
+        landed_at = []
+        for g, busy in ((self.g, True), (g2, False)):
+            stub = Stub()
+            stub.ready = lambda: True
+            stub.soul_gap = lambda: (0, 0)
+            g.llm, g.worker = stub, QueueStub(True)
+            g.worker.busy = busy
+            g.world["next_op"] = g.world["tick"] + 3
+            for _ in range(6):
+                _evs, notable = g.step()
+                g.maybe_schedule(notable)
+                if g.world.get("pending_effect"):
+                    landed_at.append(g.world["tick"])
+                    break
+            self.assertTrue(g.worker.jobs, "the words were not queued")
+            self.assertEqual(g.worker.jobs[-1]["schema"],
+                             operator.WORDS_SCHEMA)
+            if busy:                     # nothing else asked of it
+                self.assertEqual(len(g.worker.jobs), 1)
+        self.assertEqual(len(landed_at), 2, landed_at)
+        self.assertEqual(landed_at[0], landed_at[1])
+
+    def test_decide_llm_still_waits_for_a_free_worker(self):
+        g = self.g
+        stub = Stub()
+        stub.decide = "llm"
+        stub.ready = lambda: True
+        stub.soul_gap = lambda: (0, 0)
+        g.llm, g.worker = stub, QueueStub(True)
+        g.worker.busy = True
+        g.world["next_op"] = g.world["tick"]
+        g.maybe_schedule([])
+        self.assertEqual(g.worker.jobs, [])
+        self.assertIsNone(g.world.get("pending_effect"))
+
 
 if __name__ == "__main__":
     unittest.main()

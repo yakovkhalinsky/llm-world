@@ -192,16 +192,25 @@ class Grove:
         if self.worker is None:
             return
         w = self.world
+        rules_decide = self.llm.decide == "rules"
+        op_due = w["tick"] >= w["next_op"] and \
+            time.time() >= getattr(self, "next_op_wall", 0)
+        # decide=rules: the move is code's, so it lands at its tick even
+        # while the model is still busy with last week's prose; only its
+        # words wait in the queue (a slow model changes words, never when)
+        if rules_decide and op_due:
+            self._invite_operator()
+            lo, hi = self.llm.soul_gap()
+            self.next_op_wall = time.time() + random.uniform(lo, hi)
+            return
         if self.worker.busy:
             return
-        rules_decide = self.llm.decide == "rules"
         ready = self.llm.ready()
         if not (ready or rules_decide):
             return
         # the soul is first; then prose follows its backlog; naming fills
         # the rest. A fast (cloud) tier speaks far more often.
-        if w["tick"] >= w["next_op"] and \
-                time.time() >= getattr(self, "next_op_wall", 0):
+        if op_due:
             self._invite_operator()
             lo, hi = self.llm.soul_gap()
             self.next_op_wall = time.time() + random.uniform(lo, hi)
