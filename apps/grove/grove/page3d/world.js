@@ -28,14 +28,17 @@ const Clock = G.Page3DClock || null;
 const Field = G.Page3DField || null;
 const Forest = G.GroveForest || null;
 const Glow = G.GroveGlow || null;
+const Water = G.GroveWater || null;
 const SUB = (Forest && Forest.SUB) || 2;
 
 /* the floor: a cell is a world unit; the engine's elevation is lifted by
- * ELEV, the water's bed sunk below its surface */
-const ELEV = 1.1;
-const LAND_MIN = 0.06;
-const WATER_Y = 0.0;
-const WATER_BED = -0.34;
+ * ELEV, the water's bed sunk below its surface (water.js's, which the
+ * water check holds the floor to) */
+const ELEV = Water ? Water.ELEV : 1.1;
+const LAND_MIN = Water ? Water.LAND_MIN : 0.06;
+const WATER_Y = Water ? Water.Y : 0.0;
+const WATER_BED = Water ? Water.BED : -0.34;
+const FORD_BED = Water ? Water.FORD_BED : -0.08;
 const MARGIN = 10;            // cells of wild forest floor beyond the grove
 const SEG = 2;                // ground vertices per cell, each way
 
@@ -281,7 +284,8 @@ export function createWorld(first, canvas, opts) {
   /* ------------------------------------------------------------- the floor */
 
   /* The height of a cell's centre: the engine's elevation for land, the
-   * bed for water. Between centres the floor is bilinear, so a bank slopes
+   * bed for water, and a ford's stones just under the creek, so the creek
+   * runs on over them. Between centres the floor is bilinear, so a bank slopes
    * into the water and a ridge is a ridge, not a staircase. */
   const cellH = new Float32Array(N * N);
   const isWater = new Uint8Array(N * N);
@@ -294,7 +298,8 @@ export function createWorld(first, canvas, opts) {
       isWater[i] = c[0] === 'w' ? 1 : 0;
       waterKind[i] = c[6] === 'c' ? 1 : c[6] === 'f' ? 3
         : isWater[i] ? 2 : 0;
-      cellH[i] = isWater[i] ? WATER_BED
+      cellH[i] = Water ? Water.cellHeight(c)
+        : isWater[i] ? WATER_BED : c[6] === 'f' ? FORD_BED
         : Math.max(LAND_MIN, 0.12 + (Number(c[5]) || 0) * ELEV);
     }
   }
@@ -376,23 +381,15 @@ export function createWorld(first, canvas, opts) {
   base.receiveShadow = true;
   scene.add(base);
 
-  /* The water: a sheet per water cell, at one level. A pond lies still,
-   * dark and glossy; a creek is lighter and runs — its sheets carry a
-   * ripple texture turned down the creek (the snapshot's `creeks`, each
-   * from source to mouth) that scrolls every frame; over a ford the creek
-   * runs thin and clear across the stones. Terrain does not change in a
-   * world's life, so this is built once, from the first frame. */
-  const flowDir = new Float32Array(N * N * 2);
-  (first.creeks || []).forEach(path => {
-    for (let k = 0; k < path.length; k++) {
-      const a = path[Math.max(0, k - 1)], b = path[Math.min(path.length - 1, k + 1)];
-      const x = path[k][0], y = path[k][1];
-      if (!(x >= 0 && y >= 0 && x < N && y < N)) continue;
-      const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1;
-      flowDir[(y * N + x) * 2] = dx / l;
-      flowDir[(y * N + x) * 2 + 1] = dz / l;
-    }
-  });
+  /* The water: one merged surface per kind of water, at one level (each
+   * cell a square edge to edge with its neighbours, never turned, and any
+   * corner two diagonal cells of water share joined with a wedge; see
+   * water.js). A pond lies still, dark and glossy; a creek is lighter and
+   * runs: its ripple texture lies in the creek's own frame, down it from
+   * source to mouth (the snapshot's `creeks`), the same at every corner so
+   * the stream has no seams, and scrolls every frame; over a ford the creek
+   * runs on, thin and clear across the stones. Terrain does not change in
+   * a world's life, so this is built once, from the first frame. */
   function rippleTexture() {
     if (typeof document === 'undefined') return null;
     const cv = document.createElement('canvas');
@@ -425,31 +422,34 @@ export function createWorld(first, canvas, opts) {
     opacity: 0.84, map: flowTex });
   const fordMat = new THREE.MeshStandardMaterial({
     color: CREEK_TINT, roughness: 0.2, metalness: 0.05, transparent: true,
-    opacity: 0.42, map: flowTex, depthWrite: false });
-  const waterGeo = new THREE.PlaneGeometry(1.02, 1.02);
-  waterGeo.rotateX(-Math.PI / 2);
-  function waterSheet(mat, kind, lift) {
-    let count = 0;
-    for (let i = 0; i < N * N; i++) if (waterKind[i] === kind) count++;
-    const mesh = new THREE.InstancedMesh(waterGeo, mat, Math.max(1, count));
-    mesh.receiveShadow = true;
-    let n = 0;
-    for (let i = 0; i < N * N; i++) {
-      if (waterKind[i] !== kind) continue;
-      const x = i % N, y = (i - x) / N;
-      const dx = flowDir[i * 2], dz = flowDir[i * 2 + 1];
-      /* the sheet's -z (the texture's +v) turned down the creek */
-      const yaw = dx || dz ? Math.atan2(-dx, -dz) : 0;
-      const y0 = lift ? heightAt(x + 0.5, y + 0.5) + lift : WATER_Y;
-      mesh.setMatrixAt(n++, place(x + 0.5, y0, y + 0.5, 1, 1, 1, yaw));
+    opacity: 0.6, map: flowTex, depthWrite: false });
+  const sheets = Water ? Water.surfaces(first) : null;
+  function waterSheet(mat, kind) {
+    const geo = new THREE.BufferGeometry();
+    const sf = sheets ? sheets[kind] : { pos: [], uv: [], idx: [] };
+    const n = sf.pos.length / 2;
+    const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3);
+    for (let k = 0; k < n; k++) {
+      pos[k * 3] = sf.pos[k * 2];
+      pos[k * 3 + 1] = WATER_Y;
+      pos[k * 3 + 2] = sf.pos[k * 2 + 1];
+      nor[k * 3 + 1] = 1;
     }
-    mesh.count = n;
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(
+      new Float32Array(sf.uv), 2));
+    geo.setIndex(sf.idx);
+    geo.computeBoundingSphere();
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
     scene.add(mesh);
     return mesh;
   }
-  const water = waterSheet(waterMat, 2, 0);
-  const creek = waterSheet(creekMat, 1, 0);
-  const ford = waterSheet(fordMat, 3, 0.035);
+  const water = waterSheet(waterMat, 2);
+  const creek = waterSheet(creekMat, 1);
+  const ford = waterSheet(fordMat, 3);
 
   /* rocks: a few stones on every rock cell, where they always were */
   const stoneGeo = new THREE.IcosahedronGeometry(1, 0);
@@ -554,7 +554,9 @@ export function createWorld(first, canvas, opts) {
           const px = x + (along ? v : u), pz = y + (along ? u : v);
           const r = 0.09 + h01(i, 120 + s) * 0.05;
           _c1.copy(pal.rock).multiplyScalar(0.95 + h01(i, 130 + s) * 0.3);
-          stones.add(place(px, heightAt(px, pz) + r * 0.25, pz,
+          /* breaking the creek's surface */
+          stones.add(place(px, Math.max(heightAt(px, pz), WATER_Y) + r * 0.25,
+                           pz,
                            r * 1.2, r * 0.45, r, h01(i, 140 + s) * 6.28),
                      _c1, null);
         }
@@ -1194,7 +1196,8 @@ export function createWorld(first, canvas, opts) {
       const b = beasts[i];
       const moving = crowdMove[i];
       const px = crowdF ? crowdF.x[i] : b.x, pz = crowdF ? crowdF.z[i] : b.z;
-      const gy = heightAt(px, pz);
+      /* on a ford's stones, not under the creek */
+      const gy = Math.max(heightAt(px, pz), WATER_Y);
       const ph = h01(b.id, 31) * 6.28;
       let y = gy, wing = 0;
       if (b.fly) {

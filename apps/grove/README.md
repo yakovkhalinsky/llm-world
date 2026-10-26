@@ -177,6 +177,7 @@ node tools/route_check.js  /tmp/s.json   # no walk crosses a trunk or water
 node tools/glow_check.js   /tmp/s.json   # which mushroom rings glow tonight
 node tools/forest_check.js /tmp/s.json   # the drawn forest and see-through trees
 node tools/crowd_check.js  /tmp/s.json   # no creature inside another, or a trunk
+node tools/water_check.js  /tmp/s.json   # each creek one stream: whole, seamless, never dry
 ```
 
 `python3 -m unittest discover -s tests` covers the server's routes and
@@ -194,7 +195,7 @@ headers, the light field, and the checks above, with mutants.
 | `grove/llm.py` | the Ollama client: a model per job, status, one call at a time |
 | `grove/app.py`, `__main__.py`, `render.py` | the shared runner; the CLI; the terminal view |
 | `grove/web.py`, `webguard.py` | the server: state JSON, light field, page files; who may press the buttons |
-| `grove/page3d/` | the 3D page: `viewer.js`, `world.js`, `forest.js`, `glow.js`, `hud.js`; shared code from [`../shared/page3d/`](../shared) |
+| `grove/page3d/` | the 3D page: `viewer.js`, `world.js`, `forest.js`, `water.js`, `glow.js`, `hud.js`; shared code from [`../shared/page3d/`](../shared) |
 | `tools/` | the gate, the checks above, `render_svg.py` (a static SVG of the world), `clean_servers.sh` |
 | `docs/` | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`ECOLOGY.md`](docs/ECOLOGY.md), [`TUNING.md`](docs/TUNING.md), [`BUGS.md`](docs/BUGS.md) |
 
