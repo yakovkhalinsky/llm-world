@@ -4,8 +4,10 @@
 
 :root {
   --ink: #e9e5dc;
-  --dim: #9aa0a6;
-  --glass: rgba(16, 20, 26, 0.72);
+  /* 0.82 glass and a lighter dim keep small text above 4.5:1 even over
+   * the snow-light sky (Iris's panels review, 4.2) */
+  --dim: #b4bac0;
+  --glass: rgba(16, 20, 26, 0.82);
   --edge: rgba(233, 229, 220, 0.14);
   --lamp: #ffca7a;
   --paper: #d9d4c8;
@@ -55,8 +57,18 @@ html, body {
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
 }
 
-.title {
+/* the top-left corner: the title, and on a phone the status box too */
+.tl {
+  position: absolute;
   top: 14px; left: 16px;
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 8px;
+  pointer-events: none;
+}
+.tl > * { pointer-events: auto; }
+.tl > .title { position: static; }
+
+.title {
   font-size: 15px;
   letter-spacing: 0.08em;
   text-transform: lowercase;
@@ -67,12 +79,22 @@ html, body {
 .title .mark { color: var(--lamp); }
 .engine-mark { font-size: 11px; color: var(--dim); letter-spacing: 0; }
 
-.idbox { top: 14px; right: 16px; }
+.idbox { position: fixed; top: 14px; right: 16px; width: 340px; }
+.idbox > div {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* a long date pushes the weather to a line of its own, never off the end */
+.idbox > .idrow { white-space: normal; overflow: visible; flex-wrap: wrap; }
+.idrow > span { white-space: nowrap; }
 .idrow {
-  display: flex; justify-content: space-between; gap: 12px;
+  display: flex; justify-content: space-between; gap: 2px 12px;
   font-variant-numeric: tabular-nums;
 }
 .poplines { margin-top: 6px; font-size: 12px; color: var(--dim); }
+/* the counts wrap between whole counts, never inside one */
+.idbox > #pops { white-space: normal; overflow: visible;
+                 display: flex; flex-wrap: wrap; column-gap: 10px; }
+.poplines .popline { white-space: nowrap; }
 .poplines b { color: var(--ink); font-weight: 600; }
 .watchline {
   margin-top: 7px; padding-top: 7px; font-size: 12.5px;
@@ -85,6 +107,8 @@ html, body {
 .watchline .dim { color: var(--dim); }
 .watchline.phase { border-top: 0; padding-top: 0; margin-top: 5px; }
 .voiceline { font-size: 11px; color: var(--dim); margin-top: 3px; }
+#pops, .poplines b, .status, .speedrow button, #when,
+.timeline li span:last-child { font-variant-numeric: tabular-nums; }
 
 /* the bottom-left corner holds the feed and the controls, stacked; the
    estate itself stays clear above them */
@@ -98,6 +122,8 @@ html, body {
   max-width: min(340px, calc(100vw - 32px));
   pointer-events: none;
 }
+/* the feed and the controls one width, so the panels line up */
+.bl > .ctl { align-self: stretch; }
 .bl > * { pointer-events: auto; }
 .bl .panel { position: static; }
 
@@ -109,20 +135,48 @@ html, body {
   min-width: 0;
 }
 
+/* The lists scroll on their own: a fling stops at the list's end rather
+ * than dragging the page or orbiting the scene under it (the canvas is
+ * touch-action:none), and the bar is thin and the estate's colour. */
+.chron, .card {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(233, 229, 220, 0.22) transparent;
+  scrollbar-gutter: stable;
+}
+.chron::-webkit-scrollbar, .card::-webkit-scrollbar { width: 6px; }
+.chron::-webkit-scrollbar-track, .card::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chron::-webkit-scrollbar-thumb, .card::-webkit-scrollbar-thumb {
+  background: rgba(233, 229, 220, 0.18); border-radius: 3px;
+}
+.chron:hover::-webkit-scrollbar-thumb, .card:hover::-webkit-scrollbar-thumb {
+  background: rgba(233, 229, 220, 0.32);
+}
+
 .chron {
   list-style: none; margin: 0; padding: 0;
-  overflow-y: auto;
+  min-height: 0;
   font-size: 12.5px;
 }
-.chron li {
+/* a day is a row: the day in its own column, the line beside it */
+.chron > li {
+  display: grid; grid-template-columns: 62px 1fr; column-gap: 8px;
   padding: 4px 0;
   border-bottom: 1px solid rgba(233, 229, 220, 0.06);
   color: var(--dim);
 }
+.chron > li > .shape:first-child { grid-column: 1 / -1; }
+.chron li .d { white-space: nowrap; font-size: 11px; padding-top: 1px; }
+.chron > li.sub { display: block; }
 .chron li:first-child { color: var(--ink); }
 .chron li.quiet { color: var(--dim); opacity: 0.75; }
 .chron li .shape { color: var(--dim); }
-.chron li .news { color: var(--ink); display: block; padding-left: 26px; }
+.chron li .news { color: var(--ink); grid-column: 2; }
 .chron li .d { color: var(--lamp); font-variant-numeric: tabular-nums; }
 
 .tabs {
@@ -130,14 +184,20 @@ html, body {
   margin-top: 8px; padding-top: 8px;
   border-top: 1px solid var(--edge);
 }
-.tabs button { flex: 1; }
+.tabs button { flex: 1; min-width: 0; }
 
 .row { display: flex; gap: 6px; flex-wrap: wrap; }
 .speedrow { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
-.speedrow .hint { font-size: 11px; color: var(--dim); }
+.speedrow .hint { font-size: 11px; color: var(--dim); white-space: nowrap; }
 .speedrow #speeds { display: flex; gap: 4px; }
-.speedrow #shows { display: flex; gap: 3px; flex-wrap: wrap; }
-.speedrow #shows button { padding-left: 5px; padding-right: 5px; }
+.speedrow #speeds { flex-wrap: wrap; }
+/* the day's phases: their own block under the word, three to a row, every
+   word whole; no button here is ever narrower than "afternoon" */
+.speedrow.phases { display: block; }
+.speedrow.phases .hint { display: block; margin-bottom: 4px; }
+.speedrow #shows { display: grid; grid-template-columns: repeat(3, minmax(max-content, 1fr));
+                   gap: 4px; }
+.speedrow #shows button { padding-left: 6px; padding-right: 6px; }
 
 button {
   font: inherit;
@@ -147,8 +207,12 @@ button {
   border: 1px solid var(--edge);
   border-radius: 7px;
   padding: 5px 9px;
+  min-height: 28px;
   cursor: pointer;
+  /* a button is one line, always; a long word ends in … */
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+button:disabled { opacity: 0.6; cursor: default; }
 button:hover { background: rgba(233, 229, 220, 0.13); }
 button.on { background: rgba(255, 202, 122, 0.18); border-color: var(--lamp); }
 
@@ -156,23 +220,35 @@ button.on { background: rgba(255, 202, 122, 0.18); border-color: var(--lamp); }
 
 .card {
   position: absolute;
+  z-index: 10;          /* over the panels; the tooltip (20) stays over it */
   bottom: 14px; right: 16px;
-  width: 320px;
-  max-height: 46vh;
-  overflow-y: auto;
+  width: 340px;
+  /* as tall as the screen allows below the status box, so a long card
+   * scrolls only when it must */
+  max-height: calc(100vh - 190px);
   background: var(--glass);
   border: 1px solid var(--edge);
   border-radius: 10px;
-  padding: 12px;
+  padding: 0 12px 12px;
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
   display: none;
 }
 .card.on { display: block; }
+/* a card with no rows leaves no empty band under its state line */
+.card .timeline:empty { display: none; }
+/* the card scrolls as one; its head stays */
 .cardhead {
-  display: flex; justify-content: space-between; align-items: baseline;
+  display: flex; justify-content: space-between; align-items: center;
   gap: 8px;
+  position: sticky; top: 0; z-index: 1;
+  padding: 12px 0 6px;
+  background: rgb(16, 20, 26);
+  margin: 0 -12px; padding-left: 12px; padding-right: 12px;
+}
+.cardhead h3 {
+  min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .cardhead h3 { margin: 0; font-size: 15px; font-weight: 600; }
 .cardhead .x { padding: 1px 7px; }
@@ -189,7 +265,23 @@ button.on { background: rgba(255, 202, 122, 0.18); border-color: var(--lamp); }
 .timeline li span:last-child {
   color: var(--dim);
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
+.timeline li > span:first-child { min-width: 0; }
+/* a heading inside a card or a census list */
+.timeline li.hd {
+  margin-top: 6px; border-bottom: 0; padding-bottom: 0;
+  font-size: 11px; color: var(--dim); letter-spacing: 0.04em;
+}
+/* a need, or a wear, or a shade: its name, a bar and a word, in columns
+ * that line up from row to row */
+.timeline li.need {
+  display: grid; grid-template-columns: 1fr 74px 7.5em;
+  align-items: center; column-gap: 10px;
+}
+.timeline li.need > span:last-child { white-space: nowrap; }
+/* the phase of the day the clock is at, in a resident's habits */
+.timeline li.now span { color: var(--lamp); }
 
 /* a bar for a need, drawn rather than described */
 .bar {
@@ -201,6 +293,8 @@ button.on { background: rgba(255, 202, 122, 0.18); border-color: var(--lamp); }
   vertical-align: middle;
 }
 .bar i { display: block; height: 100%; background: var(--lamp); }
+/* a need pressing hard (2.6 of 4 and over) */
+.bar.hot i { background: #e8866b; }
 
 /* -------------------------------------------------------------- the rest */
 
@@ -215,10 +309,16 @@ button.on { background: rgba(255, 202, 122, 0.18); border-color: var(--lamp); }
   border-radius: 999px;
   padding: 4px 12px;
   white-space: nowrap;
+  /* between the bottom-left panels and the card, never under them */
+  max-width: calc(100vw - 720px);
+  overflow: hidden; text-overflow: ellipsis;
 }
+@media (max-width: 1100px) { .hint.foot { display: none; } }
+.hint.foot.cut { visibility: hidden; }   /* viewer.js: it would not fit */
 
 #tip {
   position: fixed;
+  white-space: nowrap;
   z-index: 20;
   pointer-events: none;
   opacity: 0;
@@ -267,11 +367,22 @@ button.on { background: rgba(255, 202, 122, 0.18); border-color: var(--lamp); }
 body.nogl #view, body.nogl .hud { display: none; }
 
 @media (max-width: 760px) {
-  .idbox { top: auto; bottom: 76px; right: 10px; left: 10px;
-           max-width: none; }
-  .title { top: 10px; left: 10px; }
+  /* a phone: the title and the status box stacked top-left, the feed and
+   * the controls a sheet at the bottom, and an open card in the sheet's
+   * place (viewer.js sets body.carded) */
+  .tl { top: 10px; left: 10px; right: 10px; }
+  .tl > .idbox { position: static; width: 100%; max-width: none; }
   .bl { bottom: 10px; left: 10px; right: 10px; max-width: none; }
-  .feed { width: auto; max-height: 22vh; }
-  .card { bottom: 10px; right: 10px; width: min(320px, calc(100vw - 20px)); }
+  .feed { width: auto; max-height: 26vh; }
+  .card { left: 10px; right: 10px; bottom: 10px; width: auto;
+          max-height: 60vh; }
+  body.carded .bl { visibility: hidden; }
+  button { min-height: 40px; }
+  /* the sheet is one width whatever the tab: the feed and the controls
+   * both run edge to edge */
+  .bl > .feed, .bl > .ctl { width: auto; align-self: stretch; }
+  /* and as wide as the status box and the card: .panel's 340px cap is
+   * for the desktop corners */
+  .bl > .panel { max-width: none; }
   .hint.foot { display: none; }
 }

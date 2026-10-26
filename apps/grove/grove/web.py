@@ -37,6 +37,11 @@ from . import webguard
 from . import world as W
 from .app import Grove
 
+# the census's plant emoji: the cards' own (PLANT_GLYPH in page3d/hud.js),
+# so a fern is 🌿 in both places, not 🌳 in one
+_PLANT_EMO = {"pine": "🌲", "birch": "🌳", "oak": "🌳", "willow": "🌳",
+              "fern": "🌿", "berry": "🫐"}
+
 POLL_MS = 600           # creature polls; the scene rebuild is cheap
 
 # The glow under the trees: how far a mushroom's light reaches, in cells,
@@ -144,8 +149,8 @@ def snapshot(grove, runner, lock):
         for sp in sorted(rules.R["plants"]):
             ser = [d["plants"].get(sp, 0) for _t, d in hist]
             if ser:
-                series.append({"name": sp, "emo": "🌲" if sp == "pine"
-                               else "🌳", "values": ser})
+                series.append({"name": sp, "emo": _PLANT_EMO.get(sp, "🌳"),
+                               "values": ser})
         pending = w.get("pending_effect")
         soul = None
         if pending:

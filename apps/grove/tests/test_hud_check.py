@@ -24,14 +24,13 @@ CHECK = os.path.join(ROOT, "tools", "hud_check.js")
 # itself from numbers. Keyed by the source line *and* the wrapper's own
 # call, so a line that changes drops out of the list and its wrappers are
 # tested again, and a second wrapper on an exempt line is still tested
-# (`esc(c.text)` shares its line with the exempt `esc(ago(...))`).
+# (`Number(now)` and `Number(tick)` share a line and are listed apart).
 EQUIVALENT = {
     # `now - tick` coerces both; `d` is already a number
     ("var d = Number(now) - Number(tick);", "Number(now)"),
     ("var d = Number(now) - Number(tick);", "Number(tick)"),
-    ("return d <= 0 ? 'now' : Number(d) + 'wk ago';", "Number(d)"),
-    # ago() only ever returns 'now' or a number and 'wk ago'
-    ("esc(c.text) + '<span class=\"when\">' + esc(ago(c.tick, st.tick)) +",
+    # ago() only ever returns fixed words, a dash, or fmt()'s digits
+    ("'<span class=\"when\">' + esc(ago(c.tick, st.tick)) +",
      "esc(ago(c.tick, st.tick))"),
     # a comparison coerces; only an 's' or '' is written
     ("(Number(last.amendments) > 1 ? 's' : '')", "Number(last.amendments)"),

@@ -42,7 +42,7 @@ class StaticFilesTest(unittest.TestCase):
 
     def test_shared_files_come_from_the_shared_folder(self):
         shared = os.path.realpath(web.SHARED3D)
-        for rel in ("clock.js", "walk.js", "field.js",
+        for rel in ("clock.js", "walk.js", "field.js", "patch.js",
                     "vendor/three.module.min.js", "vendor/OrbitControls.js"):
             with self.subTest(rel=rel):
                 got = web._page3d(rel)
@@ -63,11 +63,36 @@ class StaticFilesTest(unittest.TestCase):
         page = web._page3d("index.html")[0].decode()
         at = page.index("/3d/viewer.js")
         for rel in ("walk.js", "clock.js", "field.js", "forest.js", "glow.js",
-                    "hud.js"):
+                    "patch.js", "hud.js"):
             with self.subTest(rel=rel):
                 self.assertIn('src="/3d/' + rel + '"', page)
                 self.assertLess(page.index("/3d/" + rel), at)
         self.assertIn('type="module"', page)
+        # hud.js reads the shared Patch as it loads
+        self.assertLess(page.index("/3d/patch.js"), page.index("/3d/hud.js"))
+
+    def test_the_census_plants_wear_the_cards_glyphs(self):
+        """Iris A5: the census's fern was 🌳 while its card said 🌿. The
+        server's map is the HUD's PLANT_GLYPH, key for key."""
+        import re
+        hud = web._page3d("hud.js")[0].decode()
+        body = hud[hud.index("var PLANT_GLYPH = {"):]
+        body = body[:body.index("};")]
+        js = dict(re.findall(r"(\w+): '([^']+)'", body))
+        self.assertEqual(js, web._PLANT_EMO)
+
+    def test_the_controls_are_the_feeds_width(self):
+        """Iris A12: the five-button row stretched the corner 14px past the
+        feed; the corner is a set width and the feed fills it."""
+        css = web._page3d("style.css")[0].decode()
+        self.assertIn("width: min(340px, calc(100vw - 32px));", css)
+        self.assertIn(".bl > .feed { width: auto; }", css)
+
+    def test_a_pick_keeps_its_kind_for_the_card(self):
+        """Acid Burn N5: the ledger of the gone keeps no kind, so the pick
+        carries it, and the card says "a fox, gone"."""
+        viewer = web._page3d("viewer.js")[0].decode()
+        self.assertIn("sp: hit.entity.sp", viewer)
 
     def test_no_traversal_leaves_either_folder(self):
         for rel in ("../web.py", "..%2Fweb.py", "%2e%2e/web.py",

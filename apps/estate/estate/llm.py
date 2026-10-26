@@ -796,7 +796,7 @@ def status_line(llm):
             base += " (" + ", ".join(silent) + " on templates)"
     if llm.tier == "cloud" and llm.is_cloud():
         base += f" · tokens today {llm.spend_today():,}" + \
-                (f"/{llm.budget:,}" if llm.budget else "")
+                (f" of {llm.budget:,}" if llm.budget else "")
     if llm.lock_problem:
         base += f" · {llm.lock_problem}"
     if llm.notes:

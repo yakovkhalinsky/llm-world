@@ -48,6 +48,31 @@ MUTANTS = [
      "    if (ctl) ctl.abort();\n    fail();\n",
      "",
      "FAIL timeout:"),
+    ("a pick leaves the old card's selection and held writes",
+     "    window.Patch.fresh([$('cardState'), $('cardRows')]);\n",
+     "",
+     "FAIL pick:"),
+    ("a pick starts the card afresh only after drawing it",
+     "  if (window.Patch && window.Patch.fresh) {\n"
+     "    window.Patch.fresh([$('cardState'), $('cardRows')]);\n  }\n"
+     "  if (!sel || sel.kind !== 'animal') S.follow = false;\n"
+     "  if (drawCard()) askBio(sel);\n",
+     "  if (!sel || sel.kind !== 'animal') S.follow = false;\n"
+     "  if (drawCard()) askBio(sel);\n"
+     "  window.Patch.fresh([$('cardState'), $('cardRows')]);\n",
+     "FAIL pick:"),
+    ("the follow button is offered on every card",
+     "$('followBtn').hidden = !(S.selected && S.selected.kind === 'animal');",
+     "$('followBtn').hidden = !S.selected;",
+     "FAIL follow:"),
+    ("the follow button does not say it is following",
+     "const word = S.follow ? '◉ following' : '◎ follow';",
+     "const word = '◎ follow';",
+     "FAIL follow:"),
+    ("an open card leaves the phone's sheet under it",
+     "document.body.classList.toggle('carded', !!open);",
+     "document.body.classList.toggle('carded', false);",
+     "FAIL follow:"),
 ]
 
 

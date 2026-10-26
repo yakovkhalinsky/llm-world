@@ -22,6 +22,23 @@ def fixture_glyph(kind):
     return rules.R["fixtures"][kind]["glyph"]
 
 
+def _words(x) -> str:
+    """An enum said aloud: `flat_share` is "flat share"."""
+    return str(x).replace("_", " ")
+
+
+def _a(word) -> str:
+    """"an elder", "a flat share": the article the word wants."""
+    word = _words(word)
+    return ("an " if word[:1].lower() in "aeiou" else "a ") + word
+
+
+# who a household of each kind is, as the subject of "moved in"
+_MOVER = {"single": "someone on their own", "flat_share": "a flat share",
+          "elder": "an elder and family", "family": "a family",
+          "couple": "a couple"}
+
+
 def say(ev) -> str:
     """An event as a sentence. This is the ONE home of that wording: the
     digest the watcher reads and the page's feed both take the sentence
@@ -32,9 +49,9 @@ def say(ev) -> str:
         seasons = rules.R["presentation"].get("seasons", ())
         s = seasons[ev["season"]] if ev.get("season") is not None \
             and ev["season"] < len(seasons) else "another season"
-        return f"the season turns to {s}"
+        return f"the season turned to {s}"
     if k == "broke":
-        return f"a {ev.get('what', 'thing')} broke"
+        return f"{_a(ev.get('what') or 'thing')} broke"
     if k == "tree_down":
         return "a tree came down"
     if k == "storm":
@@ -48,15 +65,19 @@ def say(ev) -> str:
     # printing its own name — which is how `moved_in` reached a chronicle
     # draft as the literal string "moved_in".
     if k == "moved_in":
-        return f"a {ev.get('where', 'household')} moves into a flat"
+        # "a single moved into a flat" read as a typo, and "a flat share
+        # moved into a flat" twice over: who, then "moved in"
+        where = ev.get('where') or 'household'
+        who = _MOVER.get(where) or _a(where)
+        return f"{who} moved in"
     if k == "born":
-        return f"{ev.get('who', 'a child')} is born on the estate"
+        return f"{ev.get('who', 'a child')} was born on the estate"
     if k == "died":
-        return f"{ev.get('who', 'someone')} dies"
+        return f"{ev.get('who', 'someone')} died"
     if k == "left":
         who = ev.get("who")
-        return (f"{who} leaves the estate" if who
-                else "a household leaves the estate")
+        return (f"{who} left the estate" if who
+                else "a household left the estate")
     if k == "grew":
         return f"{ev.get('who', 'someone')} — {ev.get('what', 'a year older')}"
     return str(k)
@@ -98,19 +119,19 @@ def day_line(book, people) -> str:
     if sky == "storm":
         return "a storm — nobody crossed the estate who did not have to"
     if sky == "rain":
-        return f"rain on and off; {total} errands, the {place} empty between showers"
+        return f"rain on and off; {total:,} errands, the {place} empty between showers"
     if sky == "heat":
-        return f"hot and still; {total} errands, and whatever shade there was, taken"
+        return f"hot and still; {total:,} errands, and whatever shade there was, taken"
     if sky == "frost":
-        return f"cold and bright; {total} errands, the {place} busy and nobody lingering"
+        return f"cold and bright; {total:,} errands, the {place} busy and nobody lingering"
     if book.get("sold_out") and sky in (None, "clear", "frost"):
-        return (f"{total} errands and the shop sold out before the evening — "
+        return (f"{total:,} errands and the shop sold out before the evening — "
                 f"the {place} busy instead")
     if total >= 400:
-        return f"a busy day — {total} errands, the {place} never empty"
+        return f"a busy day — {total:,} errands, the {place} never empty"
     if total <= 352:
-        return f"a slow day — {total} errands, and the {place} mostly to itself"
-    return f"{total} errands, most of them to the shop, and the {place} busy"
+        return f"a slow day — {total:,} errands, and the {place} mostly empty"
+    return f"{total:,} errands, most of them to the shop, and the {place} busy"
 
 
 def header(world) -> str:

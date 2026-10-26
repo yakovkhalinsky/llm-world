@@ -35,6 +35,7 @@ const path = require('path');
 const vm = require('vm');
 
 const HUD = path.join(__dirname, '..', 'estate', 'page3d', 'hud.js');
+const PATCH = path.join(__dirname, '..', '..', 'shared', 'page3d', 'patch.js');
 
 /* --------------------------------------------------------------- stubs */
 
@@ -59,6 +60,8 @@ const document = {
 const ctx = { document, console };
 ctx.globalThis = ctx;
 vm.createContext(ctx);
+/* the page loads the shared patch.js before hud.js, and so does this */
+vm.runInContext(fs.readFileSync(PATCH, 'utf8'), ctx, { filename: 'patch.js' });
 vm.runInContext(fs.readFileSync(HUD, 'utf8'), ctx, { filename: 'hud.js' });
 
 const EstateHUD = ctx.EstateHUD;
@@ -123,8 +126,19 @@ ok('the weather was written', els.weather.textContent.length > 0,
 ok('the population line was written', els.pops.innerHTML.indexOf('people') >= 0,
    els.pops.innerHTML);
 ok('the watcher line was written', els.watch.innerHTML.length > 0);
-ok('the voice line is the server\'s', els.voice.textContent === (state.llm || ''),
+ok('the voice line is the server\'s, short, with the whole of it as its title',
+   els.voice.textContent === EstateHUD.voiceLine(state.llm) &&
+   els.voice.title === (state.llm || '') &&
+   els.voice.textContent.length <= (state.llm || '').length,
    els.voice.textContent);
+ok('a voice line says the AI is off, and why, in a few words',
+   EstateHUD.voiceLine('tier local — pure deterministic sim') ===
+     'AI off · pure deterministic sim' &&
+   EstateHUD.voiceLine('tier local — no model (ollama not running)') ===
+     'AI off · no model' &&
+   EstateHUD.voiceLine('tier cloud · m3 · tokens today 1,234') ===
+     'AI · m3 · tokens today 1,234',
+   EstateHUD.voiceLine('tier local — no model (ollama not running)'));
 
 /* --- the day feed ---------------------------------------------------- */
 
@@ -142,8 +156,11 @@ EstateHUD.tab('census', state);
 const censusHtml = els.chron.innerHTML;
 const censusKeys = Object.keys(state.census || {});
 ok('the census tab lists every household kind in the frame',
-   censusKeys.every(k => censusHtml.indexOf(k) >= 0),
-   censusKeys.filter(k => censusHtml.indexOf(k) < 0).join(', '));
+   censusKeys.every(k => censusHtml.indexOf(k.replace(/_/g, ' ')) >= 0),
+   censusKeys.filter(k => censusHtml.indexOf(k.replace(/_/g, ' ')) < 0)
+     .join(', '));
+ok('a household kind is written as words, not as its key',
+   censusHtml.indexOf('_') < 0, censusHtml.slice(0, 200));
 ok('the census tab counts people by role',
    (state.people || []).every(p => censusHtml.indexOf(p.role) >= 0));
 ok('the census tab marks itself as the open tab',
@@ -181,6 +198,22 @@ if (!person) {
      els.cardRows.innerHTML.slice(0, 120));
 }
 
+/* an elder in an elder household lives with family (Iris A8) */
+if (person) {
+  const st = clone(state);
+  const gran = Object.assign(clone(person), { id: 9003, name: 'Hal',
+    role: 'elder', age: 71, kind: 'elder', family: [9004] });
+  const son = Object.assign(clone(person), { id: 9004, name: 'Rob',
+    role: 'adult', age: 44, kind: 'elder', family: [9003] });
+  st.people = [gran, son];
+  EstateHUD.card(st, { kind: 'resident', id: 9003 });
+  ok('an elder\'s card: lives with family, not "lives with an elder"',
+     els.cardState.innerHTML.indexOf('lives with family') >= 0, els.cardState.innerHTML);
+  EstateHUD.card(st, { kind: 'resident', id: 9004 });
+  ok('the elder\'s family: lives with an elder',
+     els.cardState.innerHTML.indexOf('lives with an elder') >= 0, els.cardState.innerHTML);
+}
+
 /* the family: a two-person household cards each other, and a young child
  * out with a guardian names them */
 if (person) {
@@ -203,18 +236,19 @@ if (person) {
      els.cardRows.innerHTML.slice(0, 200));
 }
 
-const fixture = first(state.fixtures);
+const fixture = (state.fixtures || []).find(f => f.kind === 'bench');
 if (!fixture) {
-  ok('the frame has a fixture to card', false);
+  ok('the frame has a bench to card', false);
 } else {
   ok('a fixture gets a card',
      EstateHUD.card(state, { kind: 'fixture', id: fixture.id}) &&
-     els.cardName.textContent.indexOf(fixture.kind) >= 0,
+     els.cardName.textContent.indexOf('bench') >= 0,
      els.cardName.textContent);
-  ok('the fixture card carries its use and its wear',
-     els.cardState.innerHTML.indexOf('used') >= 0 &&
+  ok('the bench card carries its use and its wear',
+     els.cardRows.innerHTML.indexOf('sits so far') >= 0 &&
+     els.cardRows.innerHTML.indexOf('seats taken') >= 0 &&
      els.cardRows.innerHTML.indexOf('condition') >= 0,
-     els.cardState.innerHTML);
+     els.cardRows.innerHTML);
 }
 
 const building = first(ground.buildings);
@@ -223,11 +257,12 @@ if (!building) {
 } else {
   ok('a block gets a card',
      EstateHUD.card(state, { kind: 'building', id: building.id}) &&
-     els.cardName.textContent === building.name,
+     els.cardName.textContent === '🏢 ' + building.name,
      els.cardName.textContent);
-  ok('the block card carries the flats',
-     els.cardRows.innerHTML.indexOf('flats') >= 0,
-     els.cardRows.innerHTML);
+  ok('the block card carries the flats and who lives there',
+     els.cardState.innerHTML.indexOf('flats lived in') >= 0 &&
+     els.cardRows.innerHTML.indexOf('people live here') >= 0,
+     els.cardState.innerHTML + ' ' + els.cardRows.innerHTML);
 }
 
 /* the first cell that is not under a block or a fixture */
@@ -246,17 +281,56 @@ if (!cell) {
      EstateHUD.card(state, { kind: 'cell', x: cell[0], y: cell[1]}) &&
      els.cardName.textContent.indexOf(site) >= 0,
      els.cardName.textContent);
-  ok('the cell card carries its shade and lamp',
-     els.cardRows.innerHTML.indexOf('shade') >= 0 &&
-     els.cardRows.innerHTML.indexOf('lamp') >= 0,
-     els.cardRows.innerHTML);
+  /* across the ground: shade and lamplight are rows where there is some,
+   * and never a row with an empty bar */
+  let shaded = 0, lit = 0, empty = '';
+  for (let y = 0; y < ground.height; y++) {
+    for (let x = 0; x < ground.width; x++) {
+      if (ground.codes[ground.rows[y][x]] === 'building') continue;
+      if (!EstateHUD.card(state, { kind: 'cell', x, y })) continue;
+      const r = els.cardRows.innerHTML;
+      if (r.indexOf('>shade<') >= 0) shaded++;
+      if (r.indexOf('>lamplight<') >= 0) lit++;
+      if (/width:0%|>none<|dark at night/.test(r)) empty = r;
+    }
+  }
+  /* a road or footpath with nothing near and no rows still says what it
+   * is: a heading with an empty body read as broken (Iris A2) */
+  let bare = '';
+  for (let y = 0; y < ground.height && !bare; y++) {
+    for (let x = 0; x < ground.width; x++) {
+      if (ground.codes[ground.rows[y][x]] === 'building') continue;
+      if (!EstateHUD.card(state, { kind: 'cell', x, y })) continue;
+      if (!els.cardRows.innerHTML && !els.cardState.innerHTML) {
+        bare = x + ',' + y + ' ' + els.cardName.textContent; break;
+      }
+    }
+  }
+  ok('no cell card is a heading with nothing under it', !bare, bare);
+  {
+    let road = null;
+    for (let y = 0; y < ground.height && !road; y++) {
+      for (let x = 0; x < ground.width; x++) {
+        if (ground.codes[ground.rows[y][x]] !== 'road') continue;
+        EstateHUD.card(state, { kind: 'cell', x, y });
+        if (!els.cardRows.innerHTML && els.cardState.innerHTML.indexOf('near the') < 0) {
+          road = els.cardState.innerHTML; break;
+        }
+      }
+    }
+    ok('a bare road says it is the road round the estate',
+       road === null || road === 'a road round the estate', road);
+  }
+  ok('cell cards carry shade and lamplight where there is some',
+     shaded > 0 && lit > 0, shaded + ' shaded, ' + lit + ' lit');
+  ok('no cell card shows a zero row with an empty bar', !empty, empty);
 }
 
 /* --- the school, the bus stop and the day's phases -------------------- */
 
 ok('numbers get thousands separators',
    EstateHUD.num(1234567) === '1,234,567' && EstateHUD.num(999) === '999' &&
-   EstateHUD.num(-1200) === '-1,200' && EstateHUD.num('x') === '0',
+   EstateHUD.num(-1200) === '-1,200' && EstateHUD.num('x') === '—',
    EstateHUD.num(1234567));
 {
   const st = clone(state);
@@ -275,8 +349,9 @@ if (school) {
   ok('the school card counts pupils, not flats',
      rows.indexOf('pupils on the roll') >= 0 && rows.indexOf('flats') < 0 &&
      rows.indexOf('lived in') < 0, rows);
-  ok('the school card says where its gate is',
-     els.cardState.innerHTML.indexOf('gate at') >= 0, els.cardState.innerHTML);
+  ok('the school card is named for the school',
+     els.cardName.textContent.indexOf(school.name) >= 0,
+     els.cardName.textContent);
 }
 const shop = (ground.buildings || []).find(b => b.kind === 'shop');
 if (shop) {
@@ -284,7 +359,7 @@ if (shop) {
   ok('the shop card has no flats', els.cardRows.innerHTML.indexOf('flats') < 0,
      els.cardRows.innerHTML);
 }
-for (const [kind, word, row] of [['school', 'school gate', 'pupils'],
+for (const [kind, word, row] of [['school', 'School', 'pupils'],
                                  ['bus_stop', 'bus stop', 'work']]) {
   const f = (state.fixtures || []).find(x => x.kind === kind);
   ok('the frame has a ' + word, !!f);
@@ -332,8 +407,11 @@ if (ph && ph.order) {
        (p.mode !== 'school' || !p.in) &&
        (p.mode !== 'away' || p.pmode !== 'away' || p.in)));
   EstateHUD.update(morning);
-  ok('the header says which phase is shown',
-     els.when.textContent.indexOf('morning') >= 0, els.when.textContent);
+  /* the phase line under it (viewer.js phaseLabel) says which phase is
+   * shown; the date saying it too read twice (Iris A4) */
+  ok('a scrubbed phase is not said again in the date line',
+     els.when.textContent.indexOf('morning') < 0 &&
+     els.when.textContent.indexOf(state.weekday) >= 0, els.when.textContent);
   const pupil = morning.people.find(p => p.mode === 'school');
   if (pupil) {
     EstateHUD.card(morning, { kind: 'resident', id: pupil.id });
@@ -381,6 +459,180 @@ if (ph && ph.order) {
   ok('the scrubber has live and one button per phase',
      count(bar, '<button') === 6 && count(bar, 'class="on"') === 1 &&
      bar.indexOf('data-i="' + mi + '" class="on"') >= 0, bar);
+  EstateHUD.update(state);
+}
+
+/* --- each kind of thing gets the card it needs (Iris's panels review) - */
+
+/* what no card may carry: a raw decimal, a count without its thousands
+ * comma, a pack key with an underscore, or a coordinate pair */
+function plain(what, cardOk) {
+  const html = els.cardState.innerHTML + ' ' + els.cardRows.innerHTML;
+  const text = html.replace(/<[^>]*>/g, ' ').replace(/&#?\w+;/g, ' ');
+  const bad = [/\d\.\d/, /\d{4,}/, /_/, /\bat \d+,\d+/,
+               /NaN|undefined|null/].filter(r => r.test(text));
+  ok(what + ' gets a card in words', cardOk && bad.length === 0,
+     bad.map(String).join(' ') + ' in ' + text.slice(0, 240));
+}
+for (const p of (state.people || []).slice(0, 25)) {
+  plain('resident ' + p.name, EstateHUD.card(state, { kind: 'resident',
+                                                       id: p.id }));
+}
+for (const f of state.fixtures || []) {
+  plain('the ' + f.kind + ' ' + f.id,
+        EstateHUD.card(state, { kind: 'fixture', id: f.id }));
+}
+for (const b of ground.buildings || []) {
+  plain(b.name, EstateHUD.card(state, { kind: 'building', id: b.id }));
+}
+for (const f of (state.fixtures || []).filter(f => f.kind === 'tree' ||
+                                                  f.kind === 'lamp')) {
+  EstateHUD.card(state, { kind: 'fixture', id: f.id });
+  const all = els.cardState.innerHTML + els.cardRows.innerHTML;
+  ok('a ' + f.kind + ' card counts no uses', all.indexOf('so far') < 0 &&
+     all.indexOf('used') < 0 && all.indexOf('uses') < 0, all);
+  if (f.kind === 'tree') {
+    ok('a tree card says what it shades', all.indexOf('shades ') >= 0, all);
+  }
+}
+{
+  const lamp = (state.fixtures || []).find(f => f.kind === 'lamp');
+  ok('the frame has a lamp', !!lamp);
+  if (lamp) {
+    const st = clone(state);
+    const l = st.fixtures.find(f => f.id === lamp.id);
+    l.c = 0.8;
+    const say = (phase) => {
+      EstateHUD.setClock(phase);
+      EstateHUD.card(st, { kind: 'fixture', id: l.id });
+      return els.cardState.innerHTML;
+    };
+    ok('a lamp is lit at night', /^lit\b/.test(say('night')), say('night'));
+    ok('a lamp is off in daylight', say('afternoon').indexOf('off in daylight') === 0,
+       say('afternoon'));
+    l.c = 0;
+    ok('a broken lamp is out, whatever the hour',
+       say('night').indexOf('⚠ out') === 0 && say('morning').indexOf('⚠ out') === 0,
+       say('night'));
+    ok('a lamp says what it lights', say('night').indexOf('lights ') >= 0,
+       say('night'));
+    EstateHUD.setClock(null);
+  }
+}
+{
+  const shopB = (ground.buildings || []).find(b => b.kind === 'shop');
+  const shopF = (state.fixtures || []).find(f => f.kind === 'shop');
+  if (shopB && shopF) {
+    EstateHUD.card(state, { kind: 'building', id: shopB.id });
+    const one = [els.cardName.textContent, els.cardState.innerHTML,
+                 els.cardRows.innerHTML].join('|');
+    EstateHUD.card(state, { kind: 'fixture', id: shopF.id });
+    const two = [els.cardName.textContent, els.cardState.innerHTML,
+                 els.cardRows.innerHTML].join('|');
+    ok('the shop building and the shop at its door are one card',
+       one === two && one.indexOf(shopB.name) >= 0, one + ' // ' + two);
+    ok('the shop card has its shelves, its visits and no flats',
+       one.indexOf('on the shelves') >= 0 && one.indexOf('visits so far') >= 0 &&
+       one.indexOf('flats') < 0 && one.indexOf('floors') < 0, one);
+  }
+}
+{
+  const schB = (ground.buildings || []).find(b => b.kind === 'school');
+  const schF = (state.fixtures || []).find(f => f.kind === 'school');
+  if (schB && schF) {
+    EstateHUD.card(state, { kind: 'building', id: schB.id });
+    const one = els.cardName.textContent + els.cardRows.innerHTML;
+    EstateHUD.card(state, { kind: 'fixture', id: schF.id });
+    const two = els.cardName.textContent + els.cardRows.innerHTML;
+    ok('the school and its gate are one card', one === two, two);
+  }
+}
+ok('a need reads as a word: fine, wants, needs it badly',
+   EstateHUD.needWord(0) === 'fine' && EstateHUD.needWord(1.29) === 'fine' &&
+   EstateHUD.needWord(1.3) === 'wants' && EstateHUD.needWord(2.59) === 'wants' &&
+   EstateHUD.needWord(2.6) === 'needs it badly' &&
+   EstateHUD.needWord(4) === 'needs it badly');
+if (person) {
+  const st = clone(state);
+  const p = st.people.find(x => x.id === person.id);
+  p.needs = { food: 3.1, rest: 0.4 };
+  EstateHUD.card(st, { kind: 'resident', id: p.id });
+  const rows = els.cardRows.innerHTML;
+  ok('a pressing need has a hot bar, a quiet one does not',
+     count(rows, 'class="bar hot"') === 1 && rows.indexOf('needs it badly') >= 0 &&
+     rows.indexOf('>fine<') >= 0, rows);
+  ok('a resident\'s needs come most pressing first',
+     rows.indexOf('food') < rows.indexOf('rest'), rows);
+  EstateHUD.card(st, { kind: 'resident', id: 987654, name: 'Sasha' });
+  ok('a resident who has gone says so',
+     els.card.classList.contains('on') &&
+     els.cardState.innerHTML.indexOf('Sasha has left the estate') >= 0,
+     els.cardState.innerHTML);
+  EstateHUD.card(st, { kind: 'resident', id: 987655 });
+  ok('a nameless resident who has gone is "they have left"',
+     els.cardState.innerHTML.indexOf('they have left the estate') >= 0,
+     els.cardState.innerHTML);
+  p.kind = 'flat_share';
+  p.family = [p.id];
+  EstateHUD.card(st, { kind: 'resident', id: p.id });
+  ok('a household kind is a phrase on the card',
+     els.cardState.innerHTML.indexOf('in a flat share') >= 0,
+     els.cardState.innerHTML);
+}
+{
+  const st = clone(state);
+  st.days = [{ day: 1747, line: 'a day', says: [] }];
+  st.chronicle = [{ day: 1747, text: 'a line' }];
+  EstateHUD.tab('chron', st);
+  ok('the feed writes the day as "day 1,747"',
+     els.chron.innerHTML.indexOf('day 1,747') >= 0, els.chron.innerHTML);
+  EstateHUD.tab('watch', st);
+  ok('the chronicle writes the day as "day 1,747"',
+     els.chron.innerHTML.indexOf('day 1,747') >= 0, els.chron.innerHTML);
+  EstateHUD.tab('chron', state);
+}
+/* the newest-first lists carry a key that does not move with their words
+ * (patch.js anchors the reader's row on it): a day's row by its day, as
+ * today's row gains its news; a watcher's line by its day and words */
+{
+  const keys = () => (els.chron.innerHTML.match(/data-key="([^"]*)"/g) || [])
+    .map((k) => k.slice(10, -1));
+  const st = clone(state);
+  st.days = [{ day: 9, line: 'a day', says: [] }, { day: 10, line: 'today', says: [] }];
+  st.chronicle = [{ day: 9, text: 'one' }, { day: 9, text: 'two' }];
+  EstateHUD.tab('chron', st);
+  const k1 = keys();
+  st.days[1] = { day: 10, line: 'today, busier', says: ['a fox'] };
+  st.days.push({ day: 11, line: 'tomorrow', says: [] });
+  EstateHUD.update(st);
+  const k2 = keys();
+  ok('a day keeps its row\'s key as its words grow, one key a day',
+     k1.length === 2 && JSON.stringify(k2.slice(1)) === JSON.stringify(k1) &&
+     new Set(k2).size === 3, [k1, k2]);
+  EstateHUD.tab('watch', st);
+  const w = keys();
+  ok('two watcher lines on one day have two keys',
+     w.length === 2 && w[0] !== w[1] && w.every((k) => /^\d+:[0-9a-z]+$/.test(k)), w);
+  EstateHUD.tab('chron', state);
+}
+
+/* the panels write a list only when it changed (patch.js) */
+{
+  const before = els.chron.innerHTML;
+  let writes = 0;
+  let html = before;
+  Object.defineProperty(els.chron, 'innerHTML', {
+    configurable: true,
+    get: () => html, set: v => { writes++; html = v; } });
+  for (let i = 0; i < 5; i++) EstateHUD.update(state);
+  ok('an unchanged frame writes nothing to the feed', writes === 0,
+     writes + ' writes');
+  const st = clone(state);
+  st.days = (st.days || []).concat([{ day: 9999, line: 'new', says: [] }]);
+  EstateHUD.update(st);
+  ok('a new day writes the feed once', writes === 1, writes + ' writes');
+  delete els.chron.innerHTML;
+  els.chron.innerHTML = html;
   EstateHUD.update(state);
 }
 
@@ -440,9 +692,9 @@ evil.people = (evil.people || []).slice(0, 1);
 if (evil.people[0]) evil.people[0].role = TAG;
 EstateHUD.tab('census', evil);
 escaped('the census escapes household kinds and their glyphs',
-        els.chron.innerHTML.split('by age')[0]);
+        els.chron.innerHTML.split('by role')[0]);
 escaped('the census escapes roles and their glyphs',
-        els.chron.innerHTML.split('by age')[1] || '');
+        els.chron.innerHTML.split('by role')[1] || '');
 
 /* the day feed: the day's line, and its news */
 evil.days = [{ day: 1, line: TAG, says: [] }];
@@ -451,6 +703,10 @@ escaped('the day feed escapes a day\'s line', els.chron.innerHTML);
 evil.days = [{ day: 1, line: '', says: [TAG, TAG] }];
 EstateHUD.tab('chron', evil);
 escaped('the day feed escapes a day\'s news', els.chron.innerHTML);
+evil.days = [{ day: 1, line: 'quiet', says: ['the Ossian household left the estate'] }];
+EstateHUD.tab('chron', evil);
+ok('the day feed\'s news has no bullet, as the grove\'s (Iris A3)',
+   els.chron.innerHTML.indexOf('<span class="news">the Ossian') >= 0, els.chron.innerHTML);
 
 /* the watcher tab: the chronicle */
 evil.chronicle = [{ day: 1, text: TAG }];
@@ -514,8 +770,10 @@ if (state.people && state.people[0]) {
 /* the block card: a building's kind comes with the ground */
 if (evilGround.buildings && evilGround.buildings[0]) {
   EstateHUD.card(state, { kind: 'building', id: evilGround.buildings[0].id });
-  escaped('the block card escapes the building\'s kind',
-          els.cardState.innerHTML);
+  /* the card no longer writes a block's kind (its name says it), so a
+   * hostile kind must simply not arrive as markup */
+  numeric('a building\'s kind never reaches the block card as markup',
+          els.cardState.innerHTML + els.cardRows.innerHTML);
 }
 
 /* --- a number is a number -------------------------------------------- */
@@ -563,7 +821,7 @@ if (nums.people && nums.people[0]) {
   nums.people = [p, m];
   EstateHUD.card(nums, { kind: 'resident', id: p.id });
   numeric('a family member\'s age is a number',
-          els.cardRows.innerHTML.split('— family —')[1] || '');
+          els.cardRows.innerHTML.split('household')[1] || '');
   nums.people = [p]; p.family = [];
   p.in = true; p.unit = TAG;
   EstateHUD.card(nums, { kind: 'resident', id: p.id });
