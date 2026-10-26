@@ -7,7 +7,11 @@ the same seed — not a similar one. This prints what the port is held to:
       one JSON line per (seed, day): the world's canonical hash. Day 0 is
       the planted estate (gen.generate; its `day` field already reads 1),
       and with --days the engine is ticked N days, no watcher, exactly as
-      the gate runs it.
+      the gate runs it. With --watch K the watcher also chooses (in code,
+      `watcher.choose`, as the web runner's default `--decide rules` does)
+      and queues a fate after every K-th day, so fates land and last. Each
+      line also carries `events`: the hash of the events since the last
+      line.
   python3 tools/parity.py vectors
       the reference values for the port's Python shims: random.Random
       draws, round(), //, %, sum() and repr(float).
@@ -33,7 +37,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from estate import gen, sim                              # noqa: E402
+from estate import gen, sim, watcher                     # noqa: E402
 
 
 def canon_value(v):
@@ -81,9 +85,15 @@ def cmd_worlds(args):
             every = args.every or args.days
             marks |= set(range(every, args.days + 1, every)) | {args.days}
 
+        evs = []
+
         def emit(n):
             print(json.dumps({"seed": seed, "days": n, "day": w["day"],
-                              "hash": world_hash(w)}), flush=True)
+                              "hash": world_hash(w),
+                              "events": hashlib.sha256(
+                                  canon(evs).encode()).hexdigest()[:16]}),
+                  flush=True)
+            evs.clear()
             if args.dump:
                 os.makedirs(args.dump, exist_ok=True)
                 with open(os.path.join(args.dump, f"{seed}-{n}.json"), "w") as f:
@@ -91,7 +101,9 @@ def cmd_worlds(args):
 
         emit(0)
         for n in range(1, (args.days or 0) + 1):
-            sim.tick(w)
+            evs.extend(sim.tick(w))
+            if args.watch and n % args.watch == 0:
+                watcher.queue(w, watcher.choose(w))
             if n in marks:
                 emit(n)
 
@@ -158,6 +170,7 @@ def main():
     pw.add_argument("--days", type=int, default=0)
     pw.add_argument("--every", type=int, default=0)
     pw.add_argument("--dump", default=None)
+    pw.add_argument("--watch", type=int, default=0)
     sub.add_parser("vectors")
     args = ap.parse_args()
     {"worlds": cmd_worlds, "vectors": cmd_vectors}[args.cmd](args)

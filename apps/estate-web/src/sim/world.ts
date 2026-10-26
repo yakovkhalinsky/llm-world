@@ -50,6 +50,11 @@ export interface Fixture {
 }
 export interface Fate { kind?: string; region?: string; [k: string]: unknown }
 
+export interface Daybook {
+  uses: Record<string, number>; out: number; noise: number; broke: number;
+  sold_out?: boolean; weather?: string;
+}
+
 export interface World {
   seed: number; day: number; width: number; height: number;
   cells: Cell[][];
@@ -61,7 +66,7 @@ export interface World {
   next_id: number;
   weather: string; weather_left: number; wet_days: number;
   waiting: { kind: string }[];
-  daybook: { uses: Record<string, number>; out: number; noise: number; broke: number };
+  daybook: Daybook;
   fates: Fate[];
   pending: Fate[];
   biome: string | null;
