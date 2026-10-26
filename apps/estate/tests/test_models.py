@@ -26,11 +26,14 @@ class FakeOllama:
     — just enough of Ollama, recording what it was sent."""
 
     def __init__(self, tags=(), cloud=(), ps=(), chat_404=(),
-                 reply=None, delay=0.0):
+                 reply=None, delay=0.0, chat_500=(), show_fail=0):
         self.tags = list(tags)
         self.cloud = set(cloud)
         self.ps = list(ps)
         self.chat_404 = set(chat_404)
+        self.chat_500 = set(chat_500)
+        self.show_fail = show_fail        # fail this many /api/show first
+        self.shows = 0
         self.reply = reply or {"why": "because", "intent": "so",
                                "verdict": "well", "answer": "yes"}
         self.delay = delay
@@ -66,7 +69,11 @@ class FakeOllama:
                 n = int(self.headers.get("Content-Length") or 0)
                 body = json.loads(self.rfile.read(n) or b"{}")
                 if self.path == "/api/show":
-                    if body.get("model") in fake.cloud:
+                    fake.shows += 1
+                    if fake.show_fail > 0:
+                        fake.show_fail -= 1
+                        self._send(500, {"error": "busy"})
+                    elif body.get("model") in fake.cloud:
                         self._send(200, {"details": {}})
                     else:
                         self._send(404, {"error": "not found"})
@@ -91,6 +98,9 @@ class FakeOllama:
                         fake.chats.append(body)
                         if body["model"] in fake.chat_404:
                             self._send(404, {"error": "model not found"})
+                            return
+                        if body["model"] in fake.chat_500:
+                            self._send(500, {"error": "runner crashed"})
                             return
                         time.sleep(fake.delay)
                         if body["model"] not in fake.ps:

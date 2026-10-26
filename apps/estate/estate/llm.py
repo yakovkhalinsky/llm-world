@@ -62,6 +62,10 @@ DEFAULT_LOCK = f"/tmp/llm-world-ollama-{os.getuid()}.lock"
 DEFAULT_LOCK_WAIT = 60.0
 LOCK_POLL = 0.05
 REPROBE_MISSING_SECONDS = 60
+# a cloud name /api/show could not confirm is asked again after this, then
+# twice as long each time it fails, up to the cap — never written off
+SHOW_BACKOFF = 30.0
+SHOW_BACKOFF_MAX = 900.0
 TAGS_TIMEOUT = 5
 
 # which kind of model each job wants. The watcher picks a fate from the
@@ -191,6 +195,7 @@ class LLM:
         self.missing = []                 # wanted models Ollama lacks
         self.gone = set()                 # models a call found missing
         self.shown = {}                   # :cloud name -> /api/show said so
+        self.show_retry = {}              # :cloud name -> (ask again at, gap)
         self.embed_ok = True
         self.budget = None                # cloud tokens per day (optional)
         self.tok = {"day": time.strftime("%Y-%m-%d"),
@@ -235,15 +240,24 @@ class LLM:
             return True
         if not is_cloud(name) or not self.enabled:
             return False
-        # a cloud model answers /api/show without having been pulled
-        if name not in self.shown:
-            try:
-                self._request("POST", "/api/show", {"model": name},
-                              timeout=TAGS_TIMEOUT)
-                self.shown[name] = True
-            except Exception:
-                self.shown[name] = False
-        return self.shown[name]
+        # a cloud model answers /api/show without having been pulled. Only
+        # a yes is kept; a failure is asked again on a backoff, so one bad
+        # moment does not lock the cloud out until a restart
+        if self.shown.get(name):
+            return True
+        at, gap = self.show_retry.get(name, (0.0, SHOW_BACKOFF / 2))
+        if time.time() < at:
+            return False
+        try:
+            self._request("POST", "/api/show", {"model": name},
+                          timeout=TAGS_TIMEOUT)
+        except Exception:
+            gap = min(SHOW_BACKOFF_MAX, gap * 2)
+            self.show_retry[name] = (time.time() + gap, gap)
+            return False
+        self.shown[name] = True
+        self.show_retry.pop(name, None)
+        return True
 
     def _resolve_all(self):
         missing = []
