@@ -86,6 +86,15 @@ class OperatorTest(unittest.TestCase):
             if eff["action"] != "destiny":
                 self.assertEqual(out["destiny"], eff["destiny"])
 
+    def test_the_words_are_capped(self):
+        eff = operator.choose(self.w)
+        out = operator.with_words(eff, {"intent": "w " * 200,
+                                        "destiny": "d " * 200})
+        self.assertEqual(len(out["intent"]), 140)
+        dest = dict(eff, action="destiny", destiny="old")
+        out = operator.with_words(dest, {"destiny": "d " * 200})
+        self.assertEqual(len(out["destiny"]), 90)
+
     def test_unusable_words_keep_the_template(self):
         eff = operator.choose(self.w)
         out = operator.with_words(eff, None)

@@ -121,6 +121,28 @@ class InviteTest(unittest.TestCase):
         self.assertEqual(intent["why"],
                          rules.R["fates"][intent["fate"]]["why"])
 
+    def test_a_long_why_is_cut_to_one_line(self):
+        why = watcher.clean_why({"why": "word " * 100})
+        self.assertEqual(len(why), 198)
+        self.assertTrue(why.endswith("…"))
+        ok = "x" * 200
+        self.assertEqual(watcher.clean_why({"why": ok}), ok)
+        intent = watcher.invite(Stub(reply={"why": "y" * 500}), self.w)
+        self.assertLessEqual(len(intent["why"]), 200)
+
+    def test_the_why_never_reaches_the_world(self):
+        """Only the fate and its region are queued: a model's words are
+        never in the engine's hand, so they cannot change a day."""
+        w = {"pending": []}
+        intent = watcher.invite(Stub(reply={"why": "MODEL WORDS"}), self.w)
+        if intent["fate"] == watcher.QUIET:
+            intent = {"fate": "storm", "region": "all", "why": "MODEL WORDS"}
+        watcher.queue(w, intent)
+        self.assertEqual(w["pending"], [{"kind": intent["fate"],
+                                         "region": intent.get("region",
+                                                              "all")}])
+        self.assertNotIn("MODEL WORDS", repr(w))
+
     def test_decide_llm_keeps_the_old_way(self):
         llm = Stub(reply={"fate": "storm", "region": "all", "why": "w"},
                    mode="llm")
