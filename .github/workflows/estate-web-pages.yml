@@ -1,0 +1,76 @@
+name: estate-web pages
+
+# Publishes apps/estate-web — Highfield in the browser, no server and no
+# model — to this repo's GitHub Pages site. A project site of
+# yakovkhalinsky, so it is served under the user site's custom domain:
+# https://yakov.khalinsky.com/llm-world/ (as margin and gr00ve are).
+# The build is relative throughout (vite base "./"), so nothing here
+# names the sub-path.
+#
+# Needs, once: Settings → Pages → Source "GitHub Actions"
+#   gh api -X POST repos/yakovkhalinsky/llm-world/pages -f build_type=workflow
+# Until then the deploy job fails and nothing is published.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/estate-web/**"
+      - "apps/estate/**"
+      - "apps/shared/page3d/**"
+      - ".github/workflows/estate-web-pages.yml"
+  workflow_dispatch:
+
+# nothing by default; each job asks for what it uses
+permissions: {}
+
+# one deploy at a time, and a newer push waits for the one in flight
+# rather than cancelling it halfway through a publish
+concurrency:
+  group: estate-web-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: apps/estate-web
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/estate-web/package-lock.json
+      # npm test holds the port to apps/estate's Python, seed for seed;
+      # a build that has drifted from it is not published
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: apps/estate-web/dist
+
+  deploy:
+    needs: build
+    # only main publishes, even by hand from another branch
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

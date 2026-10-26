@@ -111,17 +111,15 @@ the root of a domain or under a sub-path such as
 npm ci && npm run build      # dist/ is the whole site
 ```
 
-Then publish `dist/` in either of these ways:
+`.github/workflows/estate-web-pages.yml` publishes it on every push to
+`main` that touches this app, `apps/estate` or `apps/shared/page3d`: it
+runs `npm test` (the parity bar) and the build, then hands `dist/` to
+`actions/deploy-pages`. As a project site of the `yakovkhalinsky` user
+site, it is served at <https://yakov.khalinsky.com/llm-world/>. It needs
+Settings → Pages → Source set to "GitHub Actions" once; until then the
+deploy job fails and nothing is published.
 
-- **From Actions.** Set Settings → Pages → Source to "GitHub Actions" and
-  add a workflow that builds `apps/estate-web` and runs
-  `actions/upload-pages-artifact` (path `apps/estate-web/dist`), then
-  `actions/deploy-pages`.
-- **From a branch.** Push the contents of `dist/` to a `gh-pages` branch
-  and choose that branch as the Pages source.
-
-This repo doesn't deploy it for you; that step is left to whoever owns the
-Pages site. To check a build the way Pages serves it, serve its parent
+To check a build the way Pages serves it, serve its parent
 under the sub-path:
 
 ```sh
