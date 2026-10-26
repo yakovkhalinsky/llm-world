@@ -94,6 +94,15 @@ export function phaseNames(): string[] {
   return R.world.phases;
 }
 
+/** Integer-keyed containers (buildings, units, fixtures, residents,
+ * households) in ascending id order. That is what Python's dicts give,
+ * since ids are handed out in order, and it is how JS already orders a
+ * plain object's integer keys (array-index keys come first, ascending),
+ * so no sort is needed. */
+export function ids(o: Record<string, unknown>): string[] {
+  return Object.keys(o);
+}
+
 /** Deterministic per-day rng, the same draws as Python's for the same
  * (seed, day, salt). */
 export function rngFor(seed: number, day: number, salt = ""): PyRandom {
@@ -134,8 +143,11 @@ export function walkCost(w: World, x: number, y: number): number | null {
 export function stairMult(w: World, b: Building): number {
   return fateMult(w, "stair_mult", b.door[0], b.door[1]);
 }
+/** walk_cost(...) is not None — without working out the cost, since a
+ * fate only scales it and never makes a cell impassable. */
 export function passable(w: World, x: number, y: number): boolean {
-  return walkCost(w, x, y) !== null;
+  const c = cellAt(w, x, y);
+  return c !== null && R.sites[c.site]!.walk !== null;
 }
 
 // -------------------------------------------------------------- containers
