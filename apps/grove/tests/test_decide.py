@@ -172,17 +172,64 @@ class AppTest(unittest.TestCase):
         stub.ready = lambda: True
         g.llm, g.worker = stub, QueueStub(True)
         eff = operator.choose(g.world)
-        before = g.world.get("pending_effect")
         g._invite_operator()
-        self.assertEqual(g.world.get("pending_effect"), before)
+        # the move is queued at invite time, template words and all
+        landed = g.world["pending_effect"]
+        self.assertEqual(landed, operator.with_words(eff, None))
         job = g.worker.jobs[0]
         self.assertEqual(job["schema"], operator.WORDS_SCHEMA)
         g._apply_one({"kind": "op", "ok": True,
                       "data": {"intent": "the soul speaks"},
                       "extra": job["extra"]})
         got = g.world["pending_effect"]
+        self.assertIs(got, landed)
         self.assertEqual(got["action"], eff["action"])
         self.assertEqual(got["intent"], "the soul speaks")
+        self.assertIn("the soul speaks", g.soul_line)
+
+    def test_a_slow_model_never_delays_the_move(self):
+        """The op lands at the next tick whatever the model is doing; words
+        that come back after it landed rewrite its chronicle line only."""
+        g = self.g
+        stub = Stub()
+        stub.ready = lambda: True
+        g.llm, g.worker = stub, QueueStub(True)
+        g._invite_operator()
+        template = g.world["pending_effect"]["intent"]
+        g.step()                                  # lands, no words yet
+        self.assertIsNone(g.world.get("pending_effect"))
+        ops = [r for r in g.db.chronicle(50) if r[4] == template]
+        self.assertTrue(ops, "the op's template line was not recorded")
+        g._apply_one({"kind": "op", "ok": True,
+                      "data": {"intent": "late, but the soul's own"},
+                      "extra": g.worker.jobs[0]["extra"]})
+        texts = [r[4] for r in g.db.chronicle(50)]
+        self.assertIn("late, but the soul's own", texts)
+        self.assertNotIn(template, texts)
+
+    def test_words_never_change_the_world(self):
+        """Two groves, one whose model answers and one whose never does,
+        tick to the same world."""
+        tmp, _d, g2, _l, _r = helpers.make_grove(42)
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(g2.db.con.close)
+        for g, answers in ((self.g, True), (g2, False)):
+            stub = Stub()
+            stub.ready = lambda: True
+            g.llm, g.worker = stub, QueueStub(True)
+            for _ in range(3):
+                g._invite_operator()
+                if answers:
+                    g._apply_one({"kind": "op", "ok": True,
+                                  "data": {"intent": "words", "destiny":
+                                           "a fate in words"},
+                                  "extra": g.worker.jobs[-1]["extra"]})
+                for _ in range(4):
+                    g.step()
+        strip = ("pending_effect", "destinies", "op_history")
+        a = {k: v for k, v in self.g.world.items() if k not in strip}
+        b = {k: v for k, v in g2.world.items() if k not in strip}
+        self.assertEqual(a, b)
 
     def test_a_full_queue_still_lands_the_move(self):
         g = self.g

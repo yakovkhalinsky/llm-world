@@ -84,12 +84,14 @@ class Grove:
         self.worker = None          # only in `run`/`web` mode
         self.soul_line = None
         self.soul_tick = -1
+        self.op_words = None        # decide=rules: the landed op awaiting words
         self.pending_chron = {}     # eid -> chronicler batch item
         self.eid = 0
         # live counters, exposed on the dashboard for diagnosis
         self.jobs = {"op": 0, "chron": 0, "voice": 0, "review": 0,
                      "amend": 0, "op_applied": 0, "chron_ok": 0,
-                     "chron_rejected": 0, "last_reject": None,
+                     "chron_rejected": 0, "op_words": 0,
+                     "last_reject": None,
                      "last_review": None}
 
     # -- lifecycle ----------------------------------------------------------
@@ -124,8 +126,18 @@ class Grove:
         # the web view can glide them between weekly states
         for a in w["animals"].values():
             a["px"], a["py"] = a["x"], a["y"]
+        landing = w.get("pending_effect")
         evs = sim.tick(w)
         notable = evm.notable(evs)
+        held = self.op_words
+        if held is not None and landing is not None \
+                and landing is held["effect"]:
+            # the op landed before its words came back: remember its
+            # chronicle line so late words can still be written into it
+            for e in evs:
+                if e.get("kind") == "op":
+                    held["key"] = evm.event_key(e)
+                    break
         self.db.add_events(evs)
         self.db.save_world(w)
         self.db.add_stats(w["tick"], W.counts(w), W.plant_counts(w))
@@ -275,17 +287,22 @@ class Grove:
         self.world["next_op"] = self.world["tick"] + 8
         self.jobs["op"] += 1
         if self.llm.decide == "rules":
-            # the move is chosen now, in code; the model only writes its
-            # words. No model, or a full queue, lands it with the template
+            # the move is chosen now, in code, and lands now — at the next
+            # tick, whatever the model is doing — with the template words.
+            # The model only writes better words, which reach the effect
+            # if it is still pending and the chronicle line if not.
             effect = operator.choose(self.world)
-            res = {"kind": "op", "ok": False, "data": None,
-                   "extra": {"effect": effect}}
-            if not self.llm.ready() or not self.worker.submit({
+            landed = operator.with_words(effect, None)
+            self._land_op(landed)
+            held = {"effect": landed, "key": None}
+            self.op_words = held
+            if self.llm.ready():
+                self.worker.submit({
                     "kind": "op", "system": operator.system(),
                     "user": operator.words_prompt(self.world, effect, recent),
                     "schema": operator.WORDS_SCHEMA, "max_tokens": 100,
-                    "temperature": 0.8, "extra": {"effect": effect}}):
-                self._apply_one(res)
+                    "temperature": 0.8,
+                    "extra": {"effect": effect, "words_for": held}})
             return
         self.worker.submit({
             "kind": "op", "system": operator.system(),
@@ -350,14 +367,15 @@ class Grove:
     def _apply_one(self, res):
         kind = res["kind"]
         if kind == "op":
-            chosen = (res.get("extra") or {}).get("effect")
+            extra = res.get("extra") or {}
+            if extra.get("words_for") is not None:
+                self._op_words_arrive(extra["words_for"], extra["effect"],
+                                      res["data"] if res["ok"] else None)
+                return
+            chosen = extra.get("effect")
             effect = operator.with_words(chosen, res["data"]) if chosen \
                 else operator.validate(res["data"])
-            self.world["pending_effect"] = effect
-            self.soul_line = (f"{effect['action']} {effect['region']}"
-                              f" — {effect['intent']}")
-            self.soul_tick = self.world["tick"]
-            self.jobs["op_applied"] += 1
+            self._land_op(effect)
         elif kind == "chron":
             text = None
             if res["ok"]:
@@ -385,6 +403,39 @@ class Grove:
             self._apply_voice(res)
         elif kind == "review":
             self._apply_review(res)
+
+    def _land_op(self, effect):
+        self.world["pending_effect"] = effect
+        self._soul_says(effect)
+        self.soul_tick = self.world["tick"]
+        self.jobs["op_applied"] += 1
+
+    def _soul_says(self, effect):
+        self.soul_line = (f"{effect['action']} {effect['region']}"
+                          f" — {effect['intent']}")
+
+    def _op_words_arrive(self, held, effect, data):
+        """decide=rules: the model's words for an op that has already been
+        chosen and queued (maybe already landed). Words never move it."""
+        landed = held["effect"]
+        words = operator.with_words(effect, data)
+        new = {k: words[k] for k in ("intent", "destiny")
+               if words.get(k) and words[k] != landed.get(k)}
+        if not new:
+            return
+        if self.world.get("pending_effect") is not landed:
+            # landed already: the destiny it made and its chronicle line
+            if "destiny" in new:
+                for d in self.world.get("destinies", []):
+                    if d.get("id") == landed.get("target") and \
+                            d.get("text") == landed.get("destiny"):
+                        d["text"] = new["destiny"]
+            if "intent" in new and held.get("key"):
+                self.db.update_text(held["key"], new["intent"])
+        landed.update(new)           # still pending: the tick reads these
+        if self.op_words is held:
+            self._soul_says(landed)
+        self.jobs["op_words"] += 1
 
     def _apply_review(self, res):
         """The steward's word: validated against the bounds' hard law and
