@@ -269,7 +269,8 @@ class SelectionTest(unittest.TestCase):
         self.assertEqual(llm.job_models[CHOICE_JOB], GEMMA)
         self.fake.tags.append(QWEN)
         llm.next_probe = 0
-        llm.ready()
+        llm.ready()                    # starts the probe, does not wait
+        llm.wait_for_probe()
         self.assertEqual(llm.job_models[CHOICE_JOB], QWEN)
         self.assertNotIn(QWEN, llm.missing)
 

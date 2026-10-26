@@ -204,6 +204,7 @@ class LLM:
                     "in": 0, "out": 0, "calls": 0}
         self.tags = {"models": []}
         self.next_probe = 0.0
+        self._probe_mu = threading.Lock() # one probe at a time
         self.probe()
 
     # -- what is installed ----------------------------------------------------
@@ -292,19 +293,45 @@ class LLM:
             missing.append(self.embed_model)
         self.missing = missing
 
+    def _probe_due(self):
+        return time.time() >= self.next_probe and (
+            not self.enabled or bool(self.missing) or
+            any(m is None for m in self.job_models.values()))
+
     def _maybe_probe(self):
         """Probe again on the cadence while anything is unreachable or
-        missing — a model pulled mid-run is used without a restart."""
-        if time.time() < self.next_probe:
+        missing — a model pulled mid-run is used without a restart. On the
+        calling thread: only the call paths, which wait on Ollama anyway."""
+        if self._probe_due() and self._probe_mu.acquire(blocking=False):
+            try:
+                self.probe()
+            finally:
+                self._probe_mu.release()
+
+    def _probe_in_background(self):
+        if not self._probe_due() or not self._probe_mu.acquire(
+                blocking=False):
             return
-        if not self.enabled or self.missing or \
-                any(m is None for m in self.job_models.values()):
-            self.probe()
+        self.next_probe = time.time() + REPROBE_MISSING_SECONDS
+
+        def run():
+            try:
+                self.probe()
+            finally:
+                self._probe_mu.release()
+        threading.Thread(target=run, daemon=True, name="llm-probe").start()
+
+    def wait_for_probe(self, timeout=10.0):
+        """Block until no probe is running (tests, and a clean shutdown)."""
+        if self._probe_mu.acquire(timeout=timeout):
+            self._probe_mu.release()
 
     def ready(self):
-        """Ollama answered and a chat job has a model — re-probing first
-        when it is due."""
-        self._maybe_probe()
+        """Ollama answered and a chat job has a model. Never waits on
+        Ollama: it is asked from the sim thread and under the world lock,
+        so a due re-probe runs in the background and the answer is the
+        last one known."""
+        self._probe_in_background()
         return self.enabled and any(self.job_models.values())
 
     # -- the ladder ------------------------------------------------------------

@@ -4,6 +4,8 @@ name /api/show could not confirm once, and models that keep failing.
     python3 -m unittest tests.test_model_client
 """
 
+import socket
+import time
 import unittest
 
 from estate import llm as llmm
@@ -28,11 +30,14 @@ class ShowBackoffTest(unittest.TestCase):
         shows = self.fake.shows
         llm.next_probe = 0
         llm.ready()
+        llm.wait_for_probe()
         self.assertEqual(self.fake.shows, shows)
         self.assertEqual(llm.job_models[LEAD], QWEN)
         # once it is up, the cloud comes back without a restart
         llm.show_retry[CLOUD] = (0.0, llm.show_retry[CLOUD][1])
         llm.next_probe = 0
+        llm.ready()
+        llm.wait_for_probe()
         self.assertTrue(llm.ready())
         self.assertEqual(llm.job_models[LEAD], CLOUD)
         self.assertNotIn(CLOUD, llm.missing)
@@ -107,6 +112,41 @@ class MakeRoomTest(unittest.TestCase):
                        lock_path="")
         self.assertIsNotNone(llm.chat_json("s", "u", {}, job=LEAD))
         self.assertEqual([u["model"] for u in fake.unloads], [GEMMA])
+
+
+class ReadyTest(unittest.TestCase):
+    """ready() is asked on the sim thread and under grove's world lock: it
+    must never wait on a slow Ollama."""
+
+    def test_ready_does_not_wait_on_a_hung_ollama(self):
+        hung = socket.socket()             # accepts, never answers
+        hung.bind(("127.0.0.1", 0))
+        hung.listen(8)
+        self.addCleanup(hung.close)
+        host = "http://127.0.0.1:%d" % hung.getsockname()[1]
+        old = llmm.TAGS_TIMEOUT
+        llmm.TAGS_TIMEOUT = 1
+        self.addCleanup(setattr, llmm, "TAGS_TIMEOUT", old)
+        llm = llmm.LLM(host=host, timeout=10, tier="local", lock_path="")
+        self.assertFalse(llm.enabled)
+        llm.next_probe = 0
+        t0 = time.time()
+        self.assertFalse(llm.ready())
+        self.assertLess(time.time() - t0, 0.2)
+        self.assertFalse(llm.ready())       # a second ask, probe running
+        self.assertLess(time.time() - t0, 0.2)
+        llm.wait_for_probe()
+
+    def test_a_background_probe_finds_a_new_model(self):
+        fake = FakeOllama(tags=(GEMMA, "nomic-embed-text:latest"))
+        self.addCleanup(fake.close)
+        llm = llmm.LLM(host=fake.host, timeout=10, tier="local",
+                       lock_path="")
+        fake.tags.append(QWEN)
+        llm.next_probe = 0
+        llm.ready()
+        llm.wait_for_probe()
+        self.assertEqual(llm.job_models[LEAD], QWEN)
 
 
 if __name__ == "__main__":
