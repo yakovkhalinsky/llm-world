@@ -4,8 +4,8 @@
  * and POST /api/control, field for field, so the reused page3d front end
  * (viewer.js, hud.js, world.js) reads them unchanged.
  *
- * The fields a model filled in Python say there is none: `llm` is a status
- * line hud.js shows as "AI off · pure deterministic sim", and `models` is
+ * The fields a model filled in Python say what fills them here: `llm` is a
+ * status line hud.js shows as "AI off · seeded templates", and `models` is
  * null, as it is under `--offline`.
  */
 import { pyRound } from "../py/num.ts";
@@ -19,7 +19,7 @@ import { ROLE_GLYPH, WEATHER_GLYPH, dayLine, full, say } from "./render.ts";
 import type { RunState } from "./runner.ts";
 
 /** The status line where Python names its models (llm.status_line). */
-export const LLM_STATUS = "tier browser — pure deterministic sim";
+export const LLM_STATUS = "tier browser — seeded templates, no model";
 
 const glyphs = <T extends { glyph?: string }>(o: Record<string, T>) =>
   Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v.glyph ?? null]));
@@ -133,7 +133,7 @@ export function snapshot(s: RunState) {
     events: s.events.slice(-60).map((e) => ({ ...e, say: say(e) })),
     days: dayFeed(w, s.events, s.daybooks),
     watcher: { ...s.last_watch },
-    chronicle: [] as { day: number; text: string }[],
+    chronicle: s.chronicle.slice(-8),
     llm: LLM_STATUS,
     models: null,
   };
