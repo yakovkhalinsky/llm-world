@@ -53,6 +53,33 @@ class ShowBackoffTest(unittest.TestCase):
                                     llmm.SHOW_BACKOFF * 4])
         self.assertEqual(gaps[-1], llmm.SHOW_BACKOFF_MAX)
 
+    def test_a_yes_from_show_is_kept(self):
+        llm = self.make()
+        self.assertEqual(llm.job_models[LEAD], CLOUD)
+        self.assertTrue(llm.shown.get(CLOUD))
+        shows = self.fake.shows
+        self.assertGreater(shows, 0)
+        for _ in range(3):
+            llm.probe()
+        self.assertEqual(self.fake.shows, shows)       # not asked again
+        self.assertNotIn(CLOUD, llm.show_retry)
+
+    def test_a_failed_show_is_asked_again_after_its_gap(self):
+        llm = self.make(show_fail=99)
+        at, gap = llm.show_retry[CLOUD]
+        self.assertEqual(gap, llmm.SHOW_BACKOFF)
+        # the next ask is due one gap from now: not never, not at once
+        self.assertAlmostEqual(at - time.time(), gap, delta=5)
+        shows = self.fake.shows
+        llm.probe()                                    # inside the gap
+        self.assertEqual(self.fake.shows, shows)
+        llm.show_retry[CLOUD] = (time.time() - 0.01, gap)   # gap is up
+        llm.probe()
+        self.assertGreater(self.fake.shows, shows)
+        at2, gap2 = llm.show_retry[CLOUD]
+        self.assertEqual(gap2, 2 * gap)
+        self.assertAlmostEqual(at2 - time.time(), gap2, delta=5)
+
 
 class FailingTest(unittest.TestCase):
 
