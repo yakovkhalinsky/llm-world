@@ -98,7 +98,9 @@ export function phaseNames(): string[] {
  * households) in ascending id order. That is what Python's dicts give,
  * since ids are handed out in order, and it is how JS already orders a
  * plain object's integer keys (array-index keys come first, ascending),
- * so no sort is needed. */
+ * so no sort is needed — provided every key is a canonical array index
+ * ("7", never "07" or "-1"), which tests/guards.test.ts holds the
+ * planted and the run estates to. */
 export function ids(o: Record<string, unknown>): string[] {
   return Object.keys(o);
 }

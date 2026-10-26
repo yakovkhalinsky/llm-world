@@ -180,3 +180,6 @@ characters.
 The rules come from `src/sim/rules.json`, which `npm run rules` exports from
 the Python engine's `rules.R`. A test fails if the JSON drifts from what
 the engine reads.
+`npm run rules` uses POSIX shell syntax (`${PYTHON:-python3}`, `mv`), so on
+Windows run it from Git Bash or WSL rather than cmd; everything else is
+plain Node.
