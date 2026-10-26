@@ -196,6 +196,7 @@ class LLM:
         self.gone = set()                 # models a call found missing
         self.shown = {}                   # :cloud name -> /api/show said so
         self.show_retry = {}              # :cloud name -> (ask again at, gap)
+        self.job_failing = {}             # job -> why it ran off its chain
         self.embed_ok = True
         self.budget = None                # cloud tokens per day (optional)
         self.tok = {"day": time.strftime("%Y-%m-%d"),
@@ -271,6 +272,7 @@ class LLM:
             # a probe puts every job back on its best installed model
             self.job_models[job] = pick
             self.chosen[job] = pick
+            self.job_failing.pop(job, None)
             if self.enabled:
                 wanted = chain[0] if self.explicit else \
                     (self.choice_model if JOB_ROLE[job] == "choice"
@@ -335,6 +337,7 @@ class LLM:
             return False
         self.job_models[job] = chosen
         self.job_fails[job] = 0
+        self.job_failing.pop(job, None)
         self.notes.append(f"{job} tries {chosen} again")
         self.notes = self.notes[-4:]
         self.reprobe_at[job] = time.time() + self._reprobe_seconds()
@@ -350,8 +353,7 @@ class LLM:
         for job, m in list(self.job_models.items()):
             if m == model:
                 self._swap_job_model(job)
-        self.notes.append(f"{model} is not installed")
-        self.notes = self.notes[-4:]
+        # the status line names it under "not installed" already
 
     # -- ollama i/o --------------------------------------------------------------
     def _request(self, method, path, payload, timeout=30):
@@ -505,10 +507,15 @@ class LLM:
         self._reconsider(job)
         model = self.job_models.get(job)
         if not model:
-            self.reason = (f"{job}: no model installed "
-                           f"(wanted {self.job_chains.get(job, ['?'])[0]})")
-            self.last_fail = {"job": job, "why": "model not installed",
-                              "model": None, "raw": ""}
+            if job in self.job_failing:
+                self.reason = f"{job}: {self.job_failing[job]}"
+                why = "every model failing"
+            else:
+                self.reason = (f"{job}: no model installed (wanted "
+                               f"{self.job_chains.get(job, ['?'])[0]})")
+                why = "model not installed"
+            self.last_fail = {"job": job, "why": why, "model": None,
+                              "raw": ""}
             return None
         for _attempt in range(retries + 1):
             model = self.job_models.get(job)
@@ -535,11 +542,15 @@ class LLM:
                 out = _json_from(content)
                 if out is not None:
                     self.job_fails[job] = 0
+                    self.job_failing.pop(job, None)
                     self.reason = ""
                     self.last_fail = None
                     return out
-            why = "the model answered nothing" if not content \
-                else "unparseable JSON"
+            if isinstance(status, int) and status != 200:
+                why = f"HTTP {status}"
+            else:
+                why = "the model answered nothing" if not content \
+                    else "unparseable JSON"
             self.reason = self.reason or why
             self.last_fail = {"job": job, "why": why, "model": model,
                               "raw": (content or "")[:300]}
@@ -547,6 +558,12 @@ class LLM:
             if self.job_fails[job] >= 2:
                 self._swap_job_model(job)
                 self.job_fails[job] = 0
+                if self.job_models.get(job) is None:
+                    # installed, and failing: not the same as missing
+                    self.job_failing[job] = (f"every model failing (last "
+                                             f"{model}: {why})")
+                    self.reason = f"{job}: {self.job_failing[job]}"
+                    self.next_probe = time.time() + REPROBE_MISSING_SECONDS
         return None
 
     def _payload(self, model, system, user, schema, max_tokens,
@@ -661,7 +678,7 @@ class LLM:
             return "unreachable"
         m = self.job_models.get(job)
         if m is None:
-            return "missing"
+            return "failing" if job in self.job_failing else "missing"
         chain = self.job_chains.get(job, [])
         return "ok" if chain and m == chain[0] else "fallback"
 
@@ -693,6 +710,7 @@ class LLM:
                       "state": "ok" if self.embed_ok else
                       ("unreachable" if not self.enabled else "missing")},
             "missing": list(self.missing),
+            "failing": dict(self.job_failing),
             "tokens_today": self.spend_today(),
         }
 
@@ -710,8 +728,11 @@ def status_line(llm):
         m = llm.job_models.get(job)
         if m and m not in used:
             used.append(m)
+    failing = [j for j in JOB_ROLE
+               if j in llm.job_failing and llm.job_models.get(j) is None]
     if not used:
-        base = f"tier {llm.tier} · no model installed"
+        base = f"tier {llm.tier} · " + \
+            ("every model failing" if failing else "no model installed")
     elif len(used) == 1:
         base = f"tier {llm.tier} · {used[0]}"
     else:
@@ -720,10 +741,14 @@ def status_line(llm):
             for m in used)
     if llm.decide == "rules":
         base += " · choices by rules"
+    if failing:
+        base += " · failing: " + "; ".join(
+            f"{j} ({llm.job_failing[j]}, on its template)" for j in failing)
     lacking = [m for m in llm.missing
                if not (is_cloud(m) and llm.tier != "cloud")]
     if lacking:
-        silent = [j for j in JOB_ROLE if llm.job_models.get(j) is None]
+        silent = [j for j in JOB_ROLE if llm.job_models.get(j) is None
+                  and j not in failing]
         base += " · not installed: " + ", ".join(lacking)
         if silent:
             base += " (" + ", ".join(silent) + " on templates)"

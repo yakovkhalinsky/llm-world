@@ -49,5 +49,51 @@ class ShowBackoffTest(unittest.TestCase):
         self.assertEqual(gaps[-1], llmm.SHOW_BACKOFF_MAX)
 
 
+class FailingTest(unittest.TestCase):
+
+    def make(self, **kw):
+        self.fake = FakeOllama(tags=(QWEN, GEMMA, "nomic-embed-text:latest"), **kw)
+        self.addCleanup(self.fake.close)
+        return llmm.LLM(host=self.fake.host, timeout=10, tier="local",
+                        lock_path="")
+
+    def ask(self, llm):
+        return llm.chat_json("s", "u", {"type": "object"}, job=LEAD,
+                             retries=1)
+
+    def test_installed_models_that_fail_are_failing_not_missing(self):
+        llm = self.make(chat_500=(QWEN, GEMMA))
+        self.assertIsNone(self.ask(llm))       # qwen fails twice, swaps
+        self.assertIsNone(self.ask(llm))       # gemma fails twice: off
+        self.assertIsNone(llm.job_models[LEAD])
+        self.assertEqual(llm.job_state(LEAD), "failing")
+        st = llm.model_status()
+        self.assertEqual(st["jobs"][LEAD]["state"], "failing")
+        self.assertIn("HTTP 500", st["failing"][LEAD])
+        self.assertEqual(st["missing"], [])
+        line = llmm.status_line(llm)
+        self.assertIn("failing", line)
+        self.assertNotIn("not installed", line)
+        self.assertNotIn("no model installed", llm.reason)
+        # until the next probe it does not keep hammering a broken box
+        chats = len(self.fake.chats)
+        self.assertIsNone(self.ask(llm))
+        self.assertEqual(len(self.fake.chats), chats)
+        self.assertIn("every model failing", llm.reason)
+        # when the box recovers, the next probe puts it back
+        self.fake.chat_500.clear()
+        llm.next_probe = 0
+        self.assertIsNotNone(self.ask(llm))
+        self.assertEqual(llm.job_state(LEAD), "ok")
+        self.assertEqual(llm.model_status()["failing"], {})
+
+    def test_a_missing_model_is_named_once(self):
+        llm = self.make(chat_404=(QWEN,))
+        self.assertIsNotNone(self.ask(llm))    # moved on to gemma
+        line = llmm.status_line(llm)
+        self.assertEqual(line.count(QWEN), 1, line)
+        self.assertNotIn("is not installed", line)
+
+
 if __name__ == "__main__":
     unittest.main()
