@@ -36,6 +36,7 @@ No API keys and no pip dependencies. The engines are pure Python stdlib
 | app | the world |
 |---|---|
 | [`apps/estate`](apps/estate) | **Highfield**: a row of tower blocks, a courtyard with a shop and a playground, a school, a bus stop, and the households who live there. A watcher with no stake sends the weather and the small fates. |
+| [`apps/estate-web`](apps/estate-web) | **Highfield in the browser**: a TypeScript port of the estate that runs entirely in a Web Worker, with no server and no model. From the same seed it grows the same estate, checked against the Python engine. It uses the same 3D page, and seeded templates sifted from what happened write the chronicle. It saves to IndexedDB and builds to a static site for GitHub Pages. |
 | [`apps/grove`](apps/grove) | **Grove**: ponds and pines, rabbits and foxes, seasons and succession, and a World Soul that picks the forest's fates. |
 
 Each app is a whole world, with its own engine, tools, docs, launcher,
@@ -60,6 +61,14 @@ Open `http://<host>:8787` (the estate) and `http://<host>:8789` (the grove).
 Leave out `--public` to bind loopback only. On station, both run with
 `--tier local` and are reachable on the tailnet at
 `station.tail8a1a2.ts.net:8787` and `:8789`.
+
+Highfield also runs with no Python at all, in the browser:
+
+```sh
+cd apps/estate-web && npm install && npm run dev    # or: npm run build → dist/, a static site
+```
+
+<p align="center"><a href="apps/estate-web#readme"><img src="docs/screenshots/thumbs/estate-web-overview.webp" width="480" alt="Highfield in the browser, the chronicle open"></a></p>
 
 `new --force` never deletes anything: it moves the old world aside as
 `archive-<stamp>-…db` in the same data directory.
@@ -160,7 +169,8 @@ Two ideas are common to both, because they are what the worlds are *for*:
 | path | role |
 |---|---|
 | `apps/estate/` | the estate: package, tools, tests, docs, launcher |
+| `apps/estate-web/` | the estate in the browser: TypeScript, Vite, a Web Worker, no server |
 | `apps/grove/` | the forest: the same shape |
 | `apps/shared/` | the 3D views' shared code: Three.js, the day clock, the router, the light field, the panels' list writer |
-| `docs/screenshots/` | the READMEs' screenshots, taken from the live demos on station |
+| `docs/screenshots/` | the READMEs' screenshots, taken from the live demos on station (estate-web's from its static build) |
 | `LICENSE` | MIT, one licence for the lot |
