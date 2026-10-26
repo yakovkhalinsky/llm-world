@@ -416,10 +416,13 @@ class LLM:
             self.owner = owner
 
         def __enter__(self):
+            # one deadline for both waits: the whole wait is `wait`, not
+            # `wait` for this process's lock and `wait` again for the file
+            end = time.time() + max(0.0, self.wait)
             if not _CALL_LOCK.acquire(timeout=max(0.0, self.wait)):
                 raise ModelBusy("another model call is still running")
             try:
-                self._lock()
+                self._lock(end)
             except BaseException:
                 self._close()
                 _CALL_LOCK.release()
@@ -442,7 +445,12 @@ class LLM:
                               "this process only")
                 return None
             st = os.fstat(fd)
-            if not stat.S_ISREG(st.st_mode) or st.st_uid != os.geteuid():
+            if not stat.S_ISREG(st.st_mode):
+                os.close(fd)
+                self._problem(f"model lock {self.path} is not a regular "
+                              "file; this process only")
+                return None
+            if st.st_uid != os.geteuid():
                 os.close(fd)
                 self._problem(f"model lock {self.path} is not this user's "
                               "file; this process only")
@@ -466,13 +474,12 @@ class LLM:
                                     "the model")
                 time.sleep(LOCK_POLL)
 
-        def _lock(self):
+        def _lock(self, end):
             if not self.path:
                 return
             self.fd = self._open()
             if self.fd is None:
                 return
-            end = time.time() + max(0.0, self.wait)
             self._take(0, end)                  # the turnstile
             try:
                 self._take(1, end)              # the model
@@ -837,8 +844,10 @@ def add_flags(sp):
     sp.add_argument("--model-lock", default=DEFAULT_LOCK,
                     help="a file every llm-world process locks around a "
                          "model call, so two demos on one box take turns; "
-                         '"" for this process only (two apps on '
-                         'different models then thrash); default '
+                         '"" for this process only: two apps on one '
+                         'Ollama then no longer take turns, and with '
+                         '--resident one each may unload the other\'s '
+                         'model mid-call (and they thrash); default '
                          f'{DEFAULT_LOCK}')
     sp.add_argument("--lock-wait", type=float, default=DEFAULT_LOCK_WAIT,
                     help="seconds a call waits its turn at the model "

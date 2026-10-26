@@ -179,6 +179,40 @@ class ModelLockTest(unittest.TestCase):
                       retries=0)
         self.assertEqual(llm.lock_problem, "")    # cleared once it works
 
+    def test_a_fifo_lock_says_what_it_is(self):
+        os.mkfifo(self.lock, 0o600)              # ours, but not a file
+        llm = llmm.LLM(tier="local", host=self.fake.host,
+                       lock_path=self.lock, resident="many", timeout=30,
+                       lock_wait=1)
+        llm.chat_json("s", "u", {"type": "object"}, job=llmm.LEAD_JOB,
+                      retries=0)
+        self.assertIn("not a regular file", llm.lock_problem)
+        self.assertNotIn("not this user's", llm.lock_problem)
+
+    def test_the_whole_wait_is_lock_wait_not_twice_it(self):
+        """The in-process lock and the shared file share one deadline."""
+        self._held(4.0)
+        took = threading.Event()
+
+        def hog():
+            with llmm._CALL_LOCK:
+                took.set()
+                time.sleep(0.8)
+        t = threading.Thread(target=hog)
+        t.start()
+        self.addCleanup(t.join)
+        took.wait(2)
+        llm = llmm.LLM(tier="local", host=self.fake.host,
+                       lock_path=self.lock, resident="many", timeout=30,
+                       lock_wait=1.0)
+        t0 = time.time()
+        self.assertIsNone(llm.chat_json("s", "u", {"type": "object"},
+                                        job=llmm.LEAD_JOB, retries=0))
+        took_s = time.time() - t0
+        self.assertGreaterEqual(took_s, 0.9)
+        self.assertLess(took_s, 1.5)             # 0.8 + 1.0 before
+        self.assertEqual(self.fake.chats, 0)
+
     def test_the_default_lock_is_per_user(self):
         self.assertIn(str(os.getuid()), llmm.DEFAULT_LOCK)
         self.assertEqual(llmm.LLM(host=self.fake.host).lock_wait,
