@@ -284,7 +284,36 @@ class SelectionTest(unittest.TestCase):
                          "unreachable")
 
     def test_off_is_off(self):
-        self.assertIn("AI off", llmm.status_line(None))
+        # the HUD's voiceLine reads "tier <t> — <why>" as AI off; any other
+        # shape would show raw (Acid Burn's #16/#17 merge review)
+        self.assertEqual(llmm.status_line(None),
+                         "tier local — pure deterministic sim")
+
+    def test_the_hud_says_the_status_lines_as_meant(self):
+        import os
+        import shutil
+        import subprocess
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        app = llmm.__name__.split(".")[0]
+        here = os.path.dirname(os.path.abspath(__file__))
+        hud = os.path.join(here, "..", app, "page3d", "hud.js")
+        patch = os.path.join(here, "..", "..", "shared", "page3d", "patch.js")
+        js = ("global.Patch = require(process.argv[1]);"
+              "const h = require(process.argv[2]);"
+              "console.log(JSON.stringify("
+              "process.argv.slice(3).map(h.voiceLine)));")
+        down = llmm.LLM(host="http://127.0.0.1:9", timeout=1, tier="local",
+                        lock_path="")
+        lines = [llmm.status_line(None), llmm.status_line(down)]
+        out = subprocess.run([node, "-e", js, patch, hud] + lines,
+                             capture_output=True, text=True, timeout=30,
+                             check=True).stdout
+        said = json.loads(out)
+        self.assertEqual(said[0], "AI off · pure deterministic sim")
+        self.assertTrue(said[1].startswith("AI off · "), said[1])
+        self.assertNotIn("tier", said[1])
 
 
 class PayloadTest(unittest.TestCase):

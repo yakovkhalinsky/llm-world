@@ -763,7 +763,7 @@ def status_line(llm):
     """One readable line for the HUD: the models in use and, before
     anything else, what is missing."""
     if llm is None:
-        return "AI off — pure deterministic sim"
+        return "tier local — pure deterministic sim"
     if not llm.enabled:
         return (f"tier {llm.tier} — {llm.reason or 'ollama unreachable'}"
                 f" · retrying every {REPROBE_MISSING_SECONDS} s")
