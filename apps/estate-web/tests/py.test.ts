@@ -22,6 +22,7 @@ interface Vectors {
   sum: [F[], F][];
   sum_mixed: [number[], boolean[], number, boolean][];
   repr: [F, string][];
+  twist: { seed: string; words: number[]; even: number[]; first: number; odd: number[] }[];
 }
 
 const V = JSON.parse(
@@ -59,6 +60,29 @@ describe("random.Random", () => {
       expect(Array.from({ length: 1500 }, () => r.random()).slice(-5)).toEqual(d.long);
     });
   }
+});
+
+describe("random.Random's lazy twist", () => {
+  // N = 624, M = 397: words below N-M = 227 are twisted as drawn, the rest
+  // in one go; then the second state at 624, the third at 1248
+  const EDGES = [0, 1, 226, 227, 228, 396, 397, 622, 623, 624, 625, 1247, 1248, 1249];
+  for (const t of V.twist ?? []) {
+    it(`draws every word as CPython does across the twist, seed ${JSON.stringify(t.seed)}`, () => {
+      expect(t.words.length).toBe(1300);
+      const r = new PyRandom(t.seed);
+      const words = Array.from({ length: 1300 }, () => r.getrandbits(32));
+      for (const k of EDGES) expect(words[k], `word ${k}`).toBe(t.words[k]);
+      expect(words).toEqual(t.words);
+    });
+    it(`draws random() across the boundaries from word 0 and word 1, seed ${JSON.stringify(t.seed)}`, () => {
+      const even = new PyRandom(t.seed);
+      expect(Array.from({ length: 650 }, () => even.random())).toEqual(t.even);
+      const odd = new PyRandom(t.seed);
+      expect(odd.getrandbits(32)).toBe(t.first);
+      expect(Array.from({ length: 650 }, () => odd.random())).toEqual(t.odd);
+    });
+  }
+  it("has its vectors", () => expect(V.twist.length).toBe(3));
 });
 
 describe("arithmetic", () => {

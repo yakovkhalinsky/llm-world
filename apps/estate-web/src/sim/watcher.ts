@@ -6,6 +6,7 @@
  * passes the same validator. The why is the pack's own line (there is no
  * model in the browser to write one).
  */
+import { pyStrip } from "../py/text.ts";
 import * as dec from "./decide.ts";
 import { R } from "./rules.ts";
 import * as W from "./world.ts";
@@ -36,16 +37,16 @@ export function validate(raw: unknown): Intent {
   }
   const o = raw as Record<string, unknown>;
   const fate = o.fate;
-  if (typeof fate !== "string" || !(fate in R.fates)) {
+  if (typeof fate !== "string" || !Object.hasOwn(R.fates, fate)) {
     return quiet("all", `the watcher named a fate the estate has no law for: ${pyRepr(fate)}`);
   }
   const allowed = regionsFor(fate);
-  let region = "region" in o ? o.region : "all";
+  let region = Object.hasOwn(o, "region") ? o.region : "all";
   if (typeof region !== "string" || !allowed.includes(region)) {
     if (allowed.length === 1) region = allowed[0]!;
     else return quiet("all", `${fate} is not something that happens to ${pyRepr(region)}`);
   }
-  let why = typeof o.why === "string" ? o.why.trim() : "";
+  let why = typeof o.why === "string" ? pyStrip(o.why) : "";
   if ([...why].length > 200) why = [...why].slice(0, 197).join("") + "…";
   return { fate, region: region as string, why: why || (R.fates[fate]!.why ?? "") };
 }

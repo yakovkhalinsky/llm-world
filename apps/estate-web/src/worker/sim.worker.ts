@@ -29,7 +29,14 @@ self.onmessage = (ev: MessageEvent<ToWorker>) => {
     } else if (m?.type === "tick") {
       if (world === null) throw new Error("nothing planted yet");
       if (!Number.isSafeInteger(m.days) || m.days < 0) throw new RangeError(`days must be a whole number ≥ 0, not ${m.days}`);
-      for (let n = 0; n < m.days; n++) events.push(...tick(world));
+      try {
+        for (let n = 0; n < m.days; n++) events.push(...tick(world));
+      } catch (e) {
+        // a tick that threw left the estate part way through a day: drop
+        // it, so no later request carries on from a world no seed grows
+        world = null;
+        throw e;
+      }
     } else {
       throw new TypeError(`unknown request ${JSON.stringify((m as { type?: unknown } | null)?.type)}`);
     }
