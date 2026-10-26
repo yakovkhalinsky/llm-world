@@ -13,7 +13,14 @@
  * The floor under the water is here too: a cell's height at its centre,
  * which the page's ground is bilinear between. A ford's stones lie just
  * under the surface, so the creek runs on across them; the floor is below
- * the water all the way down a creek, centre to centre.
+ * the water all the way down a creek, centre to centre. Anything that
+ * stands (a tree, a mushroom, a carcass, a creature, a stepping stone)
+ * stands on the floor or on the water, whichever is higher (`standAt`),
+ * so nothing the sim puts on a ford stands under the creek.
+ *
+ * And the buffers the page hands to the GPU (`buffers`): every point at
+ * the one level, every normal straight up, so the check holds the arrays
+ * the page draws, not just the plan of them.
  *
  * A pure function of the frame (no THREE, no DOM), so `tools/water_check.js`
  * holds it to all of that in Node on a real snapshot.
@@ -29,6 +36,8 @@
   var ELEV = 1.1;           // the engine's elevation, lifted
   var LAND_MIN = 0.06;      // the lowest dry ground
   var WEDGE = 0.35;         // how far a corner join reaches into a cell
+                            // (under 0.5: a wedge stays short of the
+                            // middle of the dry cell it cuts across)
 
   var CREEK = 1, POND = 2, FORD = 3;
   var NAME = { 1: 'creek', 2: 'pond', 3: 'ford' };
@@ -78,7 +87,13 @@
 
   /* Each creek's frame: the cells it runs through, and for each its
    * (across, down) ripple coordinates of a point. A creek runs along x or
-   * y from one edge to the other; down is towards its mouth. */
+   * y from one edge to the other; down is towards its mouth. The frame is
+   * one axis for the whole creek (its main one, source edge to mouth
+   * edge), so on a sideways step the ripple still runs down the main axis
+   * rather than the step: gen.py's creeks run edge to edge along one
+   * axis, and one frame is what keeps the stream seamless. A cell on two
+   * creeks takes the first creek's frame; the check keys seams per creek,
+   * so it would not see a seam where two creeks meet (none do today). */
   function frames(st) {
     var N = Number(st.size) | 0;
     var of = new Int32Array(N * N).fill(-1);
@@ -108,7 +123,11 @@
     return { pos: [], uv: [], idx: [], cells: [], wedges: [] };
   }
 
-  /* a triangle facing up (+y), whichever way its corners were given */
+  /* a triangle facing up (+y), whichever way its corners were given.
+   * A wedge's outer corners (WEDGE along a square's edge) sit mid-edge of
+   * the neighbouring squares: T-junctions, harmless while the water is
+   * flat at one level, but they would crack if the surface ever got
+   * height. */
   function tri(s, fr, p0, p1, p2) {
     var cross = (p1[1] - p0[1]) * (p2[0] - p0[0]) -
       (p1[0] - p0[0]) * (p2[1] - p0[1]);
@@ -172,11 +191,34 @@
     return out;
   }
 
+  /* The arrays the page draws a surface from: positions (x, Y, z), normals
+   * straight up, the ripple's uv, and the triangles' indices. */
+  function buffers(s) {
+    var n = s.pos.length / 2;
+    var position = new Float32Array(n * 3);
+    var normal = new Float32Array(n * 3);
+    for (var k = 0; k < n; k++) {
+      position[k * 3] = s.pos[k * 2];
+      position[k * 3 + 1] = Y;
+      position[k * 3 + 2] = s.pos[k * 2 + 1];
+      normal[k * 3 + 1] = 1;
+    }
+    return { position: position, normal: normal, uv: new Float32Array(s.uv),
+             index: n > 65535 ? new Uint32Array(s.idx) : new Uint16Array(s.idx) };
+  }
+
+  /* where something standing at (x, z) stands: on the floor, or on the
+   * water where the floor is under it (a ford's stones, a bank's edge) */
+  function standAt(floor, x, z) {
+    return Math.max(floor(x, z), Y);
+  }
+
   var api = {
     Y: Y, BED: BED, FORD_BED: FORD_BED, ELEV: ELEV, LAND_MIN: LAND_MIN,
     WEDGE: WEDGE, CREEK: CREEK, POND: POND, FORD: FORD, NAME: NAME,
     kinds: kinds, cellHeight: cellHeight, heights: heights,
-    floorAt: floorAt, frames: frames, surfaces: surfaces,
+    floorAt: floorAt, frames: frames, surfaces: surfaces, buffers: buffers,
+    standAt: standAt,
   };
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

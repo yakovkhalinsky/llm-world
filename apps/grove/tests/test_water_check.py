@@ -9,10 +9,12 @@ a ford's ground rose out of the creek with a faint sheet on the stones.
 The check holds the page to one stream: each kind of water a single
 surface at one level covering its cells whole, edge to edge, a ripple
 with no seams running source to mouth, and the floor under the water all
-the way down, fords too.
+the way down, fords too; and with the ford's stones under the creek,
+nothing the sim grows there stands under it.
 
-Each mutant below is a wrong `water.js` or `world.js` the check must
-reject, and each asserts the failure it should be caught by.
+Each mutant below is a wrong `water.js` the check must reject, and each
+asserts the failure it should be caught by. The check's world.js lint
+reads source, so it has no mutants here.
 
 Needs Node; skipped without it."""
 
@@ -50,6 +52,7 @@ class WaterCheckTest(unittest.TestCase):
         cls.snap = cls.snaps[0][2]
         cls.state = cls.snaps[0][3]
         cls.legacy = cls.write("legacy.json", cls.legacy_world(cls.state))
+        cls.fordy = cls.write("fordy.json", cls.ford_plants(cls.state))
 
     @classmethod
     def tearDownClass(cls):
@@ -77,6 +80,20 @@ class WaterCheckTest(unittest.TestCase):
             c[0], c[6] = "w", ""
         return st
 
+    @staticmethod
+    def ford_plants(st):
+        """The sim grows plants on fords (the live grove has an old pine on
+        each of its two): a pine, a mushroom and a carcass on every ford."""
+        st = json.loads(json.dumps(st))
+        n = st["size"]
+        for i, c in enumerate(st["cells"]):
+            if c[6] == "f":
+                st["plants"].append({"id": 900000 + i, "sp": "pine",
+                                     "x": i % n, "y": i // n, "st": "old",
+                                     "el": 1, "b": 0, "n": None})
+                c[3], c[4] = 1, 1
+        return st
+
     def run_check(self, snap=None, water=None, world=None):
         env = dict(os.environ)
         if water:
@@ -98,12 +115,12 @@ class WaterCheckTest(unittest.TestCase):
             f.write(src)
         return path
 
-    def rejects(self, phrase, snap=None, water=(), world=()):
-        r = self.run_check(
-            snap, self.mutant(WATER, *water) if water else None,
-            self.mutant(WORLD, *world) if world else None)
+    def rejects(self, phrase, snap=None, water=(), *more):
+        r = self.run_check(snap, self.mutant(WATER, *water))
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
-        self.assertIn(phrase, r.stdout)
+        for p in (phrase,) + more:
+            self.assertIn(p, r.stdout)
+        return r
 
     # -- the real page ---------------------------------------------------
     def test_every_groves_creek_is_one_stream_on_the_page(self):
@@ -117,6 +134,17 @@ class WaterCheckTest(unittest.TestCase):
                 self.assertGreater(rep["fords"], 0)
                 self.assertEqual(rep["seams"], 0)
                 self.assertLess(rep["floorMaxOnCreeks"], 0)
+
+    def test_nothing_on_a_ford_stands_under_the_creek(self):
+        r = self.run_check(self.fordy)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        rep = json.loads(r.stdout)
+        self.assertGreaterEqual(rep["standingOnFords"], 3)
+        self.assertGreaterEqual(rep["standLowest"], 0)
+
+    def test_world_js_passes_the_lint(self):
+        r = self.run_check(world=WORLD)
+        self.assertNotIn("lint:", r.stdout)
 
     def test_water_touching_at_a_corner_is_joined(self):
         r = self.run_check(self.legacy)
@@ -143,13 +171,6 @@ class WaterCheckTest(unittest.TestCase):
                     "[[x + 0.5, z - 0.2], [x - 0.2, z + 0.5], "
                     "[x + 1.2, z + 0.5], [x + 0.5, z + 1.2]]")])
 
-    def test_rejects_the_old_turned_sheets_in_world_js(self):
-        self.rejects(
-            "world.js still turns a sheet per cell of water",
-            world=[("    const geo = new THREE.BufferGeometry();",
-                    "    const yaw = dx || dz ? 1 : 0;\n"
-                    "    const geo = new THREE.BufferGeometry();")])
-
     def test_rejects_a_ford_not_drawn(self):
         self.rejects(
             "a cell of water is not covered whole by its own surface (ford",
@@ -168,6 +189,27 @@ class WaterCheckTest(unittest.TestCase):
             "        s.pos.push(p[0], p[1]);\n"
             "        var uv = uvOf(fr, p[0] - x, p[1] - z);")])
 
+    def test_rejects_a_wedge_off_the_creeks_ripple(self):
+        # a creek pinched at a bend, so its cells meet at a corner and a
+        # wedge joins them: the wedge's uv is held to the squares' it meets
+        st = json.loads(json.dumps(self.state))
+        n = st["size"]
+        path = st["creeks"][0]
+        k = next(k for k in range(1, len(path) - 1)
+                 if path[k - 1][0] != path[k + 1][0]
+                 and path[k - 1][1] != path[k + 1][1])
+        c = st["cells"][path[k][1] * n + path[k][0]]
+        c[0], c[6] = "s", ""
+        pinched = self.write("pinched.json", st)
+        base = self.run_check(pinched)
+        self.assertGreaterEqual(json.loads(base.stdout)["diagonalJoins"], 1)
+        self.assertEqual(json.loads(base.stdout)["seams"], 0)
+        self.rejects("a seam in a creek's ripple", pinched, [(
+            "      s.pos.push(p[0], p[1]);\n"
+            "      var uv = uvOf(fr, p[0], p[1]);",
+            "      s.pos.push(p[0], p[1]);\n"
+            "      var uv = uvOf(fr, p[0] + 0.1, p[1]);")])
+
     def test_rejects_a_ripple_running_upstream(self):
         self.rejects("a creek's ripple runs upstream", water=[(
             "< 0 ? -1 : 1;", "< 0 ? 1 : -1;")])
@@ -177,20 +219,31 @@ class WaterCheckTest(unittest.TestCase):
                      snap=self.legacy,
                      water=[("var WEDGE = 0.35;", "var WEDGE = 0;")])
 
-    def test_rejects_water_at_two_levels(self):
-        self.rejects("world.js does not draw every point at the one level",
-                     world=[("pos[k * 3 + 1] = WATER_Y;",
-                             "pos[k * 3 + 1] = WATER_Y + (k % 4) * 0.01;")])
+    def test_rejects_wedges_over_dry_land(self):
+        # a wedge reaching over half a dry cell: both the size and the
+        # probes a quarter in from each corner catch it
+        for w in ("0.6", "0.9"):
+            with self.subTest(wedge=w):
+                self.rejects("water drawn over dry land", self.legacy,
+                             [("var WEDGE = 0.35;", "var WEDGE = %s;" % w)],
+                             "a corner's wedge is not under half a cell")
 
-    def test_rejects_water_culled(self):
-        self.rejects("world.js does not draw its water never culled",
-                     world=[("mesh.frustumCulled = false;", "")])
+    def test_rejects_drawn_points_at_two_levels(self):
+        self.rejects("a point of water off the one level", water=[(
+            "position[k * 3 + 1] = Y;", "position[k * 3 + 1] = Y + (k % 4) * 0.01;")])
 
-    def test_rejects_a_floor_not_water_js(self):
-        self.rejects("world.js does not draw its floor from water.js",
-                     world=[("cellH[i] = Water ? Water.cellHeight(c)",
-                             "cellH[i] = 0 ? Water.cellHeight(c)")])
+    def test_rejects_normals_not_up(self):
+        self.rejects("a normal of the water not straight up", water=[(
+            "normal[k * 3 + 1] = 1;", "normal[k * 3 + 2] = 1;")])
 
+    def test_rejects_an_index_past_the_points(self):
+        self.rejects("an index past the points", water=[(
+            ": new Uint16Array(s.idx)",
+            ": new Uint16Array(s.idx.map(function (j) { return j + 1; }))")])
+
+    def test_rejects_a_plant_standing_on_a_fords_stones(self):
+        self.rejects("something stands under the water", self.fordy, [(
+            "return Math.max(floor(x, z), Y);", "return floor(x, z);")])
 
 if __name__ == "__main__":
     unittest.main()

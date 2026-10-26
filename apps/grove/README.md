@@ -177,7 +177,7 @@ node tools/route_check.js  /tmp/s.json   # no walk crosses a trunk or water
 node tools/glow_check.js   /tmp/s.json   # which mushroom rings glow tonight
 node tools/forest_check.js /tmp/s.json   # the drawn forest and see-through trees
 node tools/crowd_check.js  /tmp/s.json   # no creature inside another, or a trunk
-node tools/water_check.js  /tmp/s.json   # each creek one stream: whole, seamless, never dry
+node tools/water_check.js  /tmp/s.json   # each creek one stream: whole, seamless, never dry; nothing stands under it
 ```
 
 `python3 -m unittest discover -s tests` covers the server's routes and
