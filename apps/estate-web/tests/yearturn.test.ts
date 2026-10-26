@@ -25,7 +25,7 @@ const CASES: [seed: number, year: number][] = [[2, 3], [3, 1], [5, 1], [5, 3], [
 const YEAR = R.world.days_per_season * 4;
 const ELDER = R.people.ages.elder;
 
-/** The same edits, in the same order, as the Python below. */
+/** The same edits, in the same order, as `parity.py yearturn`. */
 function eve(seed: number, year: number): World {
   const w = generate(seed);
   w.day = YEAR * year - 1;
@@ -34,27 +34,9 @@ function eve(seed: number, year: number): World {
   return w;
 }
 
-const PY = `
-import sys, json, hashlib
-sys.path.insert(0, '.')
-from estate import gen, sim, rules
-from tools.parity import world_hash, canon
-YEAR = rules.R["world"]["days_per_season"] * 4
-A = rules.R["people"]["ages"]
-out = []
-for seed, year in json.loads(sys.argv[1]):
-    w = gen.generate(seed)
-    w["day"] = YEAR * year - 1
-    adults = sorted((r for r in w["residents"].values() if r["age"] >= A["adult"]), key=lambda r: r["id"])
-    for i, r in enumerate(adults):
-        r["age"] = A["elder"] + 7 if i % 2 == 0 else A["elder"] + 6
-    evs = sim.tick(w)
-    out.append({"hash": world_hash(w), "events": hashlib.sha256(canon(evs).encode()).hexdigest()[:16]})
-print(json.dumps(out))
-`;
 
 describe("the turn of the year", () => {
-  const python = JSON.parse(execFileSync(PYTHON, ["-c", PY, JSON.stringify(CASES)], { cwd: ESTATE, encoding: "utf8" })) as { hash: string; events: string }[];
+  const python = JSON.parse(execFileSync(PYTHON, ["tools/parity.py", "yearturn", JSON.stringify(CASES)], { cwd: ESTATE, encoding: "utf8" })) as { hash: string; events: string }[];
   let died = 0;
   let emptied = 0;
 
