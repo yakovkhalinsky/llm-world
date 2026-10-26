@@ -83,9 +83,9 @@ export function unattended(w: W.World): [Res, W.Household][] {
 }
 
 const byId = (a: Res, b: Res) => a.id - b.id;
-function sortedIntKeys(o: Record<string, unknown>): string[] {
-  return Object.keys(o).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
-}
+/** sorted(dict): a plain object's integer keys come out of Object.keys
+ * already ascending (see W.ids) */
+const sortedIntKeys = (o: Record<string, unknown>): string[] => Object.keys(o);
 
 /** Who minds whom this phase: Map of minder id to children, in insertion
  * order (Python dict order). */

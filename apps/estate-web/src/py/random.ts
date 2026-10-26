@@ -38,43 +38,57 @@ export function seedKey(seed: string): number[] {
   return key;
 }
 
+/** init_genrand(19650218): where every init_by_array starts. It never
+ * changes, so it is worked out once and copied. */
+const BASE = (() => {
+  const mt = new Uint32Array(N);
+  mt[0] = 19650218;
+  for (let i = 1; i < N; i++) {
+    const p = mt[i - 1]! ^ (mt[i - 1]! >>> 30);
+    mt[i] = (Math.imul(1812433253, p) + i) >>> 0;
+  }
+  return mt;
+})();
+
+/**
+ * The estate seeds a fresh generator for every (seed, day, salt) — one per
+ * resident per phase for their whims — and most draw only a handful of
+ * numbers. So the twist is done lazily: word k of the new state depends
+ * only on words k, k+1 and k+M of the old one, and for k < N-M those are
+ * all still untwisted, so the first N-M words can be twisted one at a time
+ * as they are drawn. Past that the rest of the twist is done in one go.
+ * The words come out exactly as the eager loop makes them.
+ */
 export class PyRandom {
   private mt = new Uint32Array(N);
-  private mti = N + 1;
+  private mti = N;
+  /** how far the pending twist has got, or -1 when none is pending */
+  private tw = -1;
 
   constructor(seed: string) {
     this.initByArray(seedKey(seed));
   }
 
-  private initGenrand(s: number): void {
-    const mt = this.mt;
-    mt[0] = s >>> 0;
-    for (let i = 1; i < N; i++) {
-      const p = mt[i - 1]! ^ (mt[i - 1]! >>> 30);
-      mt[i] = (Math.imul(1812433253, p) + i) >>> 0;
-    }
-    this.mti = N;
-  }
-
   private initByArray(key: number[]): void {
-    this.initGenrand(19650218);
     const mt = this.mt;
+    mt.set(BASE);
     let i = 1;
     let j = 0;
     const kl = key.length;
+    let prev = mt[0]!; // mt[i - 1], carried rather than re-read
     for (let k = Math.max(N, kl); k; k--) {
-      const p = mt[i - 1]! ^ (mt[i - 1]! >>> 30);
-      mt[i] = ((mt[i]! ^ Math.imul(p, 1664525)) + key[j]! + j) >>> 0;
+      prev = ((mt[i]! ^ Math.imul(prev ^ (prev >>> 30), 1664525)) + key[j]! + j) >>> 0;
+      mt[i] = prev;
       i++;
       j++;
-      if (i >= N) { mt[0] = mt[N - 1]!; i = 1; }
+      if (i >= N) { mt[0] = prev; i = 1; }
       if (j >= kl) j = 0;
     }
     for (let k = N - 1; k; k--) {
-      const p = mt[i - 1]! ^ (mt[i - 1]! >>> 30);
-      mt[i] = ((mt[i]! ^ Math.imul(p, 1566083941)) - i) >>> 0;
+      prev = ((mt[i]! ^ Math.imul(prev ^ (prev >>> 30), 1566083941)) - i) >>> 0;
+      mt[i] = prev;
       i++;
-      if (i >= N) { mt[0] = mt[N - 1]!; i = 1; }
+      if (i >= N) { mt[0] = prev; i = 1; }
     }
     mt[0] = 0x80000000;
   }
@@ -83,25 +97,42 @@ export class PyRandom {
   private u32(): number {
     const mt = this.mt;
     if (this.mti >= N) {
-      let kk = 0;
-      for (; kk < N - M; kk++) {
-        const y = (mt[kk]! & 0x80000000) | (mt[kk + 1]! & 0x7fffffff);
-        mt[kk] = mt[kk + M]! ^ (y >>> 1) ^ (y & 1 ? 0x9908b0df : 0);
-      }
-      for (; kk < N - 1; kk++) {
-        const y = (mt[kk]! & 0x80000000) | (mt[kk + 1]! & 0x7fffffff);
-        mt[kk] = mt[kk + (M - N)]! ^ (y >>> 1) ^ (y & 1 ? 0x9908b0df : 0);
-      }
-      const y = (mt[N - 1]! & 0x80000000) | (mt[0]! & 0x7fffffff);
-      mt[N - 1] = mt[M - 1]! ^ (y >>> 1) ^ (y & 1 ? 0x9908b0df : 0);
       this.mti = 0;
+      this.tw = 0;
     }
-    let y = mt[this.mti++]!;
+    const at = this.mti++;
+    if (at >= this.tw && this.tw >= 0) this.twistTo(at);
+    let y = mt[at]!;
     y ^= y >>> 11;
     y ^= (y << 7) & 0x9d2c5680;
     y ^= (y << 15) & 0xefc60000;
     y ^= y >>> 18;
     return y >>> 0;
+  }
+
+  /** Carry the pending twist on until word `at` is new. */
+  private twistTo(at: number): void {
+    const mt = this.mt;
+    let kk = this.tw;
+    if (at < N - M) {
+      for (; kk <= at; kk++) {
+        const y = (mt[kk]! & 0x80000000) | (mt[kk + 1]! & 0x7fffffff);
+        mt[kk] = mt[kk + M]! ^ (y >>> 1) ^ (y & 1 ? 0x9908b0df : 0);
+      }
+      this.tw = kk;
+      return;
+    }
+    for (; kk < N - M; kk++) {
+      const y = (mt[kk]! & 0x80000000) | (mt[kk + 1]! & 0x7fffffff);
+      mt[kk] = mt[kk + M]! ^ (y >>> 1) ^ (y & 1 ? 0x9908b0df : 0);
+    }
+    for (; kk < N - 1; kk++) {
+      const y = (mt[kk]! & 0x80000000) | (mt[kk + 1]! & 0x7fffffff);
+      mt[kk] = mt[kk + (M - N)]! ^ (y >>> 1) ^ (y & 1 ? 0x9908b0df : 0);
+    }
+    const y = (mt[N - 1]! & 0x80000000) | (mt[0]! & 0x7fffffff);
+    mt[N - 1] = mt[M - 1]! ^ (y >>> 1) ^ (y & 1 ? 0x9908b0df : 0);
+    this.tw = -1;
   }
 
   /** random.random(): 53 bits from two draws. */

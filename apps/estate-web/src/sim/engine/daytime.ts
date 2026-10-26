@@ -14,9 +14,7 @@ export const SCHOOL = "school";
 export function law() { return R.school; }
 export function jobs() { return R.work; }
 
-function intKeys(o: Record<string, unknown>): string[] {
-  return Object.keys(o).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
-}
+const intKeys = W.ids;
 const pk = (x: number, y: number) => `${x},${y}`;
 
 // ------------------------------------------------------------- the places
