@@ -1,27 +1,4 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Highfield — in the browser</title>
-  <style>
-    body { font: 14px/1.4 system-ui, sans-serif; margin: 1.5rem; background: #f4f1ea; color: #222; }
-    canvas { image-rendering: pixelated; border: 1px solid #bbb; background: #fff; }
-    .row { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; }
-    code { font-size: 12px; }
-    label { margin-right: .5rem; }
-  </style>
-</head>
-<body>
-  <h1>Highfield</h1>
-  <p>The estate, planted in your browser from a seed — no server, no model.
-     This first slice ports generation only; the days come next.</p>
-  <p><label>Seed <input id="seed" type="number" value="1" min="0" style="width:7em"></label>
-     <button id="plant">Plant</button> <span id="status"></span></p>
-  <div class="row">
-    <canvas id="plan"></canvas>
-    <div id="facts"></div>
-  </div>
-  <script type="module" src="/src/main.ts"></script>
-</body>
-</html>
+<!-- A stand-in: the estate-page3d plugin (vite.config.ts) serves apps/estate's
+     page3d/index.html here instead, with src/main.ts starting its viewer. -->
+<script type="module" src="/src/main.ts"></script>

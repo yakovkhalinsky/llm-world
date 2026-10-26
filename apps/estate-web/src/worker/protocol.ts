@@ -1,14 +1,18 @@
 /**
  * Messages between the page and the simulation worker. Every request has
- * an id and every reply carries the id it answers, so a reply to a stale
- * request (a plant superseded by another, a long tick) can be told apart.
+ * an id and every reply carries the id it answers.
+ *
+ * `open` plants an estate; `api` is one of page3d's requests (GET
+ * /api/ground, /api/state, /api/plain, POST /api/control), answered as
+ * web.py answers it — a status, a content type and a body.
  */
-import type { World } from "../sim/world.ts";
-import type { Ev } from "../sim/engine/events.ts";
-
 export type ToWorker =
-  | { type: "gen"; id: number; seed: number; width?: number; height?: number }
-  | { type: "tick"; id: number; days: number };
+  | { type: "open"; id: number; seed: number | null }
+  | { type: "api"; id: number; method: string; path: string; body: string | null };
+
+export interface Opened { seed: number; day: number }
+
 export type FromWorker =
-  | { type: "world"; id: number; world: World; hash: string; ms: number; events: Ev[] }
+  | ({ type: "opened"; id: number } & Opened)
+  | { type: "api"; id: number; status: number; contentType: string; body: string }
   | { type: "error"; id: number | null; message: string };
