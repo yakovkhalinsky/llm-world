@@ -29,6 +29,11 @@
  *   - `opts.reset`: a different list (a tab change) starts at the top;
  *   - otherwise the position is kept as it was.
  *
+ * `Patch.key(when, text)` is a row's `data-key`: its time as a number and a
+ * short hash of its words, so a row whose shown words change (a relative
+ * "2 weeks ago") keeps its key, and nothing from the frame reaches the
+ * attribute but digits and letters.
+ *
  * `Patch.fmt(n)` is a count as an Australian reader writes one — 1,234 —
  * rounded to a whole number, and a dash for anything that is not a
  * number. Every count the panels write goes through it.
@@ -268,6 +273,19 @@
     }
   }
 
+  /* a row's stable key: `when` as a number, and `text` (if given) as a
+   * 32-bit FNV-1a hash in base 36 */
+  function key(when, text) {
+    var k = String(Number(when));
+    if (text === undefined || text === null) return k;
+    var s = String(text), h = 0x811c9dc5;
+    for (var i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul ? Math.imul(h, 0x01000193) : (h * 0x01000193) | 0;
+    }
+    return k + ':' + (h >>> 0).toString(36);
+  }
+
   var NF = typeof Intl !== 'undefined' && Intl.NumberFormat
     ? new Intl.NumberFormat('en-AU', { maximumFractionDigits: 0 }) : null;
 
@@ -281,6 +299,6 @@
   }
 
   root.Patch = { write: write, hold: hold, fmt: fmt, flush: flush, drop: drop,
-                 fresh: fresh,
+                 fresh: fresh, key: key,
                  SETTLE_MS: SETTLE_MS, SELECT_MS: SELECT_MS };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

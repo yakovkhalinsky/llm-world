@@ -211,14 +211,34 @@ el.scrollTop = 150;                                                  // day 4 ha
 P.write(el, feed(range(3, 13).reverse()), { newestFirst: true });
 ok('prepend 1, drop 1: a half-hidden row keeps its offset', el.scrollTop === 170,
    el.scrollTop);
+/* the grove's chronicle as it is drawn: 14 rows, newest first, each led
+ * by a relative time, so every row's words change every week ("last
+ * week", then "2 weeks ago"). Its key (week and line) does not. */
+const grove = (now, keyed) => Array.from({ length: 14 }, (_, i) => now - i)
+  .map((w) => '<li' + (keyed ? ' data-key="' + P.key(w, 'line ' + w) + '"' : '') +
+       '><span class="when">' + (now - w) + ' weeks ago</span>line ' + w + '</li>')
+  .join('');
 el = new El('grove14');
-P.write(el, feed(range(0, 14).reverse()), { newestFirst: true });
-el.scrollTop = 60;
+P.write(el, grove(13, true), { newestFirst: true });              // weeks 13 .. 0
+el.scrollTop = 60;                                                  // week 10 at the top
 for (let k = 1; k <= 4; k++) {                                     // four new weeks, one a time
-  P.write(el, feed(range(k, 14 + k).reverse()), { newestFirst: true });
+  P.write(el, grove(13 + k, true), { newestFirst: true });
 }
-ok('prepend 4, drop 4 one at a time (the grove cap of 14): the same row in view',
-   el.scrollTop === 140 && el.children[7].textContent === 'day 10', el.scrollTop);
+ok('the grove cap of 14, the words changing every week: the key keeps the row in view',
+   el.scrollTop === 140 && /line 10$/.test(el.children[7].textContent),
+   [el.scrollTop, el.children[7].textContent]);
+el = new El('grove14bare');
+P.write(el, grove(13, false), { newestFirst: true });
+el.scrollTop = 60;
+P.write(el, grove(14, false), { newestFirst: true });
+ok('(without the key no row matches, and the height rule cannot see the cap)',
+   el.scrollTop === 60, el.scrollTop);
+ok('key: the same week and words give the same key, and only digits and letters',
+   P.key(12, 'a fox') === P.key(12, 'a fox') && P.key(12, 'a fox') !== P.key(12, 'a fax') &&
+   P.key(12, 'a fox') !== P.key(13, 'a fox') &&
+   /^-?\d+:[0-9a-z]+$/.test(P.key(12, '"><img src=x onerror=1>')) &&
+   P.key('"><b>', 'x').indexOf('<') < 0 && P.key(7) === '7',
+   [P.key(12, 'a fox'), P.key('"><b>', 'x'), P.key(7)]);
 el = new El('trim');
 P.write(el, feed(range(0, 10).reverse()), { newestFirst: true });
 el.scrollTop = 100;

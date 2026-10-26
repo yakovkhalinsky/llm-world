@@ -117,14 +117,18 @@
     return ['mark-template', '', 'from the rules'];
   }
 
-  /* the time first, so it floats right on the row's first line */
+  /* the time first, so it floats right on the row's first line. The time
+   * is relative ("last week", then "2 weeks ago"), so a row's words change
+   * every week; its key is its week and its words, which do not, and the
+   * shared patch keeps the reader's row by it */
   function chronicle(st) {
     var rows = st.chronicle || [];
     return rows.length ? rows.map(function (c) {
       var m = markOf(c.source);
       /* a line from the rules carries no mark: the row starts with its
        * words, not a stray "·" */
-      return '<li><span class="when">' + esc(ago(c.tick, st.tick)) +
+      return '<li data-key="' + Patch.key(c.tick, c.text) + '">' +
+        '<span class="when">' + esc(ago(c.tick, st.tick)) +
         '</span>' + (m[1] ? '<span class="' + m[0] + '" title="' + m[2] +
         '">' + m[1] + '</span> ' : '') + esc(c.text) + '</li>';
     }).join('') : '<li>the chronicle is still blank — it\'s early</li>';

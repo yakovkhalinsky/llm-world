@@ -30,7 +30,7 @@ EQUIVALENT = {
     ("var d = Number(now) - Number(tick);", "Number(now)"),
     ("var d = Number(now) - Number(tick);", "Number(tick)"),
     # ago() only ever returns fixed words, a dash, or fmt()'s digits
-    ("return '<li><span class=\"when\">' + esc(ago(c.tick, st.tick)) +",
+    ("'<span class=\"when\">' + esc(ago(c.tick, st.tick)) +",
      "esc(ago(c.tick, st.tick))"),
     # a comparison coerces; only an 's' or '' is written
     ("(Number(last.amendments) > 1 ? 's' : '')", "Number(last.amendments)"),

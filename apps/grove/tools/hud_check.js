@@ -362,6 +362,29 @@ ok('the times read as words',
    els.chron.innerHTML.indexOf('>this week<') >= 0 &&
    els.chron.innerHTML.indexOf('>last week<') >= 0 &&
    els.chron.innerHTML.indexOf('>34 weeks ago<') >= 0, els.chron.innerHTML);
+/* Acid Burn F1 (grove): the times are relative, so every row's words
+ * change each week ("this week" → "last week") and a key read from the
+ * words found nothing to anchor on. The key is the week and the line. */
+const keysOf = (html) => (html.match(/data-key="([^"]*)"/g) || [])
+  .map((k) => k.slice(10, -1));
+const rowText = (html) => (html.match(/<li[^>]*>.*?<\/li>/g) || [])
+  .map((r) => r.replace(/<[^>]*>/g, ''));
+const keys1 = keysOf(els.chron.innerHTML), text1 = rowText(els.chron.innerHTML);
+step('a week later, one new line', () => H.update(Object.assign({}, plain, {
+  tick: 1235,
+  chronicle: [{ tick: 1235, text: 'snow', source: 'template' }]
+    .concat(plain.chronicle),
+})));
+const keys2 = keysOf(els.chron.innerHTML), text2 = rowText(els.chron.innerHTML);
+ok('every chronicle row has a key, one a row',
+   keys1.length === 3 && keys2.length === 4 && new Set(keys2).size === 4,
+   [keys1, keys2]);
+ok('a week on, the old rows keep their keys though their words changed',
+   JSON.stringify(keys2.slice(1)) === JSON.stringify(keys1) &&
+   text2.slice(1).every((t, i) => t !== text1[i]), [keys1, keys2, text1, text2]);
+ok('the key carries nothing from the frame but its week and a hash',
+   keys2.every((k) => /^\d+:[0-9a-z]+$/.test(k)), keys2);
+step('back to the friendly frame', () => H.update(plain));
 ok('the status line is short, one line',
    els.status.textContent === 'AI off · no key', els.status.textContent);
 ok('the server\'s status is said for a reader',

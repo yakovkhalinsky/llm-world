@@ -247,7 +247,9 @@
     var days = (st.days || []).slice().reverse();
     return days.length ? days.map(function (d) {
       var says = Array.isArray(d.says) ? d.says : [];
-      return '<li' + (says.length ? '' : ' class="quiet"') + '>' +
+      /* keyed by its day: today's row gains its news as the day goes */
+      return '<li data-key="' + Patch.key(d.day) + '"' +
+        (says.length ? '' : ' class="quiet"') + '>' +
         '<span class="d">day ' + fmt(d.day) + '</span>' +
         '<span class="shape">' + esc(d.line || '') + '</span>' +
         (says.length ? '<span class="news">' + says.map(function (s) {
@@ -262,7 +264,8 @@
   function chronicle(st) {
     var rows = (st.chronicle || []).slice().reverse();
     return rows.length ? rows.map(function (e) {
-      return '<li><span class="d">day ' + fmt(e.day) + '</span>' +
+      return '<li data-key="' + Patch.key(e.day, e.text) + '">' +
+        '<span class="d">day ' + fmt(e.day) + '</span>' +
         '<span class="shape">' + esc(e.text) + '</span></li>';
     }).join('') :
       '<li class="quiet"><span class="shape">the watcher hasn\'t written ' +

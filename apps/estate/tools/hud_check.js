@@ -591,6 +591,30 @@ if (person) {
      els.chron.innerHTML.indexOf('day 1,747') >= 0, els.chron.innerHTML);
   EstateHUD.tab('chron', state);
 }
+/* the newest-first lists carry a key that does not move with their words
+ * (patch.js anchors the reader's row on it): a day's row by its day, as
+ * today's row gains its news; a watcher's line by its day and words */
+{
+  const keys = () => (els.chron.innerHTML.match(/data-key="([^"]*)"/g) || [])
+    .map((k) => k.slice(10, -1));
+  const st = clone(state);
+  st.days = [{ day: 9, line: 'a day', says: [] }, { day: 10, line: 'today', says: [] }];
+  st.chronicle = [{ day: 9, text: 'one' }, { day: 9, text: 'two' }];
+  EstateHUD.tab('chron', st);
+  const k1 = keys();
+  st.days[1] = { day: 10, line: 'today, busier', says: ['a fox'] };
+  st.days.push({ day: 11, line: 'tomorrow', says: [] });
+  EstateHUD.update(st);
+  const k2 = keys();
+  ok('a day keeps its row\'s key as its words grow, one key a day',
+     k1.length === 2 && JSON.stringify(k2.slice(1)) === JSON.stringify(k1) &&
+     new Set(k2).size === 3, [k1, k2]);
+  EstateHUD.tab('watch', st);
+  const w = keys();
+  ok('two watcher lines on one day have two keys',
+     w.length === 2 && w[0] !== w[1] && w.every((k) => /^\d+:[0-9a-z]+$/.test(k)), w);
+  EstateHUD.tab('chron', state);
+}
 
 /* the panels write a list only when it changed (patch.js) */
 {

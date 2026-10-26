@@ -18,6 +18,13 @@ PATCH = os.path.join(ROOT, "..", "shared", "page3d", "patch.js")
 
 # (what is broken, text in patch.js, what it becomes)
 MUTANTS = [
+    # Patch.key (Acid Burn F1, grove): the key is the week and the words
+    ("a row's key ignores its words",
+     "if (text === undefined || text === null) return k;", "return k;"),
+    ("a row's key ignores its week",
+     "var k = String(Number(when));", "var k = '0';"),
+    ("a row's key carries the frame's text as it is",
+     "return k + ':' + (h >>> 0).toString(36);", "return k + ':' + s;"),
     # both guards: the first is only the fast path past the hold checks
     ("an unchanged list is written anyway",
      ["if (same && !(opts && opts.reset)) return false;",
