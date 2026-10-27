@@ -30,11 +30,28 @@ function files(dir: string, at = ""): string[] {
 /**
  * This app's page is page3d's own index.html, with every page3d file named
  * relative to the page (3d/...) so the static build works from any
- * sub-path, and src/main.ts in place of viewer.js: it answers the page's
+ * sub-path, a seed row under the pace controls, and src/main.ts in place
+ * of viewer.js: it answers the page's
  * /api requests from the worker, then starts 3d/viewer.js itself. Each
  * rewrite must find what it rewrites, so a change to page3d's page fails
  * the build here rather than shipping a page that half works.
  */
+/** This app's one addition to page3d's controls: which estate, kept or anew. */
+const SEED_ROW = `      <div class="speedrow seedrow">
+        <span class="hint" title="every estate grows from a seed; the same seed grows the same estate">seed</span>
+        <input id="seedIn" inputmode="numeric" aria-label="seed" value="">
+        <button id="plantBtn" title="open this seed's estate, where it was left">plant</button>
+        <button id="againBtn" title="this seed again from day 0">start over</button>
+        <span class="note" id="seedNote"></span>
+      </div>`;
+const SEED_STYLE = `<style>
+  .speedrow.seedrow { flex-wrap: wrap; }
+  .seedrow input { width: 5em; min-width: 0; font: inherit; font-size: 12px;
+    background: transparent; color: inherit; border: 1px solid var(--edge, #555);
+    border-radius: 6px; padding: 3px 6px; font-variant-numeric: tabular-nums; }
+  .seedrow .note { flex-basis: 100%; font-size: 11px; color: var(--dim, #999); }
+</style>`;
+
 export function page3dIndex(html: string): string {
   const swap = (from: RegExp | string, to: string | ((...m: string[]) => string)) => {
     const out = html.replace(from, to as string);
@@ -42,6 +59,8 @@ export function page3dIndex(html: string): string {
     html = out;
   };
   swap(/<script type="module" src="\/3d\/viewer\.js"><\/script>/, '<script type="module" src="/src/main.ts"></script>');
+  swap(/(<div class="speedrow phases">[\s\S]*?<\/div>)/, `$1\n${SEED_ROW}`);
+  swap(/(<\/head>)/, `${SEED_STYLE}\n$1`);
   swap(/(src|href)="\/3d\//g, '$1="3d/');
   swap(/(<script type="importmap">)([\s\S]*?)(<\/script>)/, (_m, open, map, close) => {
     const parsed: Record<string, unknown> = JSON.parse(map!);

@@ -4,13 +4,14 @@
  * asks `/api/ground`, `/api/state`, `/api/plain` and `/api/control` as it
  * does of web.py and never knows there is no server.
  *
- * `?seed=N` plants that estate; with no seed it is seed 1. page3d's own
+ * `?seed=N` opens that estate (resumed if it was saved, planted if not);
+ * with no seed the estate last open comes back, or seed 1. page3d's own
  * parameters (`?static=1`, `?show=…`) pass through untouched.
  */
 import { parseSeed } from "./seed.ts";
-import { API_PATHS, type FromWorker, type ToWorker } from "./worker/protocol.ts";
+import { API_PATHS, type FromWorker, type Opened, type ToWorker } from "./worker/protocol.ts";
 
-type Reply = Exclude<FromWorker, { type: "error" }>;
+type Reply = Exclude<FromWorker, { type: "error" } | { type: "saving" }>;
 type Ask = ToWorker extends infer T ? (T extends { id: number } ? Omit<T, "id"> : never) : never;
 
 const worker = new Worker(new URL("./worker/sim.worker.ts", import.meta.url), { type: "module" });
@@ -19,6 +20,10 @@ let nextId = 1;
 
 worker.onmessage = (ev: MessageEvent<FromWorker>) => {
   const m = ev.data;
+  if (m.type === "saving") {
+    savingNote(m.ok, m.why);
+    return;
+  }
   const w = m.id === null ? undefined : waiting.get(m.id);
   if (!w) {
     // an error that answers no request: the estate itself stopped
@@ -73,18 +78,62 @@ function installApi(): void {
   };
 }
 
+const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T | null;
+
+let opened = "";
+
+/** The seed row's note: how the estate opened, and whether it is being kept. */
+function savingNote(ok: boolean, why: string): void {
+  const note = $("seedNote");
+  if (note) note.textContent = `${opened} · ${ok ? "saved in this browser" : `not saved (${why})`}`;
+}
+
+function seedControls(o: Opened): void {
+  const input = $<HTMLInputElement>("seedIn");
+  const note = $("seedNote");
+  if (input) input.value = String(o.seed);
+  opened = o.crashed !== undefined
+    ? `stopped on day ${o.crashed.toLocaleString("en-AU")} last time and will stop there again; start again to plant it afresh`
+    : o.resumed ? `resumed at day ${o.day.toLocaleString("en-AU")}` : "planted";
+  savingNote(o.saving, o.why);
+  const go = (fresh: boolean) => {
+    const n = parseSeed(input?.value ?? "");
+    if (n === null) {
+      if (note) note.textContent = "a seed is a whole number";
+      return;
+    }
+    const url = new URL(location.href);
+    url.searchParams.set("seed", String(n));
+    if (fresh) url.searchParams.set("fresh", "1");
+    else url.searchParams.delete("fresh");
+    location.assign(url);
+  };
+  const plantBtn = $<HTMLButtonElement>("plantBtn");
+  const againBtn = $<HTMLButtonElement>("againBtn");
+  if (plantBtn) plantBtn.onclick = () => go(false);
+  if (againBtn) againBtn.onclick = () => {
+    if (confirm(`Start estate ${input?.value ?? ""} again from day 1? Its saved days are forgotten.`)) go(true);
+  };
+  input?.addEventListener("keydown", (e) => { if (e.key === "Enter") go(false); });
+}
+
 async function boot(): Promise<void> {
   const params = new URLSearchParams(location.search);
   const raw = params.get("seed");
   const seed = raw === null ? null : parseSeed(raw);
-  const r = await ask({ type: "open", seed });
+  const fresh = params.get("fresh") === "1";
+  const r = await ask({ type: "open", seed, fresh });
   if (r.type !== "opened") throw new TypeError("the estate did not open");
-  if (seed === null || String(seed) !== raw) {
-    // the address names the estate on screen
+  if (fresh || seed === null || String(seed) !== raw) {
+    // the address names the estate on screen, and a reload never wipes it again
     params.set("seed", String(r.seed));
     params.delete("fresh");
     history.replaceState(null, "", `${location.pathname}?${params}${location.hash}`);
   }
+  seedControls(r);
+  // Best effort only: the worker already saves after every day and every
+  // control, and a page going away cannot wait for the flush to finish.
+  addEventListener("pagehide", () => void ask({ type: "flush" }));
   installApi();
   const viewer = document.createElement("script");
   viewer.type = "module";
