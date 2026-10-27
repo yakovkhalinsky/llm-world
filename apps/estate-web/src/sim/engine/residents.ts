@@ -28,9 +28,7 @@ export const HOOKS: {
   satisfy: ((w: W.World, r: Res, c: Cand, need: string, phase: string) => void) | null;
 } = { ranked: null, satisfy: null };
 
-function intKeys(o: Record<string, unknown>): string[] {
-  return Object.keys(o).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
-}
+const intKeys = W.ids;
 
 function pos(w: W.World, r: Res): [number, number] {
   if (r.where.mode === "in") {
@@ -157,9 +155,73 @@ function ck(w: W.World, x: number, y: number): number {
 
 type Pt = [number, number];
 
+// path()'s scratch: which cells this search has seen (by stamp, so nothing
+// needs clearing between searches) and the cell each was reached from
+let seen = new Int32Array(0);
+let from = new Int32Array(0);
+let stamp = 0;
+
+/** For the tests: put the stamp where it is about to wrap (0x7fffffff),
+ * which otherwise takes two billion searches to reach. */
+export function setPathStamp(n: number): void {
+  stamp = n;
+}
+
+/** Breadth-first, eight ways, the target allowed even if it can't be
+ * walked on: world.path. The same search as pathMap below, step for step,
+ * on flat arrays — it runs for every leg of every walk, which makes it
+ * the hottest loop in the day. */
 export function path(w: W.World, sx: number, sy: number, tx: number, ty: number): Pt[] | null {
   if (sx === tx && sy === ty) return [];
-  const came = new Map<number, Pt | null>();
+  // A start off the padded plan can't be keyed into the flat arrays (ck
+  // would wrap into the next row). Nothing walks from there today —
+  // residents and fixtures stand on the plan — but if one did, the same
+  // search on a map keyed by the cell itself still answers as Python does.
+  if (sx < -1 || sy < -1 || sx > w.width || sy > w.height) return pathMap(w, sx, sy, tx, ty);
+  const span = w.width + 4;
+  const size = span * (w.height + 4);
+  if (seen.length < size) {
+    seen = new Int32Array(size);
+    from = new Int32Array(size);
+    stamp = 0;
+  }
+  if (++stamp === 0x7fffffff) {
+    seen.fill(0);
+    stamp = 1;
+  }
+  const s0 = ck(w, sx, sy);
+  seen[s0] = stamp;
+  let frontier: number[] = [s0];
+  while (frontier.length) {
+    const nxt: number[] = [];
+    for (const c of frontier) {
+      const cx = (c % span) - 2;
+      const cy = ((c / span) | 0) - 2;
+      for (const [ox, oy] of STEPS) {
+        const nx = cx + ox, ny = cy + oy;
+        const k = c + oy * span + ox;
+        if (seen[k] === stamp) continue;
+        const isT = nx === tx && ny === ty;
+        if (!isT && !W.passable(w, nx, ny)) continue;
+        seen[k] = stamp;
+        from[k] = c;
+        if (isT) {
+          const out: Pt[] = [];
+          for (let n = k; n !== s0; n = from[n]!) out.push([(n % span) - 2, ((n / span) | 0) - 2]);
+          out.reverse();
+          return out;
+        }
+        nxt.push(k);
+      }
+    }
+    frontier = nxt;
+  }
+  return null;
+}
+
+export function pathMap(w: W.World, sx: number, sy: number, tx: number, ty: number): Pt[] | null {
+  const ck = (_w: W.World, x: number, y: number) => `${x},${y}`;
+  const came = new Map<string, Pt | null>();
   came.set(ck(w, sx, sy), null);
   let frontier: Pt[] = [[sx, sy]];
   while (frontier.length) {
