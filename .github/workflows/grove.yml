@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  grove:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     defaults:
