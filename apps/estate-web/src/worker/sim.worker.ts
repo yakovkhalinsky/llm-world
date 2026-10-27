@@ -25,6 +25,11 @@ const queued = { step: 0 };
 let timer: ReturnType<typeof setTimeout> | undefined;
 let saving: Promise<void> | null = null;
 let dirty = false;
+/** this tab holds the seed's lock; a second tab on the seed runs but never saves */
+let held = false;
+let release: (() => void) | null = null;
+/** what the last save came to, so the page hears only when it changes */
+let lastSave: store.Saved = { ok: true };
 
 function post(m: FromWorker): void {
   self.postMessage(m);
@@ -35,9 +40,13 @@ function persist(): Promise<void> {
   dirty = true;
   if (saving) return saving;
   saving = (async () => {
-    while (dirty && state) {
+    while (dirty && state && held) {
       dirty = false;
-      await store.save(state);
+      const r = await store.save(state);
+      if (r.ok !== lastSave.ok || (!r.ok && !lastSave.ok && r.why !== lastSave.why)) {
+        lastSave = r;
+        post({ type: "saving", id: null, ok: r.ok, why: r.ok ? "" : r.why });
+      }
     }
     saving = null;
   })();
@@ -46,15 +55,24 @@ function persist(): Promise<void> {
 
 async function open(seed: number | null, fresh: boolean) {
   const s = seed ?? (await store.lastSeed()) ?? DEFAULT_SEED;
-  if (fresh) await store.forget(s);
+  release?.();
+  release = await store.claim(s);
+  held = release !== null;
+  if (fresh && held) await store.forget(s);
   const saved = fresh ? undefined : await store.load(s);
-  state = saved ?? plant(s);
+  state = saved?.state ?? plant(s);
   queued.step = 0;
-  await persist();
+  dirty = true;
+  lastSave = held ? await store.save(state) : { ok: false, why: "open in another tab" };
+  dirty = false;
   // A new estate has its first day at once, as web.py's runner does on
   // start; a resumed one waits its pace, so a reload is not a day.
   schedule(!saved && !state.paused);
-  return { seed: s, day: state.world.day, resumed: Boolean(saved), saving: await store.available() };
+  return {
+    seed: s, day: state.world.day, resumed: Boolean(saved),
+    saving: lastSave.ok, why: lastSave.ok ? "" : lastSave.why,
+    ...(saved?.crashed !== undefined ? { crashed: saved.crashed } : {}),
+  };
 }
 
 function schedule(now = false): void {
@@ -76,12 +94,14 @@ function beat(): void {
   if (!state) return;
   if (queued.step > 0 || !state.paused) {
     if (queued.step > 0) queued.step--;
+    const { seed, day } = state.world;
     try {
       step(state);
     } catch (e) {
       // the half-ticked day is not saved: persist() stops once state is null,
-      // and the store keeps the last whole day
+      // and the store keeps the last whole day, marked with the day that threw
       state = null;
+      if (held) void store.markCrashed(seed, day + 1);
       queued.step = 0;
       clearTimeout(timer);
       timer = undefined;

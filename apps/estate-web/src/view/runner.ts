@@ -48,12 +48,16 @@ export interface RunState {
   /** the days of the run since the last chronicle entry */
   run: number[];
   chronicle: Entry[];
-  /** the template ids lately used, so the words do not repeat */
-  memory: narrate.Memory;
+  /** the template ids lately used, so the words do not repeat: the why's
+   * and the chronicle's apart, so one never crowds the other's out */
+  memory: { why: narrate.Memory; chronicle: narrate.Memory };
   paused: boolean;
   tick_seconds: number;
 }
 
+/** Events kept, as web.py keeps them. A chronicle entry reads its stretch's
+ * events from these, so a stretch of more than this many would lose its
+ * first; tests/chronicle.test.ts checks the seeds it runs stay well under. */
 export const KEEP_EVENTS = 400;
 export const KEEP_BOOKS = 64;
 export const KEEP_CHRONICLE = 40;
@@ -64,7 +68,7 @@ export function plant(seed: number): RunState {
     prev: {}, events: [], daybooks: {},
     last_watch: { fate: null, region: null, why: null, day: null },
     next_watch: 0, run: [], chronicle: [],
-    memory: { used: [] },
+    memory: { why: { used: [] }, chronicle: { used: [] } },
     paused: false,
     tick_seconds: R.pacing.day_seconds[1]!,
   };
@@ -102,7 +106,7 @@ function watch(s: RunState): void {
   s.next_watch = w.day + watcher.gapDays(w.seed, w.day);
   const intent = watcher.choose(w);
   watcher.queue(w, intent);
-  intent.why = narrate.why(w, intent, s.daybooks, s.events, s.memory);
+  intent.why = narrate.why(w, intent, s.daybooks, s.events, s.memory.why);
   s.last_watch = {
     fate: intent.fate, region: intent.region, why: intent.why, day: w.day,
     decided: intent.decided!, confidence: intent.confidence!,
@@ -118,7 +122,7 @@ function chronicle(s: RunState): void {
     days,
     events: s.events.filter((e) => e.day >= from),
     books: s.daybooks,
-  }, s.memory, s.chronicle.map((c) => c.text));
+  }, s.memory.chronicle, s.chronicle.map((c) => c.text));
   s.chronicle.push({ day: w.day, text });
   if (s.chronicle.length > KEEP_CHRONICLE) s.chronicle.splice(0, s.chronicle.length - KEEP_CHRONICLE);
   s.run = [];

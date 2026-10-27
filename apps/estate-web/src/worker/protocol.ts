@@ -11,12 +11,20 @@ export type ToWorker =
   | { type: "api"; id: number; method: string; path: string; body: string | null }
   | { type: "flush"; id: number };
 
-export interface Opened { seed: number; day: number; resumed: boolean; saving: boolean }
+export interface Opened {
+  seed: number; day: number; resumed: boolean;
+  /** whether the estate is being kept, and if not why ("open in another tab", "storage full", …) */
+  saving: boolean; why: string;
+  /** the day this saved estate stopped on last time, if it did */
+  crashed?: number;
+}
 
 export type FromWorker =
   | ({ type: "opened"; id: number } & Opened)
   | { type: "api"; id: number; status: number; contentType: string; body: string }
   | { type: "flushed"; id: number }
+  /** a save's outcome changed: the estate stopped being kept, or is kept again */
+  | { type: "saving"; id: null; ok: boolean; why: string }
   | { type: "error"; id: number | null; message: string };
 
 /** The requests page3d makes that the worker answers; anything else is fetched. */
