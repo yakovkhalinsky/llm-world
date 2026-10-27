@@ -69,7 +69,7 @@ engine (`apps/estate/tools/parity.py`, `export_rules.py`, `balance.py`) at a
 pinned commit. Its code lives in its own repo,
 [yakovkhalinsky/highfield](https://github.com/yakovkhalinsky/highfield).
 
-<p align="center"><a href="https://yakov.khalinsky.com/highfield/"><img src="docs/screenshots/thumbs/estate-web-overview.webp" width="480" alt="Highfield in the browser, the chronicle open"></a></p>
+<p align="center"><a href="https://yakov.khalinsky.com/highfield/"><img src="docs/screenshots/thumbs/highfield-browser.webp" width="480" alt="Highfield in the browser, the chronicle open"></a></p>
 
 `new --force` never deletes anything: it moves the old world aside as
 `archive-<stamp>-…db` in the same data directory.
