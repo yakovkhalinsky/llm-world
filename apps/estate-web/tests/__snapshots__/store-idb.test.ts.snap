@@ -1,0 +1,39 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the store > pins RunState's keys to FORMAT: change one, bump the other 1`] = `
+[
+  2,
+  [
+    "daybooks",
+    "events",
+    "last_watch",
+    "memory",
+    "next_watch",
+    "paused",
+    "prev",
+    "tick_seconds",
+    "world",
+  ],
+  [
+    "biome",
+    "buildings",
+    "cells",
+    "day",
+    "daybook",
+    "fates",
+    "fixtures",
+    "height",
+    "households",
+    "next_id",
+    "pending",
+    "residents",
+    "seed",
+    "units",
+    "waiting",
+    "weather",
+    "weather_left",
+    "wet_days",
+    "width",
+  ],
+]
+`;

@@ -25,6 +25,7 @@ it("keeps nothing, and fails nothing, without IndexedDB", async () => {
   expect(await store.available()).toBe(false);
   expect(await store.load(7)).toBeUndefined();
   expect(await store.lastSeed()).toBeUndefined();
-  expect(await store.save(plant(7))).toBe(false);
+  expect(await store.save(plant(7))).toEqual({ ok: false, why: "no storage here" });
+  expect(await store.claim(7)).toBeTypeOf("function"); // no locks here either: this tab may save
   await expect(store.forget(7)).resolves.toBeUndefined();
 });
