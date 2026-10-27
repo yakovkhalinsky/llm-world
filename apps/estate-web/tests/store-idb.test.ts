@@ -64,6 +64,7 @@ describe("the store", () => {
       ["day", { ...rec, state: { ...s, world: { ...s.world, day: "3" } } }],
       ["events", { ...rec, state: { ...s, events: {} } }],
       ["pace", { ...rec, state: { ...s, tick_seconds: -1 } }],
+      ["memory", { ...rec, state: { ...s, memory: { used: "x" } } }],
       ["not an object", { seed: 11, format: store.FORMAT, rules: store.RULES, state: 7 }],
     ];
     for (const [why, r] of bad) {

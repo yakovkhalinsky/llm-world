@@ -33,9 +33,10 @@ export interface Memory { used: string[] }
 
 export const MEMORY = 24;
 
-type Option = [id: string, text: string];
+export type Option = [id: string, text: string];
 
-/** One of the options, preferring any not used lately. */
+/** One of the options, preferring any not used lately: a line is never
+ * said twice running, unless it is the only one that fits. */
 export function pick(rng: PyRandom, mem: Memory, options: Option[]): string {
   // the older half: never used first, then the ones used longest ago, so
   // a line is never the last one said and the order never settles into a
@@ -85,14 +86,14 @@ function frayed(w: W.World, n = 2): string[] {
 // --------------------------------------------------------- the watcher's why
 
 /** Facts the why may lean on, every one read off the world or its books. */
-interface Facts {
+export interface Facts {
   season: string; weekday: string; weather: string;
   dry: number; calm: number; soldOut: number; stockPct: number | null;
   worn: string[]; broken: string[]; frayed: string[];
   today: number | null; born: string[];
 }
 
-function facts(w: W.World, books: Record<number, W.Daybook | undefined>, events: Ev[]): Facts {
+export function facts(w: W.World, books: Record<number, W.Daybook | undefined>, events: Ev[]): Facts {
   const back = (pred: (b: W.Daybook) => boolean): number => {
     let n = 0;
     for (let d = w.day; d > w.day - 64; d--) {
@@ -123,10 +124,10 @@ function facts(w: W.World, books: Record<number, W.Daybook | undefined>, events:
   };
 }
 
-/** The watcher's why for a choice already made: one short sentence in the
- * place's own voice, from the facts that fit the fate, or the pack's line. */
-export function why(w: W.World, intent: Intent, books: Record<number, W.Daybook | undefined>,
-                    events: Ev[], mem: Memory): string {
+/** Every line the why could say today for a choice already made, with its
+ * template id: the ones whose facts hold, and the pack's line last. */
+export function whyOptions(w: W.World, intent: Intent, books: Record<number, W.Daybook | undefined>,
+                           events: Ev[]): Option[] {
   const f = facts(w, books, events);
   const pack = R.fates[intent.fate]?.why ?? intent.why;
   const opts: Option[] = [];
@@ -161,9 +162,15 @@ export function why(w: W.World, intent: Intent, books: Record<number, W.Daybook 
     case "tranquillity":
       add(f.frayed.length, "fray", () => `${list(f.frayed)} ${isAre(f.frayed.length)} fraying; the estate could use a few quiet days`);
       break;
-    case "damage":
-      add(f.worn.length, "worn", () => `the ${words(f.worn[0])} has been wearing thin`);
+    case "damage": {
+      // the worn kind where the damage is aimed, if one is, else any
+      const aimed = Object.values(w.fixtures)
+        .filter((x) => f.worn.includes(x.kind) && x.condition > 0 && x.condition < 0.35 && W.inRegion(w, intent.region, x.x, x.y))
+        .map((x) => x.kind).sort(byCodePoint);
+      const kind = aimed[0] ?? f.worn[0];
+      add(kind, "worn", () => `the ${words(kind!)} has been wearing thin`);
       break;
+    }
     case "quiet":
       add(!f.frayed.length, "steady", () => "nobody is fraying — the estate can keep its own day");
       add(f.today, "errands", () => `${commas(f.today!)} errands today; the estate needs nothing from me`);
@@ -173,5 +180,12 @@ export function why(w: W.World, intent: Intent, books: Record<number, W.Daybook 
       break;
   }
   opts.push([`${intent.fate}:pack`, pack]);
-  return pick(W.rngFor(w.seed, w.day, "watch:why"), mem, opts);
+  return opts;
+}
+
+/** The watcher's why for a choice already made: one short sentence in the
+ * place's own voice, from the facts that fit the fate, or the pack's line. */
+export function why(w: W.World, intent: Intent, books: Record<number, W.Daybook | undefined>,
+                    events: Ev[], mem: Memory): string {
+  return pick(W.rngFor(w.seed, w.day, "watch:why"), mem, whyOptions(w, intent, books, events));
 }

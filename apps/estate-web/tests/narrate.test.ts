@@ -6,13 +6,15 @@
  *   - nobody invented: every resident it names is a resident fraying now,
  *     or one born on the estate that week;
  *   - no repeats: a template is held back while others fit, so a line
- *     is never said twice running;
+ *     is never said twice running, unless it is the only one that fits;
  * and it is the seed's alone, the same on every run.
  */
 import { describe, expect, it } from "vitest";
 import { PyRandom } from "../src/py/random.ts";
 import { R } from "../src/sim/rules.ts";
-import { MEMORY, pick, type Memory } from "../src/view/narrate.ts";
+import * as W from "../src/sim/world.ts";
+import type { Ev } from "../src/sim/engine/events.ts";
+import { MEMORY, pick, whyOptions, type Memory } from "../src/view/narrate.ts";
 import { plant, step, type RunState } from "../src/view/runner.ts";
 
 const NAMES = [...new Set(R.presentation.resident_names ?? [])];
@@ -82,6 +84,72 @@ describe.each([1, 42, 7])("seed %i, a year", (seed) => {
 
   it("is the seed's: the same whys on every run", () => {
     expect(whys(seed, 120).map((x) => x.why)).toEqual(all.filter((x) => x.day <= 120).map((x) => x.why));
+  });
+});
+
+describe("each fact's threshold, a day either side", () => {
+  const base = () => {
+    const s = plant(1);
+    for (let i = 0; i < 20; i++) step(s);
+    for (const f of Object.values(s.world.fixtures)) f.condition = 1;
+    return s;
+  };
+  /** day books for the last `n` days dry, the one before wet */
+  const books = (day: number, dry: number): Record<number, W.Daybook> => {
+    const b: Record<number, W.Daybook> = {};
+    for (let d = day; d > day - 64; d--) b[d] = { uses: {}, out: 0, noise: 0, broke: 0, weather: d > day - dry ? "sun" : "rain" };
+    return b;
+  };
+  const ids = (s: RunState, fate: string, b: Record<number, W.Daybook>, evs: Ev[] = [], region = "all") =>
+    whyOptions(s.world, { fate, region, why: "" }, b, evs).map(([id]) => id);
+
+  it("a dry spell: two days hold off, three want rain", () => {
+    const s = base();
+    const d = s.world.day;
+    expect(ids(s, "rain", books(d, 1))).toEqual(["rain:pack"]);
+    expect(ids(s, "rain", books(d, 2))).toEqual(["rain:held", "rain:pack"]);
+    expect(ids(s, "rain", books(d, 3))).toEqual(["rain:dry", "rain:held", "rain:pack"]);
+  });
+
+  it("born this week: six days back is new, seven is not", () => {
+    const s = base();
+    const d = s.world.day;
+    const born = (ago: number): Ev[] => [{ day: d - ago, kind: "born", who: "Ada", what: "" } as Ev];
+    const b = books(d, 0);
+    expect(ids(s, "quiet", b, born(6))).toContain("quiet:born");
+    expect(ids(s, "quiet", b, born(7))).not.toContain("quiet:born");
+    expect(whyOptions(s.world, { fate: "quiet", region: "all", why: "" }, b, born(6)).find(([id]) => id === "quiet:born")![1])
+      .toMatch(/^Ada is new on the estate/);
+  });
+
+  it("the shop's shelves: under half is said, half is not", () => {
+    const s = base();
+    const shop = Object.values(s.world.fixtures).find((f) => f.kind === "shop")!;
+    const full = R.fixtures.shop!.stock!;
+    const at = (pct: number) => [...Array(full + 1).keys()].filter((x) => Math.round((100 * x) / full) === pct);
+    const b = books(s.world.day, 0);
+    shop.stock = Math.min(...at(50));
+    expect(ids(s, "delivery", b)).not.toContain("delivery:stock");
+    shop.stock = Math.max(...[...Array(full + 1).keys()].filter((x) => Math.round((100 * x) / full) < 50));
+    expect(ids(s, "delivery", b)).toContain("delivery:stock");
+  });
+
+  it("damage names a worn fixture where it is aimed, before one elsewhere", () => {
+    const s = base();
+    const fx = Object.values(s.world.fixtures);
+    const [region, a, b] = Object.keys(R.regions).flatMap((r) => {
+      const inside = fx.filter((f) => W.inRegion(s.world, r, f.x, f.y));
+      const outside = fx.filter((f) => !W.inRegion(s.world, r, f.x, f.y));
+      const a = inside.find((f) => outside.some((o) => o.kind < f.kind));
+      const b = a && outside.find((o) => o.kind < a.kind);
+      return a && b ? [[r, a, b] as const] : [];
+    })[0]!;
+    a.condition = 0.2;
+    b.condition = 0.2;
+    const line = (r: string) => whyOptions(s.world, { fate: "damage", region: r, why: "" }, books(s.world.day, 0), [])
+      .find(([id]) => id === "damage:worn")![1];
+    expect(line(region)).toBe(`the ${a.kind.replace(/_/g, " ")} has been wearing thin`);
+    expect(line("all")).toBe(`the ${b.kind.replace(/_/g, " ")} has been wearing thin`);
   });
 });
 
