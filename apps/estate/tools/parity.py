@@ -1,4 +1,4 @@
-"""The Python side of apps/estate-web's parity test.
+"""The Python side of highfield's parity test (github.com/yakovkhalinsky/highfield).
 
 The browser port must plant and run the same estate as this engine from
 the same seed — not a similar one. This prints what the port is held to:
