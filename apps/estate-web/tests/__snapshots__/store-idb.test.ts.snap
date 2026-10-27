@@ -2,8 +2,9 @@
 
 exports[`the store > pins RunState's keys to FORMAT: change one, bump the other 1`] = `
 [
-  2,
+  3,
   [
+    "chronicle",
     "daybooks",
     "events",
     "last_watch",
@@ -11,6 +12,7 @@ exports[`the store > pins RunState's keys to FORMAT: change one, bump the other 
     "next_watch",
     "paused",
     "prev",
+    "run",
     "tick_seconds",
     "world",
   ],

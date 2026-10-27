@@ -58,8 +58,13 @@ describe.each([[1, 120], [42, 75]])("seed %i, %i days", (seed, days) => {
     expect(get("/api/ground")).toEqual(py.ground);
     const state = get("/api/state");
     expect(state.llm).toBe(LLM_STATUS);
-    const same = (st: Record<string, unknown>) => ({ ...st, llm: null, watcher: { ...(st.watcher as object), why: null } });
+    // the why and the chronicle are seeded templates here, a model's (or
+    // chronicler.fallback's) words there; everything else is the same
+    const same = (st: Record<string, unknown>) =>
+      ({ ...st, llm: null, chronicle: null, watcher: { ...(st.watcher as object), why: null } });
     expect(same(state)).toEqual(same(py.state));
+    expect(state.chronicle).toEqual(s.chronicle.slice(-8));
+    expect(state.chronicle.length).toBeGreaterThan(0);
   });
 
   it("takes each control request as web._control does, all of it or none", () => {
