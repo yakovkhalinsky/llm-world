@@ -61,10 +61,16 @@ with the same seed at the same day have the same estate.
 
 **Saves.** Each seed is saved separately in IndexedDB, after every day.
 Open `?seed=42` to resume that estate, or plant it if it is new. "start
-over" plants it again from day 0. With no `?seed=`, the last estate you had
-open comes back. If IndexedDB is unavailable (some private windows), the
-estate still runs; it just isn't kept. A save from an older format or
-older rules is never half-loaded: that seed is planted again instead.
+over" plants it again from day 1. With no `?seed=`, the last estate you had
+open comes back. The HUD says whether the estate is being kept: "saved in
+this browser", or "not saved" and why (IndexedDB unavailable, as in some
+private windows; storage full; or the seed already open in another tab,
+which alone holds it). The estate runs either way. A save from an older
+format or older rules, or one that doesn't have the shape of a run, is
+never half-loaded: that seed is planted again instead. If the estate
+stopped with an error last time, the page says on opening which day it
+stopped on and that it will stop there again, and that "start over" plants
+it afresh.
 
 ## Words without a model
 
@@ -86,7 +92,8 @@ a year of three seeds:
   events and day books. If a fact isn't there, no template can say it.
 - **Nobody invented.** The only people named are residents in the
   stretch's events or residents fraying right now.
-- **No repeats.** Recently used templates are held back while others fit.
+- **No repeats.** Recently used templates are held back while others fit
+  (the why's and the chronicle's are remembered apart).
   No chronicle entry is word for word one the estate still keeps.
 
 A few sample entries from seed 1:

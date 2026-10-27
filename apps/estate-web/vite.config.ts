@@ -41,7 +41,7 @@ const SEED_ROW = `      <div class="speedrow seedrow">
         <span class="hint" title="every estate grows from a seed; the same seed grows the same estate">seed</span>
         <input id="seedIn" inputmode="numeric" aria-label="seed" value="">
         <button id="plantBtn" title="open this seed's estate, where it was left">plant</button>
-        <button id="againBtn" title="this seed again from day 0">start over</button>
+        <button id="againBtn" title="this seed again from day 1">start over</button>
         <span class="note" id="seedNote"></span>
       </div>`;
 const SEED_STYLE = `<style>
