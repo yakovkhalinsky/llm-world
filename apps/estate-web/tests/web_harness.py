@@ -14,8 +14,10 @@ wall-clock gate is opened on the seeded day and shut otherwise.
 
     python3 web_harness.py SEED DAYS [PAD]   (run from apps/estate)
         one JSON object: the runner's state, every event said aloud, each
-        kept day's line, and the no-WebGL text frame. PAD placeholder
-        events are put in the log first ({"kind": "pad", "n": i}), so a
+        kept day's line, the no-WebGL text frame, web.py's /api/ground and
+        /api/state, and what web._control makes of each request in
+        CONTROLS. PAD placeholder
+        events are put in the log first ({"kind": "pad", "day": 0, "n": i}), so a
         short run reaches the 400-event cap and is pruned.
     python3 web_harness.py lines       (books as JSON on stdin)
         render.day_line for each book.
@@ -25,9 +27,10 @@ import json
 import math
 import sys
 import threading
+from types import SimpleNamespace
 
 sys.path.insert(0, ".")
-from estate import gen, render, rules, web  # noqa: E402
+from estate import gen, render, rules, web, webguard  # noqa: E402
 from estate import world as W  # noqa: E402
 from tools.parity import canon, world_hash  # noqa: E402
 
@@ -62,8 +65,9 @@ class RulesOnly:
 
 
 def run(seed, days, pad=0):
-    runner = web.SimRunner(Est(seed), threading.Lock(), 1.0, llm=RulesOnly())
-    runner.events = [{"kind": "pad", "n": i} for i in range(pad)]
+    runner = web.SimRunner(Est(seed), threading.Lock(),
+                           rules.R["pacing"]["day_seconds"][1], llm=RulesOnly())
+    runner.events = [{"kind": "pad", "day": 0, "n": i} for i in range(pad)]
     due, said = 0, []
     for _ in range(days):
         evs = runner.step()
@@ -81,6 +85,30 @@ def h16(x):
     return hashlib.sha256(canon(x).encode()).hexdigest()[:16]
 
 
+# control requests, each applied to the runner as it was left by the last
+CONTROLS = [
+    {}, {"paused": True}, {"paused": 1}, {"paused": None}, {"step": 3}, {"step": 0},
+    {"step": 101}, {"step": True}, {"step": 2.5}, {"step": "2"}, {"tick_seconds": 5},
+    {"tick_seconds": 0.01}, {"tick_seconds": 1e9}, {"tick_seconds": "5"},
+    {"tick_seconds": False}, {"paused": False, "step": 1}, {"speed": 1},
+    {"paused": True, "nope": 1}, {"tick_seconds": 7.5, "paused": "no"},
+]
+# bodies as the page could write them, which json.dumps would not: whole
+# numbers written as floats, and an int too big for a float
+RAW = ['{"step": 5.0}', '{"step": 1e2}', '{"step": 1.0000000000000001}', '{"step": 5E0}',
+       '{"step": -0.0}', '{"step": 7}', '{"tick_seconds": 3e1}', '{"paused": 1.0}',
+       '{"tick_seconds": 1' + '0' * 400 + '}', '{"tick_seconds": -1' + '0' * 400 + '}']
+
+
+def control(r, req):
+    try:
+        code, out = web._control(r, req)
+    except webguard.Refused as e:
+        code, out = e.code, {"error": e.why}
+    return {"code": code, "out": out, "paused": r.paused, "step": r.step_once,
+            "tick_seconds": r.tick_seconds}
+
+
 def main():
     if sys.argv[1] == "lines":
         print(json.dumps([render.day_line(b, 1) for b in json.load(sys.stdin)]))
@@ -88,6 +116,9 @@ def main():
     seed, days = int(sys.argv[1]), int(sys.argv[2])
     r, due, said = run(seed, days, int(sys.argv[3]) if len(sys.argv) > 3 else 0)
     w = r.est.world
+    r.llm = None                             # the page's view: no model
+    est = SimpleNamespace(world=w)
+    bodies = [json.dumps(q) for q in CONTROLS] + RAW
     people = max(1, len(w["residents"]))
     print(json.dumps({
         "world": world_hash(w), "events": h16(r.events), "n_events": len(r.events),
@@ -96,6 +127,10 @@ def main():
         "last_watch": r.last_watch, "next_watch": due, "said": said,
         "lines": {d: render.day_line(b, people) for d, b in r.daybooks.items()},
         "plain": render.full(web._frame(w, r)),
+        "ground": web.ground(est),
+        "state": web.snapshot(est, r, threading.Lock()),
+        "controls": bodies,
+        "control": [control(r, json.loads(b)) for b in bodies],
     }, sort_keys=True))
 
 

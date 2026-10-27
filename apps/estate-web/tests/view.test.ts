@@ -2,7 +2,9 @@
  * The runner and the words, against web.py's runner (tests/web_harness.py):
  * after a run of days the two hold the same world, events, day books,
  * prev positions and watcher, and say every event, every day and the
- * no-WebGL frame in the same words.
+ * no-WebGL frame in the same words; and page3d's requests (/api/ground,
+ * /api/state, POST /api/control) are answered field for field as web.py
+ * answers them.
  */
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
@@ -11,6 +13,7 @@ import { canon, hash16 } from "../src/py/canon.ts";
 import { dayLine, full, say, commas } from "../src/view/render.ts";
 import { KEEP_EVENTS, plant, step } from "../src/view/runner.ts";
 import type { Ev } from "../src/sim/engine/events.ts";
+import { LLM_STATUS, MAX_QUEUED, SOURCE_TEXT, respond } from "../src/view/api.ts";
 import * as W from "../src/sim/world.ts";
 import { ESTATE, PYTHON } from "../scripts/parity.ts";
 
@@ -45,6 +48,65 @@ describe.each([[1, 120], [42, 75]])("seed %i, %i days", (seed, days) => {
     const status = `${W.weekdayName(w.day)} · no watcher yet`;
     expect(full({ world: w, status, watcher_line: null, chronicle: [] })).toBe(py.plain);
   });
+
+  it("answers /api/ground and /api/state as web.py does", () => {
+    const get = (path: string) => JSON.parse(respond(s, { step: 0 }, "GET", path, null).body);
+    expect(get("/api/ground")).toEqual(py.ground);
+    const state = get("/api/state");
+    expect(state.llm).toBe(LLM_STATUS);
+    expect({ ...state, llm: null }).toEqual({ ...py.state, llm: null });
+  });
+
+  it("takes each control request as web._control does, all of it or none", () => {
+    const run = structuredClone(s);
+    const queued = { step: 0 };
+    const got = (py.controls as string[]).map((body) => {
+      const r = respond(run, queued, "POST", "/api/control", body);
+      return { code: r.status, out: JSON.parse(r.body), paused: run.paused, step: queued.step, tick_seconds: run.tick_seconds };
+    });
+    expect(got).toEqual(py.control);
+  });
+});
+
+it("refuses what web.py's handler refuses", () => {
+  const s = plant(1);
+  const q = { step: 0 };
+  const err = (body: string) => JSON.parse(respond(s, q, "POST", "/api/control", body).body).error;
+  expect(["{", "[]", "null", "3"].map(err)).toEqual(["the body is not JSON", ...Array(3).fill("the body is not a JSON object")]);
+  expect(respond(s, q, "GET", "/api/nothing", null)).toMatchObject({ status: 404, body: "no such thing" });
+  expect(respond(s, q, "POST", "/api/state", "{}")).toMatchObject({ status: 404 });
+  expect(respond(s, q, "POST", "/api/control", "")).toMatchObject({ status: 200 });
+  expect(["3.0", "1e2"].map(err)).toEqual(Array(2).fill("the body is not a JSON object"));
+});
+
+it("reads the path as urlparse(...).path does", () => {
+  const s = plant(1);
+  const q = { step: 0 };
+  for (const p of ["/api/state?x=1", "/api/state#top", "/api/state;v=2", "/api/state?a=/b;c"]) {
+    expect(respond(s, q, "GET", p, null).status, p).toBe(200);
+  }
+  expect(respond(s, q, "POST", "/api/control?x=1", '{"step": 2}')).toMatchObject({ status: 200 });
+  expect(q.step).toBe(2);
+  expect(respond(s, q, "GET", "/api/states", null).status).toBe(404);
+});
+
+it("answers a snapshot that throws with a 500 and the error, as web.py's /api/state does", () => {
+  const s = plant(1);
+  (s as { world: unknown }).world = { ...s.world, residents: null };
+  const r = respond(s, { step: 0 }, "GET", "/api/state", null);
+  expect(r.status).toBe(500);
+  expect(JSON.parse(r.body).error).toMatch(/null/);
+});
+
+it("queues no more than MAX_QUEUED days", () => {
+  const s = plant(1);
+  const q = { step: 0 };
+  for (let i = 0; i < 150; i++) respond(s, q, "POST", "/api/control", '{"step": 100}');
+  expect(q.step).toBe(MAX_QUEUED);
+});
+
+it("can tell a float step from a whole one here (JSON.parse source text)", () => {
+  expect(SOURCE_TEXT).toBe(true);
 });
 
 describe("the event log's cap", () => {
@@ -53,7 +115,7 @@ describe("the event log's cap", () => {
   const PAD = 380;
   const py = python(5, 40, PAD);
   const s = plant(5);
-  s.events = Array.from({ length: PAD }, (_, n) => ({ kind: "pad", n }) as unknown as Ev);
+  s.events = Array.from({ length: PAD }, (_, n) => ({ kind: "pad", day: 0, n }) as unknown as Ev);
   for (let i = 0; i < 40; i++) step(s);
 
   it("prunes to the last 400 events as web.py's runner does", () => {
