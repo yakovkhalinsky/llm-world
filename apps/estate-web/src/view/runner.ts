@@ -10,11 +10,11 @@
  * on the seed and the days before it.
  *
  * The watcher is the `--decide rules` watcher: watcher.choose decides in
- * code, exactly as the Python runner does, and its why is the pack's line —
- * what Python shows when no model is awake to write one. Its cadence is
- * counted in days from the seed (watcher.gapDays), not wall seconds. The
- * chronicle, which Python writes with a model or `chronicler.fallback`,
- * comes later, from seeded templates.
+ * code, exactly as the Python runner does. Its cadence is counted in days
+ * from the seed (watcher.gapDays), not wall seconds. Its why, which Python
+ * asks a model for, is a seeded template sifted from what happened
+ * (narrate.why), written after the choice and never read by the world.
+ * The chronicle comes later, from seeded templates too.
  */
 import { generate } from "../sim/gen.ts";
 import { R } from "../sim/rules.ts";
@@ -22,6 +22,7 @@ import { tick } from "../sim/engine/tick.ts";
 import type { Ev } from "../sim/engine/events.ts";
 import * as watcher from "../sim/watcher.ts";
 import type * as W from "../sim/world.ts";
+import * as narrate from "./narrate.ts";
 
 export type Prev = [x: number, y: number, mode: string, unit: number | null];
 
@@ -39,6 +40,8 @@ export interface RunState {
   last_watch: Watch;
   /** the first day the watcher is due again; 0 is "after the next tick" */
   next_watch: number;
+  /** the template ids lately used, so the words do not repeat */
+  memory: narrate.Memory;
   paused: boolean;
   tick_seconds: number;
 }
@@ -52,6 +55,7 @@ export function plant(seed: number): RunState {
     prev: {}, events: [], daybooks: {},
     last_watch: { fate: null, region: null, why: null, day: null },
     next_watch: 0,
+    memory: { used: [] },
     paused: false,
     tick_seconds: R.pacing.day_seconds[1]!,
   };
@@ -87,6 +91,7 @@ function watch(s: RunState): void {
   s.next_watch = w.day + watcher.gapDays(w.seed, w.day);
   const intent = watcher.choose(w);
   watcher.queue(w, intent);
+  intent.why = narrate.why(w, intent, s.daybooks, s.events, s.memory);
   s.last_watch = {
     fate: intent.fate, region: intent.region, why: intent.why, day: w.day,
     decided: intent.decided!, confidence: intent.confidence!,

@@ -2,11 +2,12 @@
 
 exports[`the store > pins RunState's keys to FORMAT: change one, bump the other 1`] = `
 [
-  1,
+  2,
   [
     "daybooks",
     "events",
     "last_watch",
+    "memory",
     "next_watch",
     "paused",
     "prev",

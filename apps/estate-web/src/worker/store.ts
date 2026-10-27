@@ -25,7 +25,7 @@ import type { RunState } from "../view/runner.ts";
  * that reads it differently. tests/store-idb.test.ts pins the keys, so a
  * change to them fails until FORMAT and the pin move together.
  */
-export const FORMAT = 1;
+export const FORMAT = 2;
 export const RULES = hash16(canon(R));
 
 export interface Save {
@@ -117,6 +117,7 @@ export function looksLikeRun(v: unknown, seed: number): v is RunState {
     && ["buildings", "units", "fixtures", "residents", "households", "daybook"].every((k) => isObj(w[k]))
     && ["waiting", "fates", "pending"].every((k) => Array.isArray(w[k]))
     && isObj(v.prev) && Array.isArray(v.events) && isObj(v.daybooks) && isObj(v.last_watch)
+    && isObj(v.memory) && Array.isArray(v.memory.used)
     && Number.isFinite(v.next_watch) && typeof v.paused === "boolean"
     && typeof v.tick_seconds === "number" && v.tick_seconds > 0 && Number.isFinite(v.tick_seconds);
 }

@@ -4,7 +4,8 @@
  * prev positions and watcher, and say every event, every day and the
  * no-WebGL frame in the same words; and page3d's requests (/api/ground,
  * /api/state, POST /api/control) are answered field for field as web.py
- * answers them.
+ * answers them. The watcher's why is the one difference: Python's is the
+ * pack line a model would replace, the port's is narrate.why.
  */
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
@@ -36,7 +37,10 @@ describe.each([[1, 120], [42, 75]])("seed %i, %i days", (seed, days) => {
     expect(hash16(canon(s.events))).toBe(py.events);
     expect(hash16(canon(s.daybooks))).toBe(py.daybooks);
     expect(s.prev).toEqual(py.prev);
-    expect({ ...s.last_watch, next_watch: s.next_watch }).toEqual({ ...py.last_watch, next_watch: py.next_watch });
+    // the same choice on the same day; the why is words (narrate.why), not Python's pack line
+    const watch = { ...s.last_watch, why: null, next_watch: s.next_watch };
+    expect(watch).toEqual({ ...py.last_watch, why: null, next_watch: py.next_watch });
+    expect(s.last_watch.why).toMatch(/\w/);
   });
 
   it("says every event and every day as render.py does", () => {
@@ -54,7 +58,8 @@ describe.each([[1, 120], [42, 75]])("seed %i, %i days", (seed, days) => {
     expect(get("/api/ground")).toEqual(py.ground);
     const state = get("/api/state");
     expect(state.llm).toBe(LLM_STATUS);
-    expect({ ...state, llm: null }).toEqual({ ...py.state, llm: null });
+    const same = (st: Record<string, unknown>) => ({ ...st, llm: null, watcher: { ...(st.watcher as object), why: null } });
+    expect(same(state)).toEqual(same(py.state));
   });
 
   it("takes each control request as web._control does, all of it or none", () => {
