@@ -10,9 +10,12 @@
  */
 import { describe, expect, it } from "vitest";
 import { R } from "../src/sim/rules.ts";
+import * as W from "../src/sim/world.ts";
+import type { Ev } from "../src/sim/engine/events.ts";
+import { chronicle, type Memory } from "../src/view/narrate.ts";
 import { snapshot } from "../src/view/api.ts";
 import { plural, words } from "../src/view/render.ts";
-import { KEEP_CHRONICLE, plant, step, type RunState } from "../src/view/runner.ts";
+import { KEEP_CHRONICLE, KEEP_EVENTS, plant, step, type RunState } from "../src/view/runner.ts";
 
 const NAMES = [...new Set(R.presentation.resident_names ?? [])];
 const WORD = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
@@ -76,6 +79,8 @@ describe.each([1, 42, 7])("seed %i, a year", (seed) => {
 
   it("states only what the stretch's events and books bear out", () => {
     let checked = 0;
+    let busiest = 0;
+    let grown = 0;
     for (const { text, days, s } of all) {
       const evs = s.events.filter((e) => e.day >= days[0]!);
       const has = (k: string) => evs.some((e) => e.kind === k);
@@ -97,6 +102,23 @@ describe.each([1, 42, 7])("seed %i, a year", (seed) => {
         expect(num(m[2]!), text).toBe(books.length);
       }
       if (/not one errand run/.test(t)) expect(errands, text).toBe(0);
+      // who grew up into what: the engine's "a child becomes an adult",
+      // "an adult becomes an elder", by name
+      for (const [re, into] of [[/([^.]*?) (?:came of age|(?:is|are) grown now)/, "adult"], [/([^.]*?) (?:(?:is|are) counted among the elders|turned elder)/, "elder"]] as const) {
+        const g = text.match(re);
+        if (!g) continue;
+        const grew = evs.filter((e) => e.kind === "grew" && String(e.what).endsWith(`becomes an ${into}`)).map((e) => e.who);
+        const named = NAMES.filter((n) => new RegExp(`\\b${n}\\b`).test(g[1]!));
+        expect(named.length, text).toBeGreaterThan(0);
+        for (const n of named) expect(grew, text).toContain(n);
+        grown++;
+      }
+      if ((m = text.match(/the most on (\w+) \(([\d,]+)\)/))) {
+        const totals = days.map((d) => Object.values(s.daybooks[d]?.uses ?? {}).reduce((p, q) => p + q, 0));
+        const best = totals.indexOf(Math.max(...totals));
+        expect([m[1], num(m[2]!)], text).toEqual([W.weekdayName(days[best]!), totals[best]]);
+        busiest++;
+      }
       if ((m = t.match(/the ([a-z ]+?) busiest after the shop/))) {
         const uses = (kind: string) => books.reduce((p, b) => p + (b.uses?.[kind] ?? 0), 0);
         const kinds = Object.keys(s.world.fixtures).length ? Object.values(s.world.fixtures).map((f) => f.kind) : [];
@@ -107,11 +129,76 @@ describe.each([1, 42, 7])("seed %i, a year", (seed) => {
       }
     }
     expect(checked).toBeGreaterThan(0);
+    expect(busiest).toBeGreaterThan(0);
+    if (seed !== 1) expect(grown).toBeGreaterThan(0);
+  });
+
+  it("reads every stretch's events whole: none falls out of the kept window", () => {
+    for (const { days, s } of all) {
+      const evs = s.events.filter((e) => e.day >= days[0]!);
+      expect(evs.length).toBeLessThan(KEEP_EVENTS / 4);
+      if (s.events.length >= KEEP_EVENTS) expect(s.events[0]!.day).toBeLessThan(days[0]!);
+    }
+  });
+
+  it("says who grew into what: adults came of age, elders turned elder", () => {
+    const last = all[all.length - 1]!.text;
+    if (seed === 42) {
+      expect(last).not.toContain("Corrie and Wim are grown now.");
+      expect(last).toMatch(/Corrie and Wim (are counted among the elders now|turned elder)\./);
+    }
+    if (seed === 7) {
+      expect(last).not.toContain("Zeta came of age.");
+      expect(last).toMatch(/Zeta (is counted among the elders now|turned elder)\./);
+    }
   });
 
   it("is the seed's: the same entries on every run", () => {
     const again = written(seed, 120).all.map((x) => x.text);
     expect(again.length).toBe(40);
     expect(again).toEqual(all.slice(0, again.length).map((x) => x.text));
+  });
+});
+
+describe("chronicle, one stretch at a time", () => {
+  const world = (pond: boolean) => {
+    const w = structuredClone(plant(42).world);
+    for (const r of Object.values(w.residents)) r.stress = 0;
+    const has = w.cells.some((row) => row.some((c) => c.site === "water"));
+    if (!pond) {
+      for (const row of w.cells) for (const c of row) if (c.site === "water") c.site = "grass";
+    } else if (!has) {
+      w.cells[0]![0]!.site = "water";
+    }
+    return w;
+  };
+  const ev = (kind: string, more: Partial<Ev> = {}): Ev => ({ day: 5, kind, ...more }) as Ev;
+  const fresh = (): Memory => ({ used: [] });
+  // no day books: no shape sentence, so the events are all there is to say
+  const stretch = (events: Ev[]) => ({ days: [5, 6, 7], events, books: {} });
+
+  it("ices the pond only where there is one", () => {
+    for (let i = 0; i < 6; i++) {
+      expect(chronicle(world(true), stretch([ev("frost")]), fresh())).toMatch(/^(Ice on the pond|The pond iced over)\.$/);
+      expect(chronicle(world(false), stretch([ev("frost")]), fresh())).toMatch(/^(A hard frost|The estate woke white)\.$/);
+    }
+  });
+
+  it("says a child came of age and an adult turned elder, not the other way round", () => {
+    const text = chronicle(world(true), stretch([
+      ev("grew", { who: "Ada", what: "a child becomes an adult" }),
+      ev("grew", { who: "Bram", what: "an adult becomes an elder" }),
+    ]), fresh());
+    expect(text).toMatch(/Ada (came of age|is grown now)\./);
+    expect(text).toMatch(/Bram (is counted among the elders now|turned elder)\./);
+  });
+
+  it("names the days when every wording is one the estate already keeps", () => {
+    const w = world(true);
+    const two = stretch([ev("storm"), ev("storm")]);
+    const once = chronicle(w, two, fresh());
+    expect(once).toBe("Two storms crossed the estate.");
+    expect(chronicle(w, two, fresh(), [once])).toBe("Two storms crossed the estate. Days 5 to 7.");
+    expect(chronicle(w, { ...two, days: [9] }, fresh(), [once])).toBe("Two storms crossed the estate. Day 9.");
   });
 });

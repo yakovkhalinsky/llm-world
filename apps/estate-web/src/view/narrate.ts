@@ -191,9 +191,12 @@ function news(w: W.World, evs: Ev[]): Beat[] {
       ] });
     }
   }
+  // the engine says what someone grew into at the end of `what`: "a child
+  // becomes an adult", "an adult becomes an elder" (households.agePeople)
   const grew = by("grew");
-  const adults = names(grew.filter((e) => String(e.what ?? "").includes("adult")));
-  const elders = names(grew.filter((e) => !String(e.what ?? "").includes("adult")));
+  const into = (role: string) => names(grew.filter((e) => String(e.what ?? "").endsWith(`becomes an ${role}`)));
+  const adults = into("adult");
+  const elders = into("elder");
   if (adults.length) {
     out.push({ weight: 6, options: [
       ["adult:0", `${list(adults)} came of age`],

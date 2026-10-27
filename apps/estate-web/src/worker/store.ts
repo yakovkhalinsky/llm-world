@@ -117,7 +117,11 @@ export function looksLikeRun(v: unknown, seed: number): v is RunState {
     && ["buildings", "units", "fixtures", "residents", "households", "daybook"].every((k) => isObj(w[k]))
     && ["waiting", "fates", "pending"].every((k) => Array.isArray(w[k]))
     && isObj(v.prev) && Array.isArray(v.events) && isObj(v.daybooks) && isObj(v.last_watch)
-    && isObj(v.memory) && Array.isArray(v.memory.used)
+    && Array.isArray(v.run) && Array.isArray(v.chronicle)
+    && isObj(v.memory) && ["why", "chronicle"].every((k) => {
+      const m = (v.memory as Record<string, unknown>)[k];
+      return isObj(m) && Array.isArray(m.used);
+    })
     && Number.isFinite(v.next_watch) && typeof v.paused === "boolean"
     && typeof v.tick_seconds === "number" && v.tick_seconds > 0 && Number.isFinite(v.tick_seconds);
 }
