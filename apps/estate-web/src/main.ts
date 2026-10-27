@@ -93,7 +93,7 @@ function seedControls(o: Opened): void {
   const note = $("seedNote");
   if (input) input.value = String(o.seed);
   opened = o.crashed !== undefined
-    ? `stopped on day ${o.crashed.toLocaleString("en-AU")} last time and will stop there again; start again to plant it afresh`
+    ? `stopped on day ${o.crashed.toLocaleString("en-AU")} last time and will stop there again; "start over" plants it afresh`
     : o.resumed ? `resumed at day ${o.day.toLocaleString("en-AU")}` : "planted";
   savingNote(o.saving, o.why);
   const go = (fresh: boolean) => {
