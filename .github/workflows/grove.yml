@@ -1,0 +1,52 @@
+# The Grove's unittests (a few minutes on a runner), on PRs and pushes to
+# main that touch the Grove or what it shares, weekly, and by hand. Node is
+# set up so the wrappers around tools/*_check.js run too.
+name: grove
+
+on:
+  pull_request:
+    paths:
+      - "apps/grove/**"
+      - "apps/shared/**"
+      - "apps/estate/estate/webguard.py" # test_webguard holds the two copies equal
+      - ".github/workflows/grove.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/grove/**"
+      - "apps/shared/**"
+      - "apps/estate/estate/webguard.py" # test_webguard holds the two copies equal
+      - ".github/workflows/grove.yml"
+  schedule:
+    - cron: "17 3 * * 1" # Mondays, 03:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: grove-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  grove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    defaults:
+      run:
+        working-directory: apps/grove
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - run: python3 -m unittest discover -s tests
